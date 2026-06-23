@@ -95,3 +95,9 @@ Thumbs.db
 .idea/
 .vscode/
 *.iml
+
+# Project source tree
+!/src/
+!/src/**
+/src/**/__pycache__/
+/src/**/*.py[cod]
