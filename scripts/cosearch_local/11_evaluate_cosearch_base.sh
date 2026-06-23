@@ -7,7 +7,7 @@ set -euo pipefail
 # evaluation.
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-PY="${PY:-/data04/envs/ms/ms_cosearch_official/bin/python}"
+source "/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/src/env_manage/compatible_python.sh"
 source "${ROOT}/src/logs/report_system/logging_reports.sh"
 GROUP_NAME="${GROUP_NAME:-cosearch}"
 resolve_cosearch_group_identity "${GROUP_NAME}"

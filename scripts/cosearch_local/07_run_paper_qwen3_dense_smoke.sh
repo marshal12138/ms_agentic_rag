@@ -5,7 +5,7 @@ set -euo pipefail
 # check assets, start dense retriever, run joint training, then validation-only eval.
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-PY="${PY:-/data04/envs/ms/ms_cosearch_official/bin/python}"
+source "/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/src/env_manage/compatible_python.sh"
 PORT="${PORT:-8010}"
 RETRIEVER_GPU_IDS="${RETRIEVER_GPU_IDS:-${RETRIEVER_GPU_ID:-0,1,2,3,4,5,6,7}}"
 RETRIEVAL_DATA_DIR="${RETRIEVAL_DATA_DIR:-data/retrieval/wiki-18}"

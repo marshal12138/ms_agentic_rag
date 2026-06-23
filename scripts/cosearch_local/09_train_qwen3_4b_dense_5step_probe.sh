@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${ROOT}/src/logs/report_system/logging_reports.sh"
-PY="${PY:-/data04/envs/ms/ms_cosearch_official/bin/python}"
+source "/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/src/env_manage/compatible_python.sh"
 REPORT_SCHEMA_PATH="${REPORT_SCHEMA_PATH:-${SCRIPT_DIR}/assets/report_schema.py}"
 EXP_NAME="${EXP_NAME:-}"
 GROUP_NAME="${GROUP_NAME:-cosearch}"

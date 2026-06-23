@@ -19,7 +19,7 @@ source "${ROOT}/src/checkpoints/checkpoint_conversion.sh"
 source "${ROOT}/src/hydra_overrides/hydra_overrides.sh"
 setup_agent_iteration_paths "${ROOT}"
 
-PY="${PY:-/data04/envs/ms/ms_cosearch_official/bin/python}"
+source "/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/src/env_manage/compatible_python.sh"
 PROJECT_ROOT="${COAGENTIC_PROJECT_ROOT:-${ROOT}/CoAgenticRetriever}"
 EXP_NAME="${EXP_NAME:-}" # 必须给出新的 EXP_NAME 来区分不同实验； 测试运行可以写test,不知道怎么写就写default；
 GROUP_NAME="${GROUP_NAME:-adr}"

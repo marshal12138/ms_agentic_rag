@@ -11,6 +11,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 PROJECT_ROOT="${COAGENTIC_PROJECT_ROOT:-${ROOT}/CoAgenticRetriever}"
+source "/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/src/env_manage/compatible_python.sh"
 
 : "${TRAIN_DATA:=${ROOT}/data/coAgenticRetriever/albation_1/co_search_ablation.train.parquet}"
 : "${VAL_DATA:=${ROOT}/data/coAgenticRetriever/albation_1/co_search_ablation.eval.parquet}"
@@ -63,7 +64,7 @@ llm_judge_models_url() {
 check_llm_judge_service() {
   local models_url
   models_url="$(llm_judge_models_url)"
-  "${PY:-/data04/envs/ms/ms_cosearch_official/bin/python}" -c \
+  "${PY}" -c \
     "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('${models_url}', timeout=5).status < 500 else 1)" \
     >/dev/null 2>&1
 }

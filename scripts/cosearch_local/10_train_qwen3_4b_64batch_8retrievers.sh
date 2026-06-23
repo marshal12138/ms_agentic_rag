@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "${ROOT}/src/logs/report_system/logging_reports.sh"
 source "${ROOT}/src/hydra_overrides/hydra_overrides.sh"
-PY="${PY:-/data04/envs/ms/ms_cosearch_official/bin/python}"
+source "/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/src/env_manage/compatible_python.sh"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPORT_SCHEMA_PATH="${REPORT_SCHEMA_PATH:-${SCRIPT_DIR}/assets/report_schema.py}"
 EXP_NAME="${EXP_NAME:-}"

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-PY="${PY:-/data04/envs/ms/ms_cosearch_official/bin/python}"
+source "/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/src/env_manage/compatible_python.sh"
 DATA_DIR="${DATA_DIR:-${ROOT}/data/coAgenticRetriever/albation_1}"
 FILES=(
   "${DATA_DIR}/co_search_ablation.train.parquet"

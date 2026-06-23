@@ -20,7 +20,7 @@ RETRIEVER_SRC_DIR="${RETRIEVER_SRC_DIR:-${ROOT}/src/retrievers}"
 GPU_DENSE_RETRIEVER_SERVER="${GPU_DENSE_RETRIEVER_SERVER:-${RETRIEVER_SRC_DIR}/gpu_dense_retriever_server.py}"
 VERIFY_RETRIEVAL_ASSETS="${VERIFY_RETRIEVAL_ASSETS:-${RETRIEVER_SRC_DIR}/verify_official_retrieval_assets.py}"
 
-PY="${PY:-/data04/envs/ms/ms_cosearch_official/bin/python}"
+source "/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/src/env_manage/compatible_python.sh"
 PORT="${PORT:-8030}"
 HOST="${HOST:-0.0.0.0}"
 DEVICE="${DEVICE:-cuda}"

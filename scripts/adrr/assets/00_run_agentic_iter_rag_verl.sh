@@ -9,7 +9,7 @@ PROJECT_ROOT="${COAGENTIC_PROJECT_ROOT:-${ROOT}/CoAgenticRetriever}"
 if [[ -d "${PROJECT_ROOT}" ]]; then
   PROJECT_ROOT="$(cd "${PROJECT_ROOT}" && pwd)"
 fi
-PY="${PY:-/data04/envs/ms/ms_cosearch_official/bin/python}"
+source "/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/src/env_manage/compatible_python.sh"
 source "${ROOT}/src/logs/report_system/logging_reports.sh"
 source "${ROOT}/src/hydra_overrides/hydra_overrides.sh"
 source "${SCRIPT_DIR}/00_project_paths.sh"
