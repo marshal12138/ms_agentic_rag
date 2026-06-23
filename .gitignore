@@ -7,6 +7,9 @@
 /checkpoints/
 /.cache/
 **/checkpoints/
+!/src/checkpoints/
+!/src/checkpoints/**
+src/checkpoints/__pycache__/
 **/org_data/
 **/private/
 **/sbatch_out/
@@ -17,6 +20,11 @@
 /temp/
 **/outputs/
 **/logs/
+!/src/logs/
+!/src/logs/log_system/
+!/src/logs/log_system/.gitkeep
+!/src/logs/report_system/
+!/src/logs/report_system/**
 **/results/
 **/runs/
 **/infer_out/
