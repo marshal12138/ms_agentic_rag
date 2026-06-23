@@ -1,0 +1,193 @@
+# Ranker 相关的训练开关与更新计划。
+trainer:
+
+  # 是否让 dense ranker 参与训练。
+  ranker_trainable: true
+
+  # trainer 使用的 ranker 更新算法。
+  ranker_update_mode: contrastive
+
+  # 每个全局 RL step 内执行的 ranker contrastive 优化步数。
+  ranker_steps_per_global_step: 2
+
+  # 从哪个全局 step 开始启用 ranker 更新。
+  ranker_start_step: 0
+
+  # ranker 更新的最后一个全局 step；null 表示不设置显式停止步。
+  ranker_stop_step: null
+
+# 固定的 recall retriever，用于在 rerank 前召回候选文档。
+recall_retriever:
+
+  # recall retriever encoder 的基础模型路径。
+  model_path: /data01/ms_wksp/agent_up_to_date/models/retriever/e5-base-v2
+
+  # Hydra 配置中 recall retriever 使用的设备。
+  device: cuda:5
+
+  # recall 阶段召回的文档数量。
+  top_k: 50
+
+  # recall retriever 本身是否可训练。
+  trainable: false
+
+  # 训练过程中是否刷新 recall retriever 索引。
+  index_refresh: false
+
+  # 外部 recall 检索服务的 HTTP 地址。
+  service_url: http://127.0.0.1:8030/retrieve
+
+# dense ranker，用于重排 recall 候选文档，并接收 contrastive 更新。
+ranker:
+
+  # 初始化 ranker 的基础模型路径。
+  model_path: /data01/ms_wksp/agent_up_to_date/models/retriever/e5-base-v2
+
+  # encoder checkpoint 路径；必须显式配置，不从 model_path 隐式兜底。
+  encoder_path: /data01/ms_wksp/agent_up_to_date/models/retriever/e5-base-v2
+
+  # Hydra 配置中 ranker 使用的设备。
+  device: cuda:4
+
+  # recall 和 rank 阶段是否共享同一类 encoder 架构。
+  shared_encoder: true
+
+  # rerank 后保留的最高分文档数量。
+  top_k: 5
+
+  # ranker query 输入的最大 token 长度。
+  max_query_length: 256
+
+  # ranker document 输入的最大 token 长度。
+  max_doc_length: 512
+
+  # 加载 Hugging Face 资产时是否允许执行自定义模型代码。
+  trust_remote_code: true
+
+# dense ranker 的 contrastive 训练配置。
+ranker_training:
+
+  # 本地 ranker contrastive 训练使用的默认设备。
+  device: cuda
+
+  # ranker contrastive 训练的有效 batch size；一次 optimizer.step() 消费这么多条对比学习样本。
+  batch_size: 16
+
+  # ranker 梯度累计步数；batch_size 会被切成多个 micro-batch 做 forward/backward，
+  # 最后统一执行一次 optimizer.step()，用于降低单次 forward 的显存峰值。
+  gradient_accumulation_steps: 2
+
+  # 训练时 query 输入的最大 token 长度。
+  max_query_length: 256
+
+  # 训练时 document 输入的最大 token 长度。
+  max_doc_length: 512
+
+  # ranker 优化时的梯度裁剪范数。
+  max_grad_norm: 1.0
+
+  # ranker 训练辅助逻辑使用的随机种子。
+  seed: 42
+
+  # 每隔 N 个 ranker step 记录一次 contrastive 指标。
+  log_every_n_steps: 10
+
+  # 是否记录第一个构造出的 contrastive 样本。
+  log_first_sample: true
+
+  # contrastive 样本构造日志的可选 JSONL 路径。
+  construction_log_jsonl: null
+
+  # rollout/search tool 使用的共享 dense ranker 推理副本。
+  # 训练进程创建这个 Ray named actor；AgentLoopWorker 只调用该 actor，
+  # 不再各自加载 E5。训练 ranker 每 sync_interval 个 ranker update step
+  # 同步一次参数到推理副本。
+  shared_inference_ranker:
+    enable: true
+    actor_name: coagentic_shared_dense_ranker
+    actor_namespace: null
+    sync_interval: 5
+
+  # 启用刷新时，ranker service 状态刷新的 step 间隔。
+  service_refresh_interval: 10
+
+  # ranker service 的刷新行为。
+  service_refresh_mode: none
+
+  # 从 rollout 数据中选择有效轨迹的选择器。
+  trajectory_selector:
+
+    # 轨迹选择策略名称。
+    type: top_f1_trajectories
+
+    # 每个 ranker 更新 batch 最多选择的有效轨迹数量。
+    max_selected_trajectories: 1
+
+    # 轨迹被选中所需的最低 final reward。
+    min_final_reward: 0.0
+
+  # 将选中的上下文转换为伪排序标签的构造器。
+  signal_builder:
+
+    # 伪标签构造策略名称。
+    type: topk_pseudo_rank
+
+    # 当前 ranker 排名前 k 的文档会被当作 positive passage。
+    positive_top_k: 50
+
+    # 是否允许没有 positive passage 的样本。
+    allow_all_negative: false
+
+  # 将伪标签转换为 contrastive 训练 group 的构造器。
+  sample_builder:
+
+    # contrastive 样本构造策略名称。
+    type: random_negative_repeat
+
+    # 每个 ranker step 构造的 contrastive group 数量。
+    num_groups_per_step: 32
+
+    # 每个 positive passage 搭配的 negative passage 数量。
+    neg_per_pos: 15
+
+    # 候选 negative 不足时是否允许重复采样 negative passage。
+    allow_repeat_negative_sampling: true
+
+    # 是否额外使用 in-batch negatives。
+    use_in_batch_negatives: false
+
+  # contrastive loss 配置。
+  loss:
+
+    # ranker contrastive 学习使用的 loss 类型。
+    type: info_nce
+
+    # InfoNCE loss 使用的温度系数。
+    temperature: 0.05
+
+  # 用于混合 fresh 样本和历史样本的 replay buffer。
+  replay_buffer:
+
+    # 是否启用 replay buffer 采样。
+    enable: true
+
+    # replay buffer 中最多保留的 contrastive group 数量。
+    max_size: 200000
+
+    # 每个训练 batch 中来自 fresh rollout 样本的比例。
+    fresh_ratio: 0.5
+
+  # ranker contrastive 更新使用的优化器配置。
+  optim:
+
+    # ranker 优化器学习率。
+    lr: 2.0e-5
+
+    # ranker 优化器使用的 weight decay。
+    weight_decay: 0.01
+
+    # 优化器 warmup step 数量。
+    warmup_steps: 0
+
+    # 用于学习率调度的计划总优化步数。
+    total_steps: 1000

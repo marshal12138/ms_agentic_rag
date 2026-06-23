@@ -1,0 +1,2 @@
+conda env export --no-builds > /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/env/ms_agt_rag.conda.yml
+pip freeze > /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/env/ms_agt_rag.requirements.txt

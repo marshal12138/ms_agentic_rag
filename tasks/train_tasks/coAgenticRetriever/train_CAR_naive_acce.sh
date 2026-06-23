@@ -1,0 +1,13 @@
+# EXP_NAME="CAR_naive_acce" \
+# bash /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/scripts/coagenticRetriever_local/01_train_qwen3_4b_ablation_1epoch_timing.sh
+
+export EXP_NAME="CAR_mem_speed_no_think_v1"
+export GPU_MEMORY_UTILIZATION=0.55
+export MAX_NUM_SEQS=16
+export AGENT_WORKERS=4
+export TOOL_MAX_CONCURRENT_PER_WORKER=4
+export LOG_PROB_MICRO_BATCH_SIZE_PER_GPU=8
+export ACTOR_MICRO_BATCH_SIZE_PER_GPU=4
+export COAGENTIC_EXTRA_ARGS="actor_rollout_ref.rollout.max_num_batched_tokens=32768 actor_rollout_ref.rollout.multi_turn.max_parallel_calls=2 actor_rollout_ref.actor.fsdp_config.param_offload=False actor_rollout_ref.actor.fsdp_config.optimizer_offload=False actor_rollout_ref.ref.fsdp_config.param_offload=False ++data.apply_chat_template_kwargs.enable_thinking=False"
+
+bash /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/scripts/coagenticRetriever_local/01_train_qwen3_4b_ablation_1epoch_timing.sh

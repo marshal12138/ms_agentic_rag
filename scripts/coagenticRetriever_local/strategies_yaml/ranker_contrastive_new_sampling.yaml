@@ -1,0 +1,14 @@
+
+# dense ranker 的 contrastive 训练配置。
+ranker_training:
+
+  # 从 rollout 数据中选择有效轨迹的选择器。
+  trajectory_selector:
+
+    # 轨迹选择策略名称。
+    type: best_and_worst_f1
+    
+    top_k: 1
+    bottom_n: 2
+    min_final_reward: 0.0
+  

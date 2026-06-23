@@ -1,0 +1,6 @@
+# CoAgenticRetriever Agent Loop Configuration
+
+- name: coagentic_retriever_agent
+  _target_: verl.experimental.agent_loop.coagentic_retriever_agent_loop.CoAgenticRetrieverAgentLoop
+
+  track_messages: false
