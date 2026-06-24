@@ -12,6 +12,7 @@ source "${ASSETS_DIR}/00_project_paths.sh"
 source "${ROOT}/src/logs/report_system/logging_reports.sh"
 setup_agent_iteration_paths "${ROOT}"
 source "/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/src/env_manage/compatible_python.sh"
+source "/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/src/env_manage/compatible_accelerator.sh"
 EVALUATOR="${EVALUATOR:-${SCRIPT_DIR}/evaluate_coagentic_vllm_cosearch_aligned.py}"
 PROJECT_ROOT="${COAGENTIC_PROJECT_ROOT:-${ROOT}/CoAgenticRetriever}"
 TOOL_CONFIG="${PROJECT_ROOT}/config/coagentic_retriever_tool_config.yaml"
@@ -175,7 +176,7 @@ RECALL_SERVICE_WAIT_SECONDS="${RECALL_SERVICE_WAIT_SECONDS:-240}"
 RETRIEVAL_PREFLIGHT_QUERY="${RETRIEVAL_PREFLIGHT_QUERY:-who got the first nobel prize in physics?}"
 RETRIEVAL_PREFLIGHT_EXPECT="${RETRIEVAL_PREFLIGHT_EXPECT:-}"
 
-RANKER_DEVICE="${RANKER_DEVICE:-cuda:0}"
+RANKER_DEVICE="${RANKER_DEVICE:-$(co_accel_device_spec 0)}"
 RANKER_MAX_QUERY_LENGTH="${RANKER_MAX_QUERY_LENGTH:-192}"
 RANKER_MAX_DOC_LENGTH="${RANKER_MAX_DOC_LENGTH:-256}"
 LLM_JUDGE_ENDPOINT="${LLM_JUDGE_ENDPOINT:-http://127.0.0.1:8067/v1/chat/completions}"
@@ -299,8 +300,8 @@ emit("STATIC_TRUST_REMOTE_CODE", ranker.get("trust_remote_code", ""))
   RETRIEVAL_RETRY_BACKOFF="${STATIC_RETRY_BACKOFF}"
   FORMAT_PENALTY="${STATIC_FORMAT_PENALTY}"
   COAGENTIC_RANKER_ENABLED="${STATIC_RANKER_ENABLED}"
-  RANKER_DEVICE="${STATIC_RANKER_DEVICE}"
-  RANKER_CONFIG_DEVICE="${STATIC_RANKER_DEVICE}"
+  RANKER_DEVICE="$(co_accel_normalize_device_spec "${STATIC_RANKER_DEVICE}")"
+  RANKER_CONFIG_DEVICE="${RANKER_DEVICE}"
   RANKER_MAX_QUERY_LENGTH="${STATIC_RANKER_MAX_QUERY_LENGTH}"
   RANKER_MAX_DOC_LENGTH="${STATIC_RANKER_MAX_DOC_LENGTH}"
   TOOL_MAX_CONCURRENT_PER_WORKER="${STATIC_MAX_CONCURRENT_PER_WORKER}"
@@ -423,12 +424,12 @@ ensure_recall_service() {
     exit 2
   fi
 
-  echo "starting recall retrieval service; gpu=${RECALL_GPU_ID}; log=${RECALL_SERVICE_LOG}"
+  echo "starting recall retrieval service; accelerator=${COSEARCH_ACCELERATOR}; device_id=${RECALL_GPU_ID}; log=${RECALL_SERVICE_LOG}"
   PORT="${PROXY_PORT}" \
   RECALL_GPU_ID="${RECALL_GPU_ID}" \
   RETRIEVER_GPU_IDS="${RECALL_GPU_ID}" \
   RETRIEVER_MODEL="${RECALL_MODEL_PATH}" \
-  DEVICE=cuda \
+  DEVICE="$(co_accel_device_prefix)" \
   PY="${PY}" \
     bash "${SCRIPT_DIR}/00_start_dense_retriever_server.sh" >"${RECALL_SERVICE_LOG}" 2>&1 &
   RECALL_SERVICE_PID=$!
@@ -503,8 +504,8 @@ start_agent_vllm() {
     echo "       Stop the existing service or choose another AGENT_PORT before rerunning." >&2
     exit 4
   fi
-  echo "starting agent vLLM server on GPUs ${AGENT_GPU_IDS}; model=${model_path}; log=${log}"
-  setsid env CUDA_VISIBLE_DEVICES="${AGENT_GPU_IDS}" \
+  echo "starting agent vLLM server on ${COSEARCH_ACCELERATOR} devices ${AGENT_GPU_IDS}; model=${model_path}; log=${log}"
+  setsid env $(co_accel_env_visible_devices_cmd "${AGENT_GPU_IDS}") \
     VLLM_DISABLE_FLASHINFER=1 \
     VLLM_USE_FLASHINFER_SAMPLER=0 \
     VLLM_ATTENTION_BACKEND="${VLLM_ATTENTION_BACKEND:-FLASH_ATTN}" \
@@ -655,6 +656,8 @@ write_shell_report() {
 - ENABLE_THINKING: ${ENABLE_THINKING}
 - MAX_MODEL_LEN: ${MAX_MODEL_LEN}
 - STOP_SEQUENCES: ${STOP_SEQUENCES:-none}
+- COSEARCH_ACCELERATOR: ${COSEARCH_ACCELERATOR}
+- $(co_accel_visible_devices_var): ${AGENT_GPU_IDS}
 - AGENT_GPU_IDS: ${AGENT_GPU_IDS}
 - RANK_GPU_ID: ${RANK_GPU_ID}
 - RANKER_CUDA_VISIBLE_DEVICES: ${RANKER_CUDA_VISIBLE_DEVICES}
@@ -677,6 +680,9 @@ STRATEGY_NAME=${STRATEGY_NAME}
 STRATEGY_SLUG=${STRATEGY_SLUG}
 RUN_MODE=${RUN_MODE}
 RERANKER=${RERANKER}
+COSEARCH_ACCELERATOR=${COSEARCH_ACCELERATOR}
+VISIBLE_DEVICES_VAR=$(co_accel_visible_devices_var)
+$(co_accel_visible_devices_var)=${AGENT_GPU_IDS}
 PROJECT_ROOT=${PROJECT_ROOT}
 PY=${PY}
 EVALUATOR=${EVALUATOR}
@@ -813,6 +819,8 @@ if [[ "${DRY_RUN:-0}" == "1" ]]; then
   echo "LLM_JUDGE_ENDPOINT=${LLM_JUDGE_ENDPOINT}"
   echo "LLM_JUDGE_MODEL=${LLM_JUDGE_MODEL}"
   echo "LLM_JUDGE_PROMPT_PATH=${LLM_JUDGE_PROMPT_PATH}"
+  echo "COSEARCH_ACCELERATOR=${COSEARCH_ACCELERATOR}"
+  echo "$(co_accel_visible_devices_var)=${AGENT_GPU_IDS}"
   echo "AGENT_GPU_IDS=${AGENT_GPU_IDS}"
   echo "RANK_GPU_ID=${RANK_GPU_ID}"
   echo "RANKER_CUDA_VISIBLE_DEVICES=${RANKER_CUDA_VISIBLE_DEVICES}"

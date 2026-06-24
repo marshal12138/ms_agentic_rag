@@ -13,6 +13,7 @@
 # limitations under the License.
 import argparse
 import asyncio
+import inspect
 import json
 import logging
 import os
@@ -35,7 +36,11 @@ from vllm.inputs import TokensPrompt
 from vllm.lora.request import LoRARequest
 from vllm.outputs import RequestOutput
 from vllm.usage.usage_lib import UsageContext
-from vllm.utils import FlexibleArgumentParser, get_tcp_uri
+try:
+    from vllm.utils import FlexibleArgumentParser, get_tcp_uri
+except ImportError:
+    from vllm.utils.argparse_utils import FlexibleArgumentParser
+    from vllm.utils.network_utils import get_tcp_uri
 from vllm.v1.engine.async_llm import AsyncLLM
 from vllm.v1.engine.core import EngineCoreProc
 from vllm.v1.engine.utils import CoreEngineProcManager
@@ -358,18 +363,30 @@ class vLLMHttpServerBase:
         vllm_config = engine_args.create_engine_config(usage_context=usage_context)
         vllm_config.parallel_config.data_parallel_master_port = self._dp_master_port
 
-        engine_client = AsyncLLM.from_vllm_config(
-            vllm_config=vllm_config,
-            usage_context=usage_context,
-            disable_log_requests=engine_args.disable_log_requests,
-            disable_log_stats=engine_args.disable_log_stats,
-        )
+        disable_log_requests = getattr(engine_args, "disable_log_requests", True)
+        llm_kwargs = {
+            "vllm_config": vllm_config,
+            "usage_context": usage_context,
+            "disable_log_stats": engine_args.disable_log_stats,
+        }
+        if "disable_log_requests" in inspect.signature(AsyncLLM.from_vllm_config).parameters:
+            llm_kwargs["disable_log_requests"] = disable_log_requests
+        else:
+            llm_kwargs["enable_log_requests"] = not disable_log_requests
+
+        engine_client = AsyncLLM.from_vllm_config(**llm_kwargs)
 
         # Don't keep the dummy data in memory
         await engine_client.reset_mm_cache()
 
         app = build_app(args)
-        await init_app_state(engine_client, vllm_config, app.state, args)
+        init_app_state_params = inspect.signature(init_app_state).parameters
+        if len(init_app_state_params) >= 4:
+            init_app_state_result = init_app_state(engine_client, vllm_config, app.state, args)
+        else:
+            init_app_state_result = init_app_state(engine_client, app.state, args)
+        if inspect.isawaitable(init_app_state_result):
+            await init_app_state_result
         if self.replica_rank == 0 and self.node_rank == 0:
             logger.info(f"Initializing a V1 LLM engine with config: {vllm_config}")
 

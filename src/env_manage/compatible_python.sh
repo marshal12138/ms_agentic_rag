@@ -44,5 +44,39 @@ _cosearch_resolve_python() {
   export PY
 }
 
+_cosearch_prepend_path_entry() {
+  local var_name="$1"
+  local entry="$2"
+  local current="${!var_name:-}"
+
+  [[ -n "${entry}" && -d "${entry}" ]] || return 0
+  case ":${current}:" in
+    *":${entry}:"*) ;;
+    *) export "${var_name}=${entry}${current:+:${current}}" ;;
+  esac
+}
+
+_cosearch_export_python_libdir() {
+  local py_libdir=""
+
+  case "${COSEARCH_PREPEND_PYTHON_LIBDIR:-1}" in
+    0|false|FALSE|no|NO|off|OFF) return 0 ;;
+  esac
+
+  py_libdir="$("${PY}" - <<'PY' 2>/dev/null || true
+import sysconfig
+
+print(sysconfig.get_config_var("LIBDIR") or "")
+PY
+)"
+  [[ -n "${py_libdir}" ]] || return 0
+
+  export COSEARCH_PYTHON_LIBDIR="${py_libdir}"
+  _cosearch_prepend_path_entry LD_LIBRARY_PATH "${py_libdir}"
+}
+
 _cosearch_resolve_python
+_cosearch_export_python_libdir
 unset -f _cosearch_resolve_python
+unset -f _cosearch_prepend_path_entry
+unset -f _cosearch_export_python_libdir

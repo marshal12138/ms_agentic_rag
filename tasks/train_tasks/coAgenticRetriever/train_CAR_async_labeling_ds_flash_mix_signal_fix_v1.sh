@@ -4,6 +4,8 @@ set -euo pipefail
 # 项目根目录：后续所有配置文件和训练入口都基于该路径定位。
 ROOT="/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives"
 
+export RUN_MODE="${RUN_MODE:-no-ranker}"
+
 # 实验名：会进入 run-name/log/checkpoint 名称中；外部可通过 EXP_NAME=... 覆盖。
 export EXP_NAME="${EXP_NAME:-CAR_async_labeling_ds_flash_mix_signal_b3_v1_select_all}"
 
@@ -40,11 +42,27 @@ export RANK_GPU_ID="${RANK_GPU_ID:-4}"
 # recall retriever 服务使用的 GPU。
 export RECALL_GPU_ID="${RECALL_GPU_ID:-5}"
 
+if [[ "${RUN_MODE}" == "no-ranker" ]]; then
+  export ENABLE_ASYNC_LABELING="${ENABLE_ASYNC_LABELING:-0}"
+  export AUTO_START_LLM_JUDGE="${AUTO_START_LLM_JUDGE:-0}"
+  export AUTO_STOP_LLM_JUDGE="${AUTO_STOP_LLM_JUDGE:-0}"
+  export LLM_JUDGE_PREFLIGHT="${LLM_JUDGE_PREFLIGHT:-0}"
+else
+  export ENABLE_ASYNC_LABELING="${ENABLE_ASYNC_LABELING:-1}"
+  export AUTO_START_LLM_JUDGE="${AUTO_START_LLM_JUDGE:-1}"
+  export AUTO_STOP_LLM_JUDGE="${AUTO_STOP_LLM_JUDGE:-1}"
+  export LLM_JUDGE_PREFLIGHT="${LLM_JUDGE_PREFLIGHT:-1}"
+fi
+
 # 是否启用异步样本标注框架；0 表示回到不使用 async_labeling 的训练路径。
-export ENABLE_ASYNC_LABELING="${ENABLE_ASYNC_LABELING:-1}"
+export ENABLE_ASYNC_LABELING="${ENABLE_ASYNC_LABELING}"
 
 # async_labeling 主配置：包含限流、buffer、sample_builder、judge client 等策略参数。
-export ASYNC_LABELING_YAML="${ASYNC_LABELING_YAML:-${ROOT}/scripts/coagenticRetriever_local/strategies_yaml/async_labeling_deepseek_flash.yaml}"
+if [[ "${RUN_MODE}" == "no-ranker" ]]; then
+  export ASYNC_LABELING_YAML=""
+else
+  export ASYNC_LABELING_YAML="${ASYNC_LABELING_YAML:-${ROOT}/scripts/coagenticRetriever_local/strategies_yaml/async_labeling_deepseek_flash.yaml}"
+fi
 
 # 训练 rollout budget 默认配置。具体 max_prompt/max_response/max_model_len/turn/tool-response budget
 # 由 YAML 管理，task 脚本只选择默认配置；外部 HYDRA_OVERRIDE_YAMLS 排在它后面，可覆盖这些默认值。
@@ -61,10 +79,10 @@ else
 fi
 
 # judge endpoint 不可用时是否自动启动 LLM judge vLLM 服务。
-export AUTO_START_LLM_JUDGE="${AUTO_START_LLM_JUDGE:-1}"
+export AUTO_START_LLM_JUDGE="${AUTO_START_LLM_JUDGE}"
 
 # 训练结束或脚本退出时是否自动停止本脚本启动的 LLM judge 服务。
-export AUTO_STOP_LLM_JUDGE="${AUTO_STOP_LLM_JUDGE:-1}"
+export AUTO_STOP_LLM_JUDGE="${AUTO_STOP_LLM_JUDGE}"
 
 # LLM judge vLLM 启动配置：模型路径、GPU、端口、--max-model-len 等核心服务参数写在这里。
 export LLM_JUDGE_SERVICE_CONFIG="${LLM_JUDGE_SERVICE_CONFIG:-${ROOT}/CoAgenticRetriever/async_labeling/configs/llm_judge_vllm_deepseek_flash_gpu06_07.yaml}"
@@ -74,7 +92,7 @@ export LLM_JUDGE_GPU_IDS="${LLM_JUDGE_GPU_IDS:-6,7}"
 export LLM_JUDGE_ENDPOINT="${LLM_JUDGE_ENDPOINT:-http://127.0.0.1:8067/v1/chat/completions}"
 
 # 训练前是否做 judge endpoint 可用性检查；开启后 endpoint 不可用会先尝试自动启动或直接报错。
-export LLM_JUDGE_PREFLIGHT="${LLM_JUDGE_PREFLIGHT:-1}"
+export LLM_JUDGE_PREFLIGHT="${LLM_JUDGE_PREFLIGHT}"
 
 # 是否向 Qwen chat template 注入 tools schema。CoSearch-aligned 训练默认不注入。
 export INJECT_TOOL_SCHEMA="${INJECT_TOOL_SCHEMA:-false}"
@@ -85,7 +103,11 @@ export SAMPLE_BUILDER_REQUEST_BATCH="${SAMPLE_BUILDER_REQUEST_BATCH:-3}"
 
 # 当前实验还在占用 GPU 时，可以先启动本脚本；它会等目标 GPU 全部释放后再进入训练。
 # 默认等待 agent/ranker/recall/judge 全部 GPU，避免和前一个完整 async-labeling 实验抢资源。
-export WAIT_FOR_GPUS="${WAIT_FOR_GPUS:-${AGENT_GPU_IDS},${RANK_GPU_ID},${RECALL_GPU_ID},${LLM_JUDGE_GPU_IDS}}"
+if [[ "${RUN_MODE}" == "no-ranker" ]]; then
+  export WAIT_FOR_GPUS="${WAIT_FOR_GPUS:-${AGENT_GPU_IDS},${RECALL_GPU_ID}}"
+else
+  export WAIT_FOR_GPUS="${WAIT_FOR_GPUS:-${AGENT_GPU_IDS},${RANK_GPU_ID},${RECALL_GPU_ID},${LLM_JUDGE_GPU_IDS}}"
+fi
 export WAIT_FOR_GPU_RELEASE="${WAIT_FOR_GPU_RELEASE:-1}"
 export WAIT_FOR_GPU_INTERVAL_SECONDS="${WAIT_FOR_GPU_INTERVAL_SECONDS:-30}"
 export WAIT_FOR_GPU_LABEL="${WAIT_FOR_GPU_LABEL:-mix-signal experiment GPU wait}"
@@ -98,7 +120,11 @@ source "${ROOT}/src/runtime/wait_for_gpus.sh"
 # - inject_tool_schema 是本 task 的显式行为开关，默认 false，用于和 CoSearch-aligned eval 对齐。
 # - sample_builder_request_batch 是本实验变量，始终追加在末尾，保证覆盖 YAML/default。
 DEFAULT_COAGENTIC_EXTRA_ARGS="actor_rollout_ref.rollout.multi_turn.max_parallel_calls=2 actor_rollout_ref.actor.fsdp_config.param_offload=False actor_rollout_ref.actor.fsdp_config.optimizer_offload=False actor_rollout_ref.ref.fsdp_config.param_offload=False"
-export COAGENTIC_EXTRA_ARGS="${COAGENTIC_EXTRA_ARGS:-${DEFAULT_COAGENTIC_EXTRA_ARGS}} ++coagentic_retriever.agent.inject_tool_schema=${INJECT_TOOL_SCHEMA} ranker_training.async_labeling.sample_builder_request_batch=${SAMPLE_BUILDER_REQUEST_BATCH}"
+COAGENTIC_EXTRA_ARGS_RESOLVED="${COAGENTIC_EXTRA_ARGS:-${DEFAULT_COAGENTIC_EXTRA_ARGS}} ++coagentic_retriever.agent.inject_tool_schema=${INJECT_TOOL_SCHEMA}"
+if [[ "${RUN_MODE}" != "no-ranker" ]]; then
+  COAGENTIC_EXTRA_ARGS_RESOLVED+=" ranker_training.async_labeling.sample_builder_request_batch=${SAMPLE_BUILDER_REQUEST_BATCH}"
+fi
+export COAGENTIC_EXTRA_ARGS="${COAGENTIC_EXTRA_ARGS_RESOLVED}"
 
 # 常用外部覆盖参数：
 # - TOTAL_STEPS=10 可用于 10 step smoke；不在本脚本内写默认值，避免改变正式训练步数。

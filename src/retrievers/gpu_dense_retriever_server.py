@@ -16,6 +16,38 @@ from pydantic import BaseModel
 from transformers import AutoConfig, AutoModel, AutoTokenizer
 
 
+def ensure_device_backend(device: str) -> None:
+    if device.startswith("npu"):
+        try:
+            import torch_npu  # noqa: F401
+        except Exception as exc:
+            raise RuntimeError(f"DEVICE={device} requires torch_npu, but import failed: {exc}") from exc
+
+
+def synchronize_device(device: torch.device) -> None:
+    if device.type == "cuda":
+        torch.cuda.synchronize(device)
+    elif device.type == "npu" and hasattr(torch, "npu"):
+        torch.npu.synchronize(device)
+
+
+def memory_status(device: torch.device) -> dict:
+    if device.type == "cuda":
+        return {
+            "device_memory_allocated": torch.cuda.memory_allocated(device),
+            "device_memory_reserved": torch.cuda.memory_reserved(device),
+        }
+    if device.type == "npu" and hasattr(torch, "npu"):
+        return {
+            "device_memory_allocated": torch.npu.memory_allocated(device),
+            "device_memory_reserved": torch.npu.memory_reserved(device),
+        }
+    return {
+        "device_memory_allocated": None,
+        "device_memory_reserved": None,
+    }
+
+
 def load_corpus(corpus_path: str):
     return datasets.load_dataset("json", data_files=corpus_path, split="train", num_proc=4)
 
@@ -25,6 +57,7 @@ def load_docs(corpus, doc_idxs):
 
 
 def load_model(model_path: str, use_fp16: bool, device: str):
+    ensure_device_backend(device)
     AutoConfig.from_pretrained(model_path, trust_remote_code=True)
     model = AutoModel.from_pretrained(model_path, trust_remote_code=True)
     model.eval()
@@ -100,8 +133,9 @@ class GpuTorchFlatRetriever:
         query_batch_size: int,
         doc_dtype: str,
     ):
-        if not device.startswith("cuda"):
-            raise ValueError("gpu_dense_retriever_server requires a cuda device")
+        ensure_device_backend(device)
+        if not (device.startswith("cuda") or device.startswith("npu")):
+            raise ValueError("gpu_dense_retriever_server requires a cuda or npu device")
         self.device = torch.device(device)
         self.topk = topk
         self.batch_size = query_batch_size
@@ -121,7 +155,7 @@ class GpuTorchFlatRetriever:
             chunk = torch.from_numpy(np.asarray(xb[start:end], dtype=np.float32))
             self.doc_embeddings[start:end].copy_(chunk.to(self.device, dtype=dtype, non_blocking=False))
         del index, xb
-        torch.cuda.synchronize(self.device)
+        synchronize_device(self.device)
         print(
             json.dumps(
                 {
@@ -142,7 +176,7 @@ class GpuTorchFlatRetriever:
             model_path=retriever_model,
             pooling_method="mean",
             max_length=256,
-            use_fp16=device.startswith("cuda"),
+            use_fp16=device.startswith(("cuda", "npu")),
             device=device,
         )
 
@@ -187,13 +221,13 @@ default_topk: int
 @app.get("/gpu_status")
 def gpu_status():
     emb = retriever.doc_embeddings
-    return {
+    status = {
         "doc_embeddings_shape": list(emb.shape),
         "doc_embeddings_dtype": str(emb.dtype),
         "doc_embeddings_device": str(emb.device),
-        "cuda_memory_allocated": torch.cuda.memory_allocated(emb.device),
-        "cuda_memory_reserved": torch.cuda.memory_reserved(emb.device),
     }
+    status.update(memory_status(emb.device))
+    return status
 
 
 @app.post("/retrieve")

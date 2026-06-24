@@ -8,6 +8,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PARENT_ROOT="$(cd "${ROOT}/.." && pwd)"
+source "${ROOT}/src/env_manage/compatible_accelerator.sh"
 
 PY="${PY:-/data04/envs/ms/ms_cosearch_official/bin/python}"
 PORT="${PORT:-8010}"
@@ -102,7 +103,7 @@ GPU_RETRIEVAL_SERVER="${GPU_RETRIEVAL_SERVER:-${ROOT}/src/retrievers/gpu_dense_r
 
 DEVICE="${DEVICE:-cpu}"
 if [[ "${MODE}" == "gpu" ]]; then
-  DEVICE="cuda"
+  DEVICE="$(co_accel_device_prefix)"
 fi
 RETRIEVER_GPU_IDS="${RETRIEVER_GPU_IDS:-${GPU_ID}}"
 FAISS_GPU="${FAISS_GPU:-0}"
@@ -146,8 +147,8 @@ fi
   --corpus "${CORPUS_FILE}"
 
 if [[ "${MODE}" == "gpu" ]]; then
-  echo "Starting GPU dense retriever: gpu_id=${GPU_ID}, doc_dtype=${DOC_DTYPE}, port=${PORT}" >&2
-  exec env CUDA_VISIBLE_DEVICES="${RETRIEVER_GPU_IDS}" "${PY}" "${GPU_RETRIEVAL_SERVER}" \
+  echo "Starting ${COSEARCH_ACCELERATOR} dense retriever: devices=${RETRIEVER_GPU_IDS}, doc_dtype=${DOC_DTYPE}, port=${PORT}" >&2
+  exec env $(co_accel_env_visible_devices_cmd "${RETRIEVER_GPU_IDS}") "${PY}" "${GPU_RETRIEVAL_SERVER}" \
     --index_path "${INDEX_FILE}" \
     --corpus_path "${CORPUS_FILE}" \
     --topk 50 \
@@ -178,7 +179,7 @@ PY
 fi
 
 echo "Starting CPU dense retriever: port=${PORT}" >&2
-exec env CUDA_VISIBLE_DEVICES="${RETRIEVER_GPU_IDS}" "${PY}" "${SEARCH_R1_RETRIEVAL_SERVER}" \
+exec env $(co_accel_env_visible_devices_cmd "${RETRIEVER_GPU_IDS}") "${PY}" "${SEARCH_R1_RETRIEVAL_SERVER}" \
   --index_path "${INDEX_FILE}" \
   --corpus_path "${CORPUS_FILE}" \
   --topk 50 \

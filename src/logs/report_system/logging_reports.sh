@@ -276,6 +276,28 @@ cosearch_start_training_reporter() {
 
 cosearch_start_nvidia_smi_sampler() {
   if ! command -v nvidia-smi >/dev/null 2>&1; then
+    if [[ -z "${COSEARCH_ACCELERATOR:-}" ]]; then
+      local _report_root
+      _report_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+      if [[ -f "${_report_root}/src/env_manage/compatible_accelerator.sh" ]]; then
+        source "${_report_root}/src/env_manage/compatible_accelerator.sh"
+      fi
+    fi
+    if [[ "${COSEARCH_ACCELERATOR:-}" == "npu" || "${COSEARCH_ACCELERATOR:-}" == "ascend" ]] && command -v npu-smi >/dev/null 2>&1; then
+      echo "timestamp,accelerator_snapshot" > "${NVIDIA_SMI_CSV}"
+      (
+        while true; do
+          printf '%s,' "$(date --iso-8601=seconds)" >> "${NVIDIA_SMI_CSV}"
+          npu-smi info 2>/dev/null | tr '\n' ' ' | sed 's/[[:space:]][[:space:]]*/ /g' >> "${NVIDIA_SMI_CSV}" || true
+          printf '\n' >> "${NVIDIA_SMI_CSV}"
+          sleep "${NVIDIA_SMI_INTERVAL:-10}"
+        done
+      ) &
+      NVIDIA_SMI_PGID=$!
+      export NVIDIA_SMI_PGID
+      echo "npu-smi sampling enabled: interval=${NVIDIA_SMI_INTERVAL:-10}s csv=${NVIDIA_SMI_CSV}"
+      return
+    fi
     echo "WARN: nvidia-smi not found; GPU utilization sampling disabled" >&2
     NVIDIA_SMI_PGID=""
     export NVIDIA_SMI_PGID

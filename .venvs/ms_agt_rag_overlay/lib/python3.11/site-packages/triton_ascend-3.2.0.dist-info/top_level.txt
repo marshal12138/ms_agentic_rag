@@ -1,0 +1,14 @@
+triton
+triton/_C
+triton/backends
+triton/backends/ascend
+triton/compiler
+triton/language
+triton/language/extra
+triton/language/extra/ascend
+triton/runtime
+triton/tools
+triton/triton_patch
+triton/triton_patch/compiler
+triton/triton_patch/language
+triton/triton_patch/runtime

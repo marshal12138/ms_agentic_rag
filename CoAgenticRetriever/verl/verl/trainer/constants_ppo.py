@@ -48,7 +48,10 @@ def get_ppo_ray_runtime_env():
         "env_vars": PPO_RAY_RUNTIME_ENV["env_vars"].copy(),
         **({"working_dir": None} if working_dir is None else {}),
     }
+    for key in os.environ:
+        if key.startswith("VLLM_ASCEND_"):
+            runtime_env["env_vars"].setdefault(key, os.environ[key])
     for key in list(runtime_env["env_vars"].keys()):
-        if os.environ.get(key) is not None:
+        if os.environ.get(key) is not None and not key.startswith("VLLM_ASCEND_"):
             runtime_env["env_vars"].pop(key, None)
     return runtime_env

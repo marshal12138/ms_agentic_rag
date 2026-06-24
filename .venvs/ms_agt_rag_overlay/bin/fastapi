@@ -1,0 +1,8 @@
+#!/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/.venvs/ms_agt_rag_overlay/bin/python
+# -*- coding: utf-8 -*-
+import re
+import sys
+from fastapi.cli import main
+if __name__ == '__main__':
+    sys.argv[0] = re.sub(r'(-script\.pyw|\.exe)?$', '', sys.argv[0])
+    sys.exit(main())

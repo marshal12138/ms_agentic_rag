@@ -190,9 +190,39 @@ task_sequence_run() {
 task_sequence_collect_gpu_processes() {
   local gpu_list="$1"
   local output_file="$2"
-  local tmp_dir gpu_file gpu_info_file gpu_uuid_file gpu_apps_file
+  local tmp_dir gpu_file gpu_info_file gpu_uuid_file gpu_apps_file available_file missing_file
 
   gpu_wait_validate_gpu_list "${gpu_list}"
+  if [[ "${COSEARCH_ACCELERATOR:-}" == "npu" || "${COSEARCH_ACCELERATOR:-}" == "ascend" ]]; then
+    if ! command -v npu-smi >/dev/null 2>&1; then
+      echo "ERROR: npu-smi is required for NPU process collection." >&2
+      return 2
+    fi
+
+    tmp_dir="$(mktemp -d)"
+    gpu_file="${tmp_dir}/npus.txt"
+    available_file="${tmp_dir}/available_npus.txt"
+    missing_file="${tmp_dir}/missing_npus.txt"
+
+    gpu_wait_csv_to_lines "${gpu_list}" > "${gpu_file}"
+    co_accel_device_ids > "${available_file}"
+    awk 'NR==FNR {want[$1]=1; next} {seen[$1]=1} END {for (id in want) if (!(id in seen)) print id}' \
+      "${gpu_file}" "${available_file}" > "${missing_file}"
+    if [[ -s "${missing_file}" ]]; then
+      echo "ERROR: some requested NPU ids do not exist: ${gpu_list}" >&2
+      rm -rf "${tmp_dir}"
+      return 2
+    fi
+
+    co_accel_processes | awk -F', *' '
+      NR==FNR {want[$1]=1; next}
+      ($1 in want) && $2 != "" && $2 != "-" {print $1 "\t" $2 "\t" $3 "\t" $4}
+    ' "${gpu_file}" - > "${output_file}" || true
+
+    rm -rf "${tmp_dir}"
+    return 0
+  fi
+
   if ! command -v nvidia-smi >/dev/null 2>&1; then
     echo "ERROR: nvidia-smi is required for GPU process collection." >&2
     return 2

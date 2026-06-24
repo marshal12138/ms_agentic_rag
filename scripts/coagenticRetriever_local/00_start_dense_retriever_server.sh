@@ -21,9 +21,10 @@ GPU_DENSE_RETRIEVER_SERVER="${GPU_DENSE_RETRIEVER_SERVER:-${RETRIEVER_SRC_DIR}/g
 VERIFY_RETRIEVAL_ASSETS="${VERIFY_RETRIEVAL_ASSETS:-${RETRIEVER_SRC_DIR}/verify_official_retrieval_assets.py}"
 
 source "/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/src/env_manage/compatible_python.sh"
+source "/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/src/env_manage/compatible_accelerator.sh"
 PORT="${PORT:-8030}"
 HOST="${HOST:-0.0.0.0}"
-DEVICE="${DEVICE:-cuda}"
+DEVICE="${DEVICE:-$(co_accel_device_prefix)}"
 RECALL_GPU_ID="${RECALL_GPU_ID:-5}"
 RETRIEVER_GPU_IDS="${RETRIEVER_GPU_IDS:-${GPU_ID:-${RECALL_GPU_ID}}}"
 RECALL_TOP_K="${RECALL_TOP_K:-50}"
@@ -53,6 +54,7 @@ INDEX_FILE=${INDEX_FILE}
 CORPUS_FILE=${CORPUS_FILE}
 RETRIEVER_MODEL=${RETRIEVER_MODEL}
 CUDA_VISIBLE_DEVICES=${RETRIEVER_GPU_IDS}
+$(co_accel_visible_devices_var)=${RETRIEVER_GPU_IDS}
 DEVICE=${DEVICE}
 DOC_DTYPE=${DOC_DTYPE}
 QUERY_BATCH_SIZE=${QUERY_BATCH_SIZE}
@@ -85,17 +87,16 @@ if [[ ! -f "${VERIFY_RETRIEVAL_ASSETS}" ]]; then
   exit 2
 fi
 
-if [[ "${DEVICE}" != cuda* ]]; then
-  echo "ERROR: CoAgenticRetriever dense retrieval server requires DEVICE=cuda; got DEVICE=${DEVICE}" >&2
+if [[ "${DEVICE}" != "$(co_accel_device_prefix)"* ]]; then
+  echo "ERROR: CoAgenticRetriever dense retrieval server requires DEVICE prefix $(co_accel_device_prefix); got DEVICE=${DEVICE}" >&2
   exit 2
 fi
 
-if ! env CUDA_VISIBLE_DEVICES="${RETRIEVER_GPU_IDS}" "${PY}" - <<'PY'
-import torch
-raise SystemExit(0 if torch.cuda.is_available() else 1)
+if ! env $(co_accel_env_visible_devices_cmd "${RETRIEVER_GPU_IDS}") "${PY}" - <<PY
+$(co_accel_python_available_expr)
 PY
 then
-  echo "ERROR: CUDA is not visible to PyTorch for dense retrieval server; refusing to run on CPU." >&2
+  echo "ERROR: ${COSEARCH_ACCELERATOR} accelerator is not visible to PyTorch for dense retrieval server; refusing to run on CPU." >&2
   exit 2
 fi
 
@@ -104,11 +105,11 @@ fi
   --corpus "${CORPUS_FILE}"
 
 echo "Starting GPU dense retriever from ${GPU_DENSE_RETRIEVER_SERVER}" >&2
-echo "  CUDA_VISIBLE_DEVICES=${RETRIEVER_GPU_IDS}" >&2
-echo "  device=${DEVICE}; doc embeddings will be loaded into GPU memory as ${DOC_DTYPE}" >&2
+echo "  $(co_accel_visible_devices_var)=${RETRIEVER_GPU_IDS}" >&2
+echo "  device=${DEVICE}; doc embeddings will be loaded into ${COSEARCH_ACCELERATOR} memory as ${DOC_DTYPE}" >&2
 echo "  retrieval endpoint=http://${HOST}:${PORT}/retrieve, topk=${RECALL_TOP_K}" >&2
 
-exec env CUDA_VISIBLE_DEVICES="${RETRIEVER_GPU_IDS}" "${PY}" "${GPU_DENSE_RETRIEVER_SERVER}" \
+exec env $(co_accel_env_visible_devices_cmd "${RETRIEVER_GPU_IDS}") "${PY}" "${GPU_DENSE_RETRIEVER_SERVER}" \
   --index_path "${INDEX_FILE}" \
   --corpus_path "${CORPUS_FILE}" \
   --topk "${RECALL_TOP_K}" \

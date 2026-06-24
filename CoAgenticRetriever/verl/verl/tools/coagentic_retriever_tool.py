@@ -44,6 +44,12 @@ def _require_present_config(config: dict, key: str):
     return config[key]
 
 
+def _as_bool(value: Any) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+    return bool(value)
+
+
 class CoAgenticRetrieverTool(BaseTool):
     """Recall retriever plus dense ranker search tool.
 
@@ -94,19 +100,24 @@ class CoAgenticRetrieverTool(BaseTool):
         self.retry_delay = float(_require_config(config, "retry_delay"))
         self.retry_backoff = float(_require_config(config, "retry_backoff"))
 
-        ranker_config = dict(_require_config(config, "ranker"))
-        self.ranker_enabled = bool(_require_config(config, "ranker_enabled"))
-        if not self.ranker_enabled:
-            raise ValueError("ranker_enabled must be true; CoAgenticRetrieverTool must not fall back")
-        self.ranker_backend = str(_require_config(ranker_config, "backend")).strip().lower()
-        ranker_required = bool(_require_config(ranker_config, "required"))
-        if not ranker_required:
-            raise ValueError("ranker.required must be true; CoAgenticRetrieverTool must not fall back")
-        self.ranker_actor_name = str(_require_config(ranker_config, "actor_name"))
-        self.ranker_actor_namespace = _require_present_config(ranker_config, "actor_namespace")
-        self.ranker_top_k = int(_require_config(ranker_config, "top_k"))
-        self.ranker_max_query_length = int(_require_config(ranker_config, "max_query_length"))
-        self.ranker_max_doc_length = int(_require_config(ranker_config, "max_doc_length"))
+        ranker_config = dict(config.get("ranker") or {})
+        self.ranker_enabled = _as_bool(_require_config(config, "ranker_enabled"))
+        self.ranker_backend = "disabled"
+        self.ranker_actor_name = ""
+        self.ranker_actor_namespace = None
+        self.ranker_top_k = self.default_top_n
+        self.ranker_max_query_length = 0
+        self.ranker_max_doc_length = 0
+        if self.ranker_enabled:
+            self.ranker_backend = str(_require_config(ranker_config, "backend")).strip().lower()
+            ranker_required = _as_bool(_require_config(ranker_config, "required"))
+            if not ranker_required:
+                raise ValueError("ranker.required must be true when ranker_enabled=true")
+            self.ranker_actor_name = str(_require_config(ranker_config, "actor_name"))
+            self.ranker_actor_namespace = _require_present_config(ranker_config, "actor_namespace")
+            self.ranker_top_k = int(_require_config(ranker_config, "top_k"))
+            self.ranker_max_query_length = int(_require_config(ranker_config, "max_query_length"))
+            self.ranker_max_doc_length = int(_require_config(ranker_config, "max_doc_length"))
         self.ranker = None
         self.ranker_actor = None
         if self.ranker_enabled and self.ranker_backend == "local":
@@ -174,8 +185,11 @@ class CoAgenticRetrieverTool(BaseTool):
 
         try:
             if not self.ranker_enabled:
-                raise RuntimeError("ranker_enabled=false is not allowed for CoAgenticRetrieverTool")
-            if self.ranker is None:
+                ranked_docs = recall_docs
+                metrics["ranker_success"] = False
+                metrics["ranker_skipped"] = True
+                metrics["ranker_backend"] = "disabled"
+            elif self.ranker is None:
                 if self.ranker_backend != "ray_actor":
                     raise RuntimeError(f"ranker backend {self.ranker_backend!r} is not initialized")
                 ranked_docs = await self._rank_with_shared_actor(query, recall_docs)

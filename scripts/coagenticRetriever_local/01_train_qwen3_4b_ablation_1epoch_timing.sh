@@ -7,6 +7,7 @@ set -euo pipefail
 # LLM updates and dense ranker contrastive updates enabled.
 # RUN_MODE=ranker-only validates only the dense ranker contrastive framework
 # without starting full LLM rollout.
+# RUN_MODE=no-ranker runs agent training with recall top-M only.
 # 默认使用cosearch原prompt进行训练；
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -19,6 +20,7 @@ source "${ROOT}/src/hydra_overrides/hydra_overrides.sh"
 setup_agent_iteration_paths "${ROOT}"
 
 source "/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/src/env_manage/compatible_python.sh"
+source "/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/src/env_manage/compatible_accelerator.sh"
 PROJECT_ROOT="${COAGENTIC_PROJECT_ROOT:-${ROOT}/CoAgenticRetriever}"
 EXP_NAME="${EXP_NAME:-}" # 必须给出新的 EXP_NAME 来区分不同实验； 测试运行可以写test,不知道怎么写就写default；
 GROUP_NAME="${GROUP_NAME:-coAgenticRetriever}"
@@ -44,8 +46,11 @@ case "${RUN_MODE}" in
   ranker-only)
     EFFECTIVE_RUN_MODE="ranker-only"
     ;;
+  no-ranker)
+    EFFECTIVE_RUN_MODE="no-ranker"
+    ;;
   *)
-    echo "ERROR: unsupported RUN_MODE=${RUN_MODE}; use full or ranker-only" >&2
+    echo "ERROR: unsupported RUN_MODE=${RUN_MODE}; use full, ranker-only, or no-ranker" >&2
     exit 2
     ;;
 esac
@@ -66,7 +71,11 @@ COAGENTIC_ROLLOUT_ITEM_PROGRESS_INTERVAL="${COAGENTIC_ROLLOUT_ITEM_PROGRESS_INTE
 CHECKPOINT_KEEP_LATEST_GLOBAL_STEPS="${CHECKPOINT_KEEP_LATEST_GLOBAL_STEPS:-1}"
 CHECKPOINT_DELETE_OLD_GLOBAL_STEPS="${CHECKPOINT_DELETE_OLD_GLOBAL_STEPS:-1}"
 CHECKPOINT_DELETE_EMPTY_GLOBAL_STEPS="${CHECKPOINT_DELETE_EMPTY_GLOBAL_STEPS:-1}"
-CHECKPOINT_TRAINABLE_ROLES="${CHECKPOINT_TRAINABLE_ROLES:-actor ranker}"
+if [[ "${EFFECTIVE_RUN_MODE}" == "no-ranker" ]]; then
+  CHECKPOINT_TRAINABLE_ROLES="${CHECKPOINT_TRAINABLE_ROLES:-actor}"
+else
+  CHECKPOINT_TRAINABLE_ROLES="${CHECKPOINT_TRAINABLE_ROLES:-actor ranker}"
+fi
 CHECKPOINT_REMOVE_ROOT_DIRS="${CHECKPOINT_REMOVE_ROOT_DIRS:-ranker retriever rollout_data validation_data}"
 CHECKPOINT_REMOVE_ROOT_GLOBS="${CHECKPOINT_REMOVE_ROOT_GLOBS:-ranker_contrastive_smoke_metrics.jsonl}"
 REPORTER_PGID=""
@@ -114,7 +123,7 @@ esac
 
 PROXY_PORT="${PROXY_PORT:-8030}"
 RETRIEVAL_SERVICE_URL="${RETRIEVAL_SERVICE_URL:-http://127.0.0.1:${PROXY_PORT}/retrieve}"
-RETRIEVER_DEVICE="${RETRIEVER_DEVICE:-cuda}"
+RETRIEVER_DEVICE="${RETRIEVER_DEVICE:-$(co_accel_device_prefix)}"
 AUTO_START_RECALL_SERVICE="${AUTO_START_RECALL_SERVICE:-1}"
 AUTO_STOP_RECALL_SERVICE="${AUTO_STOP_RECALL_SERVICE:-1}"
 RECALL_SERVICE_WAIT_SECONDS="${RECALL_SERVICE_WAIT_SECONDS:-240}"
@@ -129,6 +138,13 @@ LLM_JUDGE_ENDPOINT="${LLM_JUDGE_ENDPOINT:-http://127.0.0.1:8067/v1/chat/completi
 LLM_JUDGE_PREFLIGHT="${LLM_JUDGE_PREFLIGHT:-1}"
 LLM_JUDGE_WAIT_SECONDS="${LLM_JUDGE_WAIT_SECONDS:-600}"
 ASYNC_LABELING_LOG_DIR="${ASYNC_LABELING_LOG_DIR:-${LOG_DIR}/async_labeling}"
+if [[ "${EFFECTIVE_RUN_MODE}" == "no-ranker" ]]; then
+  ENABLE_ASYNC_LABELING=0
+  ASYNC_LABELING_YAML=""
+  AUTO_START_LLM_JUDGE=0
+  AUTO_STOP_LLM_JUDGE=0
+  LLM_JUDGE_PREFLIGHT=0
+fi
 
 RANKER_CONTRASTIVE_BATCH_SIZE="${RANKER_CONTRASTIVE_BATCH_SIZE:-}"
 RANKER_GRADIENT_ACCUMULATION_STEPS="${RANKER_GRADIENT_ACCUMULATION_STEPS:-}"
@@ -145,9 +161,15 @@ RECALL_TOP_K="${RECALL_TOP_K:-50}"
 RANK_TOP_K="${RANK_TOP_K:-}"
 TOP_N="${TOP_N:-${RECALL_TOP_K}}"
 TOP_M="${TOP_M:-5}"
-RECALL_RETRIEVER_CONFIG_DEVICE="${RECALL_RETRIEVER_CONFIG_DEVICE:-cuda:${RECALL_GPU_ID}}"
+RECALL_RETRIEVER_CONFIG_DEVICE="${RECALL_RETRIEVER_CONFIG_DEVICE:-$(co_accel_device_spec "${RECALL_GPU_ID}")}"
 RANKER_CONFIG_DEVICE="${RANKER_CONFIG_DEVICE:-}"
-TOOL_CONFIG="${PROJECT_ROOT}/config/coagentic_retriever_tool_config.yaml"
+DEFAULT_TOOL_CONFIG="${PROJECT_ROOT}/config/coagentic_retriever_tool_config.yaml"
+DEFAULT_NO_RANKER_TOOL_CONFIG="${PROJECT_ROOT}/config/coagentic_retriever_tool_config_no_ranker.yaml"
+if [[ "${EFFECTIVE_RUN_MODE}" == "no-ranker" ]]; then
+  TOOL_CONFIG="${TOOL_CONFIG:-${DEFAULT_NO_RANKER_TOOL_CONFIG}}"
+else
+  TOOL_CONFIG="${TOOL_CONFIG:-${DEFAULT_TOOL_CONFIG}}"
+fi
 
 load_static_tool_config() {
   local parsed
@@ -185,6 +207,7 @@ except Exception:
 emit("STATIC_DEFAULT_TOP_N", config.get("default_top_n", ""))
 emit("STATIC_DEFAULT_TOP_M", config.get("default_top_m", ""))
 emit("STATIC_FORMAT_PENALTY", config.get("format_penalty", ""))
+emit("STATIC_RANKER_ENABLED", config.get("ranker_enabled", ""))
 ' "${TOOL_CONFIG}")"
   eval "${parsed}"
 
@@ -196,13 +219,26 @@ emit("STATIC_FORMAT_PENALTY", config.get("format_penalty", ""))
   TOP_N="${STATIC_DEFAULT_TOP_N}"
   TOP_M="${STATIC_DEFAULT_TOP_M}"
   FORMAT_PENALTY="${STATIC_FORMAT_PENALTY}"
-  RECALL_RETRIEVER_CONFIG_DEVICE="cuda:${RECALL_GPU_ID}"
-  GPU_IDS="${AGENT_GPU_IDS},${RANK_GPU_ID}"
+  RECALL_RETRIEVER_CONFIG_DEVICE="$(co_accel_device_spec "${RECALL_GPU_ID}")"
+  COAGENTIC_RANKER_ENABLED="${STATIC_RANKER_ENABLED}"
+  if [[ -z "${COAGENTIC_RANKER_ENABLED}" ]]; then
+    echo "ERROR: tool config must explicitly set ranker_enabled." >&2
+    exit 2
+  fi
+  if [[ "${COAGENTIC_RANKER_ENABLED}" == "false" ]]; then
+    GPU_IDS="${AGENT_GPU_IDS}"
+  else
+    GPU_IDS="${AGENT_GPU_IDS},${RANK_GPU_ID}"
+  fi
+  if [[ "${EFFECTIVE_RUN_MODE}" == "no-ranker" && "${COAGENTIC_RANKER_ENABLED}" != "false" ]]; then
+    echo "ERROR: RUN_MODE=no-ranker requires TOOL_CONFIG with ranker_enabled: false; got ${TOOL_CONFIG}" >&2
+    exit 2
+  fi
 }
 
 load_static_tool_config
 RANKER_DEVICE_TRAIN="${RANKER_DEVICE_TRAIN:-}"
-RECALL_RETRIEVER_DEVICE="${RECALL_RETRIEVER_DEVICE:-cuda:1}"
+RECALL_RETRIEVER_DEVICE="${RECALL_RETRIEVER_DEVICE:-$(co_accel_device_spec 1)}"
 
 RECALL_SERVICE_LOG="${RECALL_SERVICE_LOG:-${LOG_DIR}/${RUN_NAME}.recall_retriever_server.log}"
 RECALL_SERVICE_PID=""
@@ -593,7 +629,7 @@ if [[ "${EFFECTIVE_RUN_MODE}" == "ranker-only" ]]; then
   ensure_recall_service
   coagentic_start_nvidia_smi_sampler
   coagentic_start_training_reporter "${ROOT}"
-  export CUDA_VISIBLE_DEVICES="${RANKER_ONLY_CUDA_VISIBLE_DEVICES:-${RANK_GPU_ID},${RECALL_GPU_ID}}"
+  co_accel_export_visible_devices "${RANKER_ONLY_CUDA_VISIBLE_DEVICES:-${RANK_GPU_ID},${RECALL_GPU_ID}}"
   for name in \
     RANKER_CONTRASTIVE_BATCH_SIZE \
     RANKER_GRADIENT_ACCUMULATION_STEPS \
@@ -687,13 +723,18 @@ export ENABLE_ASYNC_LABELING
 export ASYNC_LABELING_YAML
 export LLM_JUDGE_ENDPOINT
 export ASYNC_LABELING_LOG_DIR
+export TOOL_CONFIG
 export SAVE_TOP_N_DOCUMENTS=true
 export COAGENTIC_RETRIEVER_LLM_IO_JSONL="${COAGENTIC_RETRIEVER_LLM_IO_JSONL:-${LOG_DIR}/${RUN_NAME}.llm_io.jsonl}"
 export COAGENTIC_RETRIEVER_LLM_IO_MAX_RECORDS="${COAGENTIC_RETRIEVER_LLM_IO_MAX_RECORDS:-20}"
 
 export COAGENTIC_MAIN="${PROJECT_ROOT}/main_coagentic_retriever.py"
 USER_COAGENTIC_EXTRA_ARGS="${COAGENTIC_EXTRA_ARGS:-}"
-DEFAULT_COAGENTIC_EXTRA_ARGS="trainer.ranker_trainable=true trainer.ranker_update_mode=contrastive trainer.disable_reranker_rollout=true recall_retriever.model_path=${RECALL_MODEL_PATH} recall_retriever.device=${RECALL_RETRIEVER_CONFIG_DEVICE} recall_retriever.service_url=${RETRIEVAL_SERVICE_URL} recall_retriever.top_k=${RECALL_TOP_K} recall_retriever.trainable=false recall_retriever.index_refresh=false ranker_training.construction_log_jsonl=${LOG_DIR}/${RUN_NAME}.contrastive_construction.jsonl"
+if [[ "${EFFECTIVE_RUN_MODE}" == "no-ranker" ]]; then
+  DEFAULT_COAGENTIC_EXTRA_ARGS="trainer.ranker_trainable=false trainer.ranker_update_mode=disabled trainer.disable_reranker_rollout=true ranker_training.shared_inference_ranker.enable=false ranker_training.async_labeling.enable=false ranker_training.signal_source=pseudo_rank recall_retriever.model_path=${RECALL_MODEL_PATH} recall_retriever.device=${RECALL_RETRIEVER_CONFIG_DEVICE} recall_retriever.service_url=${RETRIEVAL_SERVICE_URL} recall_retriever.top_k=${RECALL_TOP_K} recall_retriever.trainable=false recall_retriever.index_refresh=false"
+else
+  DEFAULT_COAGENTIC_EXTRA_ARGS="trainer.ranker_trainable=true trainer.ranker_update_mode=contrastive trainer.disable_reranker_rollout=true recall_retriever.model_path=${RECALL_MODEL_PATH} recall_retriever.device=${RECALL_RETRIEVER_CONFIG_DEVICE} recall_retriever.service_url=${RETRIEVAL_SERVICE_URL} recall_retriever.top_k=${RECALL_TOP_K} recall_retriever.trainable=false recall_retriever.index_refresh=false ranker_training.construction_log_jsonl=${LOG_DIR}/${RUN_NAME}.contrastive_construction.jsonl"
+fi
 if [[ -n "${RANKER_STEPS_PER_GLOBAL_STEP}" ]]; then
   DEFAULT_COAGENTIC_EXTRA_ARGS+=" trainer.ranker_steps_per_global_step=${RANKER_STEPS_PER_GLOBAL_STEP}"
 fi

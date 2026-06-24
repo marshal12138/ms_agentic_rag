@@ -1,0 +1,37 @@
+# CoAgenticRetriever search tool configuration for recall-only/no-ranker training.
+
+tools:
+  - class_name: verl.tools.coagentic_retriever_tool.CoAgenticRetrieverTool
+    config:
+      type: native
+
+      retrieval_service_url: "http://127.0.0.1:8030/retrieve"
+      timeout: 30
+
+      max_retries: 3
+      retry_delay: 1.0
+      retry_backoff: 2.0
+
+      default_top_n: 50
+      default_top_m: 5
+      hit_cutoffs: [1, 3, 5]
+      tool_score_metric: "hit"
+      trivial_answers: ["yes", "no", "true", "false"]
+      format_penalty: -0.2
+      max_concurrent_per_worker: 4
+
+      # false means the tool keeps recall order and exposes recall top-M to the agent.
+      ranker_enabled: false
+      ranker:
+        backend: ray_actor
+        actor_name: coagentic_shared_dense_ranker
+        actor_namespace: null
+        required: false
+        model_path: /data01/ms_wksp/agent_up_to_date/models/retriever/e5-base-v2
+        encoder_path: /data01/ms_wksp/agent_up_to_date/models/retriever/e5-base-v2
+        device: cuda:4
+        shared_encoder: true
+        top_k: 50
+        max_query_length: 256
+        max_doc_length: 512
+        trust_remote_code: true

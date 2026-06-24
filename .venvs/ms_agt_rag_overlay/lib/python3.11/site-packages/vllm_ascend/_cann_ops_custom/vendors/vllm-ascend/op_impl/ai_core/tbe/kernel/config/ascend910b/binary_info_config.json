@@ -1,0 +1,776 @@
+{
+  "AddRmsNormBias": {
+    "dynamicRankSupport": true,
+    "simplifiedKeyMode": 0,
+    "optionalInputMode": "gen_placeholder",
+    "optionalOutputMode": "gen_placeholder",
+    "params": {
+      "inputs": [
+        {
+          "name": "x1",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "x2",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "gamma",
+          "index": 2,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "beta",
+          "index": 3,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "y",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "rstd",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "x",
+          "index": 2,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "epsilon"
+        }
+      ]
+    },
+    "binaryList": [
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "AddRmsNormBias/d=0,p=1/0,2/0,2/0,2/0,2/0,2/0,2",
+          "AddRmsNormBias/d=0,p=0/0,2/0,2/0,2/0,2/0,2/0,2",
+          "AddRmsNormBias/d=1,p=1/0,2/0,2/0,2/0,2/0,2/0,2",
+          "AddRmsNormBias/d=1,p=0/0,2/0,2/0,2/0,2/0,2/0,2"
+        ],
+        "binPath": "ascend910b/add_rms_norm_bias/AddRmsNormBias_19e35017264aa50680f35d13d8badd71.o",
+        "jsonPath": "ascend910b/add_rms_norm_bias/AddRmsNormBias_19e35017264aa50680f35d13d8badd71.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "AddRmsNormBias/d=0,p=1/27,2/27,2/27,2/27,2/0,2/27,2",
+          "AddRmsNormBias/d=0,p=0/27,2/27,2/27,2/27,2/0,2/27,2",
+          "AddRmsNormBias/d=1,p=1/27,2/27,2/27,2/27,2/0,2/27,2",
+          "AddRmsNormBias/d=1,p=0/27,2/27,2/27,2/27,2/0,2/27,2"
+        ],
+        "binPath": "ascend910b/add_rms_norm_bias/AddRmsNormBias_352d2859a07d64c080e8dfc836d9897f.o",
+        "jsonPath": "ascend910b/add_rms_norm_bias/AddRmsNormBias_352d2859a07d64c080e8dfc836d9897f.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "AddRmsNormBias/d=0,p=1/1,2/1,2/1,2/1,2/0,2/1,2",
+          "AddRmsNormBias/d=0,p=0/1,2/1,2/1,2/1,2/0,2/1,2",
+          "AddRmsNormBias/d=1,p=1/1,2/1,2/1,2/1,2/0,2/1,2",
+          "AddRmsNormBias/d=1,p=0/1,2/1,2/1,2/1,2/0,2/1,2"
+        ],
+        "binPath": "ascend910b/add_rms_norm_bias/AddRmsNormBias_6dc9d65746f49267d3d534b1b9ba85f9.o",
+        "jsonPath": "ascend910b/add_rms_norm_bias/AddRmsNormBias_6dc9d65746f49267d3d534b1b9ba85f9.json"
+      }
+    ]
+  },
+  "GroupedMatmulSwigluQuantWeightNzTensorList": {
+    "dynamicRankSupport": true,
+    "simplifiedKeyMode": 0,
+    "optionalInputMode": "gen_placeholder",
+    "optionalOutputMode": "gen_placeholder",
+    "params": {
+      "inputs": [
+        {
+          "name": "x",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        [
+          {
+            "name": "weight",
+            "index": 1,
+            "paramType": "dynamic",
+            "formatMode": "static_nd_agnostic"
+          }
+        ],
+        [
+          {
+            "name": "weight_scale",
+            "index": 2,
+            "paramType": "dynamic",
+            "formatMode": "static_nd_agnostic"
+          }
+        ],
+        {
+          "name": "x_scale",
+          "index": 3,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "group_list",
+          "index": 4,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "y",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "y_scale",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ]
+    },
+    "binaryList": [
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "GroupedMatmulSwigluQuantWeightNzTensorList/d=0,p=1/2,2/2,29/27,2/0,2/9,2/2,2/0,2",
+          "GroupedMatmulSwigluQuantWeightNzTensorList/d=0,p=0/2,2/2,29/27,2/0,2/9,2/2,2/0,2",
+          "GroupedMatmulSwigluQuantWeightNzTensorList/d=1,p=1/2,2/2,29/27,2/0,2/9,2/2,2/0,2",
+          "GroupedMatmulSwigluQuantWeightNzTensorList/d=1,p=0/2,2/2,29/27,2/0,2/9,2/2,2/0,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/grouped_matmul_swiglu_quant_weight_nz_tensor_list/GroupedMatmulSwigluQuantWeightNzTensorList_59a1b0c9ba0c8f4dbafbf76e78f36d3a.o",
+        "jsonPath": "ascend910b/grouped_matmul_swiglu_quant_weight_nz_tensor_list/GroupedMatmulSwigluQuantWeightNzTensorList_59a1b0c9ba0c8f4dbafbf76e78f36d3a.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "GroupedMatmulSwigluQuantWeightNzTensorList/d=0,p=1/2,2/2,29/1,2/0,2/9,2/2,2/0,2",
+          "GroupedMatmulSwigluQuantWeightNzTensorList/d=0,p=0/2,2/2,29/1,2/0,2/9,2/2,2/0,2",
+          "GroupedMatmulSwigluQuantWeightNzTensorList/d=1,p=1/2,2/2,29/1,2/0,2/9,2/2,2/0,2",
+          "GroupedMatmulSwigluQuantWeightNzTensorList/d=1,p=0/2,2/2,29/1,2/0,2/9,2/2,2/0,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/grouped_matmul_swiglu_quant_weight_nz_tensor_list/GroupedMatmulSwigluQuantWeightNzTensorList_735bee94ebf43b20f682fe91d5acf025.o",
+        "jsonPath": "ascend910b/grouped_matmul_swiglu_quant_weight_nz_tensor_list/GroupedMatmulSwigluQuantWeightNzTensorList_735bee94ebf43b20f682fe91d5acf025.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "GroupedMatmulSwigluQuantWeightNzTensorList/d=0,p=1/2,2/2,29/0,2/0,2/9,2/2,2/0,2",
+          "GroupedMatmulSwigluQuantWeightNzTensorList/d=0,p=0/2,2/2,29/0,2/0,2/9,2/2,2/0,2",
+          "GroupedMatmulSwigluQuantWeightNzTensorList/d=1,p=1/2,2/2,29/0,2/0,2/9,2/2,2/0,2",
+          "GroupedMatmulSwigluQuantWeightNzTensorList/d=1,p=0/2,2/2,29/0,2/0,2/9,2/2,2/0,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/grouped_matmul_swiglu_quant_weight_nz_tensor_list/GroupedMatmulSwigluQuantWeightNzTensorList_a736d6d385ece2c74b43e22e7dc52689.o",
+        "jsonPath": "ascend910b/grouped_matmul_swiglu_quant_weight_nz_tensor_list/GroupedMatmulSwigluQuantWeightNzTensorList_a736d6d385ece2c74b43e22e7dc52689.json"
+      }
+    ]
+  },
+  "LightningIndexer": {
+    "dynamicRankSupport": true,
+    "simplifiedKeyMode": 0,
+    "optionalInputMode": "gen_placeholder",
+    "optionalOutputMode": "gen_placeholder",
+    "params": {
+      "inputs": [
+        {
+          "name": "query",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "key",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "weights",
+          "index": 2,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "actual_seq_lengths_query",
+          "index": 3,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "actual_seq_lengths_key",
+          "index": 4,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "block_table",
+          "index": 5,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "sparse_indices",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "layout_query"
+        },
+        {
+          "name": "layout_key"
+        },
+        {
+          "name": "sparse_count"
+        },
+        {
+          "name": "sparse_mode"
+        }
+      ]
+    },
+    "binaryList": [
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "LightningIndexer/d=0,p=1/1,2/1,2/1,2/3,2",
+          "LightningIndexer/d=0,p=0/1,2/1,2/1,2/3,2",
+          "LightningIndexer/d=1,p=1/1,2/1,2/1,2/3,2",
+          "LightningIndexer/d=1,p=0/1,2/1,2/1,2/3,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/lightning_indexer/LightningIndexer_3661522d98ae90073032b63ce37149ea.o",
+        "jsonPath": "ascend910b/lightning_indexer/LightningIndexer_3661522d98ae90073032b63ce37149ea.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "LightningIndexer/d=0,p=1/27,2/27,2/27,2/3,2",
+          "LightningIndexer/d=0,p=0/27,2/27,2/27,2/3,2",
+          "LightningIndexer/d=1,p=1/27,2/27,2/27,2/3,2",
+          "LightningIndexer/d=1,p=0/27,2/27,2/27,2/3,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/lightning_indexer/LightningIndexer_cd3769f98c6c8ab8a03ffb8fb9732823.o",
+        "jsonPath": "ascend910b/lightning_indexer/LightningIndexer_cd3769f98c6c8ab8a03ffb8fb9732823.json"
+      }
+    ]
+  },
+  "MatmulAllreduceAddRmsnorm": {
+    "dynamicRankSupport": true,
+    "simplifiedKeyMode": 0,
+    "optionalInputMode": "gen_placeholder",
+    "optionalOutputMode": "gen_placeholder",
+    "params": {
+      "inputs": [
+        {
+          "name": "x1",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "x2",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "residual",
+          "index": 2,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "gamma",
+          "index": 3,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "y",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "add_out",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "group_tp"
+        },
+        {
+          "name": "tp_rank_size"
+        },
+        {
+          "name": "tp_rank_id"
+        },
+        {
+          "name": "epsilon"
+        },
+        {
+          "name": "is_trans_b"
+        },
+        {
+          "name": "is_gather_add_out"
+        }
+      ]
+    },
+    "binaryList": [
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "MatmulAllreduceAddRmsnorm/d=0,p=1/27,2/27,2/27,2/27,2/27,2/27,2",
+          "MatmulAllreduceAddRmsnorm/d=0,p=0/27,2/27,2/27,2/27,2/27,2/27,2",
+          "MatmulAllreduceAddRmsnorm/d=1,p=1/27,2/27,2/27,2/27,2/27,2/27,2",
+          "MatmulAllreduceAddRmsnorm/d=1,p=0/27,2/27,2/27,2/27,2/27,2/27,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/matmul_allreduce_add_rmsnorm/MatmulAllreduceAddRmsnorm_bfef8aaa7a074dfc8ac343d3e6492497.o",
+        "jsonPath": "ascend910b/matmul_allreduce_add_rmsnorm/MatmulAllreduceAddRmsnorm_bfef8aaa7a074dfc8ac343d3e6492497.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "MatmulAllreduceAddRmsnorm/d=0,p=1/1,2/1,2/1,2/1,2/1,2/1,2",
+          "MatmulAllreduceAddRmsnorm/d=0,p=0/1,2/1,2/1,2/1,2/1,2/1,2",
+          "MatmulAllreduceAddRmsnorm/d=1,p=1/1,2/1,2/1,2/1,2/1,2/1,2",
+          "MatmulAllreduceAddRmsnorm/d=1,p=0/1,2/1,2/1,2/1,2/1,2/1,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/matmul_allreduce_add_rmsnorm/MatmulAllreduceAddRmsnorm_d690727640f624ffb9f66c44036234b8.o",
+        "jsonPath": "ascend910b/matmul_allreduce_add_rmsnorm/MatmulAllreduceAddRmsnorm_d690727640f624ffb9f66c44036234b8.json"
+      }
+    ]
+  },
+  "MoeGatingTopK": {
+    "dynamicRankSupport": true,
+    "simplifiedKeyMode": 0,
+    "optionalInputMode": "gen_placeholder",
+    "optionalOutputMode": "gen_placeholder",
+    "params": {
+      "inputs": [
+        {
+          "name": "x",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "bias",
+          "index": 1,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "y",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "expert_idx",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "out",
+          "index": 2,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "k"
+        },
+        {
+          "name": "k_group"
+        },
+        {
+          "name": "group_count"
+        },
+        {
+          "name": "group_select_mode"
+        },
+        {
+          "name": "renorm"
+        },
+        {
+          "name": "norm_type"
+        },
+        {
+          "name": "out_flag"
+        },
+        {
+          "name": "routed_scaling_factor"
+        },
+        {
+          "name": "eps"
+        }
+      ]
+    },
+    "binaryList": [
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "MoeGatingTopK/d=0,p=1/1,2/1,2/3,2/0,2",
+          "MoeGatingTopK/d=0,p=0/1,2/1,2/3,2/0,2",
+          "MoeGatingTopK/d=1,p=1/1,2/1,2/3,2/0,2",
+          "MoeGatingTopK/d=1,p=0/1,2/1,2/3,2/0,2"
+        ],
+        "binPath": "ascend910b/moe_gating_top_k/MoeGatingTopK_600198027c25530951785e436a150069.o",
+        "jsonPath": "ascend910b/moe_gating_top_k/MoeGatingTopK_600198027c25530951785e436a150069.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "MoeGatingTopK/d=0,p=1/0,2/0,2/3,2/0,2",
+          "MoeGatingTopK/d=0,p=0/0,2/0,2/3,2/0,2",
+          "MoeGatingTopK/d=1,p=1/0,2/0,2/3,2/0,2",
+          "MoeGatingTopK/d=1,p=0/0,2/0,2/3,2/0,2"
+        ],
+        "binPath": "ascend910b/moe_gating_top_k/MoeGatingTopK_81369a2fa0455f39b5d19d432d261f57.o",
+        "jsonPath": "ascend910b/moe_gating_top_k/MoeGatingTopK_81369a2fa0455f39b5d19d432d261f57.json"
+      },
+      {
+        "coreType": 2,
+        "simplifiedKey": [
+          "MoeGatingTopK/d=0,p=1/27,2/27,2/3,2/0,2",
+          "MoeGatingTopK/d=0,p=0/27,2/27,2/3,2/0,2",
+          "MoeGatingTopK/d=1,p=1/27,2/27,2/3,2/0,2",
+          "MoeGatingTopK/d=1,p=0/27,2/27,2/3,2/0,2"
+        ],
+        "binPath": "ascend910b/moe_gating_top_k/MoeGatingTopK_85043434be9263d9775e83ed1918b0a1.o",
+        "jsonPath": "ascend910b/moe_gating_top_k/MoeGatingTopK_85043434be9263d9775e83ed1918b0a1.json"
+      }
+    ]
+  },
+  "MoeInitRoutingCustom": {
+    "dynamicRankSupport": true,
+    "simplifiedKeyMode": 0,
+    "optionalInputMode": "gen_placeholder",
+    "optionalOutputMode": "gen_placeholder",
+    "params": {
+      "inputs": [
+        {
+          "name": "x",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "expert_idx",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "scale",
+          "index": 2,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "offset",
+          "index": 3,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "expanded_x",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "expanded_row_idx",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "expert_tokens_count_or_cumsum",
+          "index": 2,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "expanded_scale",
+          "index": 3,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "active_num"
+        },
+        {
+          "name": "expert_capacity"
+        },
+        {
+          "name": "expert_num"
+        },
+        {
+          "name": "drop_pad_mode"
+        },
+        {
+          "name": "expert_tokens_num_type"
+        },
+        {
+          "name": "expert_tokens_num_flag"
+        },
+        {
+          "name": "quant_mode"
+        },
+        {
+          "name": "active_expert_range"
+        },
+        {
+          "name": "row_idx_type"
+        }
+      ]
+    },
+    "binaryList": [
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "MoeInitRoutingCustom/d=0,p=1/1,2/3,2/2,2/3,2/9,2/0,2",
+          "MoeInitRoutingCustom/d=0,p=0/1,2/3,2/2,2/3,2/9,2/0,2",
+          "MoeInitRoutingCustom/d=1,p=1/1,2/3,2/2,2/3,2/9,2/0,2",
+          "MoeInitRoutingCustom/d=1,p=0/1,2/3,2/2,2/3,2/9,2/0,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/moe_init_routing_custom/MoeInitRoutingCustom_103c6bf9757a4db3c1bbbfcf552f797b.o",
+        "jsonPath": "ascend910b/moe_init_routing_custom/MoeInitRoutingCustom_103c6bf9757a4db3c1bbbfcf552f797b.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "MoeInitRoutingCustom/d=0,p=1/2,2/3,2/2,2/3,2/9,2/0,2",
+          "MoeInitRoutingCustom/d=0,p=0/2,2/3,2/2,2/3,2/9,2/0,2",
+          "MoeInitRoutingCustom/d=1,p=1/2,2/3,2/2,2/3,2/9,2/0,2",
+          "MoeInitRoutingCustom/d=1,p=0/2,2/3,2/2,2/3,2/9,2/0,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/moe_init_routing_custom/MoeInitRoutingCustom_6f86ac41300a95d6b875df6144a1258d.o",
+        "jsonPath": "ascend910b/moe_init_routing_custom/MoeInitRoutingCustom_6f86ac41300a95d6b875df6144a1258d.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "MoeInitRoutingCustom/d=0,p=1/1,2/3,2/1,2/3,2/9,2/0,2",
+          "MoeInitRoutingCustom/d=0,p=0/1,2/3,2/1,2/3,2/9,2/0,2",
+          "MoeInitRoutingCustom/d=1,p=1/1,2/3,2/1,2/3,2/9,2/0,2",
+          "MoeInitRoutingCustom/d=1,p=0/1,2/3,2/1,2/3,2/9,2/0,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/moe_init_routing_custom/MoeInitRoutingCustom_83ea20a79ec31274731fe9c3378ffc21.o",
+        "jsonPath": "ascend910b/moe_init_routing_custom/MoeInitRoutingCustom_83ea20a79ec31274731fe9c3378ffc21.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "MoeInitRoutingCustom/d=0,p=1/27,2/3,2/2,2/3,2/9,2/0,2",
+          "MoeInitRoutingCustom/d=0,p=0/27,2/3,2/2,2/3,2/9,2/0,2",
+          "MoeInitRoutingCustom/d=1,p=1/27,2/3,2/2,2/3,2/9,2/0,2",
+          "MoeInitRoutingCustom/d=1,p=0/27,2/3,2/2,2/3,2/9,2/0,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/moe_init_routing_custom/MoeInitRoutingCustom_c16c6bc489e206f21949f807202f3cb0.o",
+        "jsonPath": "ascend910b/moe_init_routing_custom/MoeInitRoutingCustom_c16c6bc489e206f21949f807202f3cb0.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "MoeInitRoutingCustom/d=0,p=1/0,2/3,2/2,2/3,2/9,2/0,2",
+          "MoeInitRoutingCustom/d=0,p=0/0,2/3,2/2,2/3,2/9,2/0,2",
+          "MoeInitRoutingCustom/d=1,p=1/0,2/3,2/2,2/3,2/9,2/0,2",
+          "MoeInitRoutingCustom/d=1,p=0/0,2/3,2/2,2/3,2/9,2/0,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/moe_init_routing_custom/MoeInitRoutingCustom_dbb3315443e3bbcaf60545e29487f972.o",
+        "jsonPath": "ascend910b/moe_init_routing_custom/MoeInitRoutingCustom_dbb3315443e3bbcaf60545e29487f972.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "MoeInitRoutingCustom/d=0,p=1/0,2/3,2/0,2/3,2/9,2/0,2",
+          "MoeInitRoutingCustom/d=0,p=0/0,2/3,2/0,2/3,2/9,2/0,2",
+          "MoeInitRoutingCustom/d=1,p=1/0,2/3,2/0,2/3,2/9,2/0,2",
+          "MoeInitRoutingCustom/d=1,p=0/0,2/3,2/0,2/3,2/9,2/0,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/moe_init_routing_custom/MoeInitRoutingCustom_f0cc9094cbc1179c081bfde0b95f6b1d.o",
+        "jsonPath": "ascend910b/moe_init_routing_custom/MoeInitRoutingCustom_f0cc9094cbc1179c081bfde0b95f6b1d.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "MoeInitRoutingCustom/d=0,p=1/27,2/3,2/27,2/3,2/9,2/0,2",
+          "MoeInitRoutingCustom/d=0,p=0/27,2/3,2/27,2/3,2/9,2/0,2",
+          "MoeInitRoutingCustom/d=1,p=1/27,2/3,2/27,2/3,2/9,2/0,2",
+          "MoeInitRoutingCustom/d=1,p=0/27,2/3,2/27,2/3,2/9,2/0,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/moe_init_routing_custom/MoeInitRoutingCustom_f4e5d4358d52376e96d5f6100c6fbfcd.o",
+        "jsonPath": "ascend910b/moe_init_routing_custom/MoeInitRoutingCustom_f4e5d4358d52376e96d5f6100c6fbfcd.json"
+      }
+    ]
+  },
+  "SparseFlashAttention": {
+    "dynamicRankSupport": true,
+    "simplifiedKeyMode": 0,
+    "optionalInputMode": "gen_placeholder",
+    "optionalOutputMode": "gen_placeholder",
+    "params": {
+      "inputs": [
+        {
+          "name": "query",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "key",
+          "index": 1,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "value",
+          "index": 2,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "sparse_indices",
+          "index": 3,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "block_table",
+          "index": 4,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "actual_seq_lengths_query",
+          "index": 5,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "actual_seq_lengths_kv",
+          "index": 6,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "query_rope",
+          "index": 7,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        },
+        {
+          "name": "key_rope",
+          "index": 8,
+          "paramType": "optional",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "attention_out",
+          "index": 0,
+          "paramType": "required",
+          "formatMode": "static_nd_agnostic"
+        }
+      ],
+      "attrs": [
+        {
+          "name": "scale_value"
+        },
+        {
+          "name": "sparse_block_size"
+        },
+        {
+          "name": "layout_query"
+        },
+        {
+          "name": "layout_kv"
+        },
+        {
+          "name": "sparse_mode"
+        }
+      ]
+    },
+    "binaryList": [
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "SparseFlashAttention/d=0,p=1/27,2/27,2/27,2/3,2/27,2",
+          "SparseFlashAttention/d=0,p=0/27,2/27,2/27,2/3,2/27,2",
+          "SparseFlashAttention/d=1,p=1/27,2/27,2/27,2/3,2/27,2",
+          "SparseFlashAttention/d=1,p=0/27,2/27,2/27,2/3,2/27,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/sparse_flash_attention/SparseFlashAttention_4da5fbfbea7101b99c367715f4b4a51e.o",
+        "jsonPath": "ascend910b/sparse_flash_attention/SparseFlashAttention_4da5fbfbea7101b99c367715f4b4a51e.json"
+      },
+      {
+        "coreType": 0,
+        "simplifiedKey": [
+          "SparseFlashAttention/d=0,p=1/1,2/1,2/1,2/3,2/1,2",
+          "SparseFlashAttention/d=0,p=0/1,2/1,2/1,2/3,2/1,2",
+          "SparseFlashAttention/d=1,p=1/1,2/1,2/1,2/3,2/1,2",
+          "SparseFlashAttention/d=1,p=0/1,2/1,2/1,2/3,2/1,2"
+        ],
+        "multiKernelType": 1,
+        "binPath": "ascend910b/sparse_flash_attention/SparseFlashAttention_7f7ea6bc29bdc5fe2c90de44422a6e0e.o",
+        "jsonPath": "ascend910b/sparse_flash_attention/SparseFlashAttention_7f7ea6bc29bdc5fe2c90de44422a6e0e.json"
+      }
+    ]
+  }
+}

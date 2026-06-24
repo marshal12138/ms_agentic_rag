@@ -34,6 +34,9 @@ fi
 if [[ -f "${ROOT}/src/env_manage/compatible_llm_judge.sh" ]]; then
   source "${ROOT}/src/env_manage/compatible_llm_judge.sh"
 fi
+if [[ -f "${ROOT}/src/env_manage/compatible_accelerator.sh" ]]; then
+  source "${ROOT}/src/env_manage/compatible_accelerator.sh"
+fi
 
 if [[ ! -f "${CONFIG_PATH}" ]]; then
   echo "ERROR: LLM judge service config not found: ${CONFIG_PATH}" >&2
@@ -111,7 +114,9 @@ if [[ "${DRY_RUN:-0}" == "1" ]]; then
   echo "PORT=${PORT}"
   echo "PY=${PY}"
   echo "VLLM=${VLLM}"
+  echo "COSEARCH_ACCELERATOR=${COSEARCH_ACCELERATOR:-gpu}"
   echo "GPU_IDS=${GPU_IDS}"
+  echo "$(co_accel_visible_devices_var)=${GPU_IDS}"
   echo "TP_SIZE=${TP_SIZE}"
   echo "GPU_MEMORY_UTILIZATION=${GPU_MEMORY_UTILIZATION}"
   echo "MAX_MODEL_LEN=${MAX_MODEL_LEN}"
@@ -140,8 +145,13 @@ if [[ ! -d "${MODEL_PATH}" ]]; then
   exit 2
 fi
 
-cmd=(
-  env CUDA_VISIBLE_DEVICES="${GPU_IDS}"
+cmd=(env)
+if co_accel_is_npu; then
+  cmd+=(ASCEND_RT_VISIBLE_DEVICES="${GPU_IDS}" CUDA_VISIBLE_DEVICES="${GPU_IDS}")
+else
+  cmd+=(CUDA_VISIBLE_DEVICES="${GPU_IDS}")
+fi
+cmd+=(
   "${VLLM}" serve "${MODEL_PATH}"
   --served-model-name "${SERVED_MODEL_NAME}"
   --tensor-parallel-size "${TP_SIZE}"
@@ -161,7 +171,7 @@ case "${DISABLE_CUSTOM_ALL_REDUCE}" in
     ;;
 esac
 
-echo "starting vLLM judge: model=${MODEL_PATH}, gpus=${GPU_IDS}, port=${PORT}, log=${LOG_FILE}"
+echo "starting vLLM judge: model=${MODEL_PATH}, accelerator=${COSEARCH_ACCELERATOR:-gpu}, devices=${GPU_IDS}, port=${PORT}, log=${LOG_FILE}"
 setsid "${cmd[@]}" > "${LOG_FILE}" 2>&1 &
 pid=$!
 echo "${pid}" > "${PID_FILE}"

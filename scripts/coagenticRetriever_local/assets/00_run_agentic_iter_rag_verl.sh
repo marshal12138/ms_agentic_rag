@@ -10,6 +10,7 @@ if [[ -d "${PROJECT_ROOT}" ]]; then
   PROJECT_ROOT="$(cd "${PROJECT_ROOT}" && pwd)"
 fi
 source "/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/src/env_manage/compatible_python.sh"
+source "/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/src/env_manage/compatible_accelerator.sh"
 source "${ROOT}/src/logs/report_system/logging_reports.sh"
 source "${ROOT}/src/hydra_overrides/hydra_overrides.sh"
 source "${SCRIPT_DIR}/00_project_paths.sh"
@@ -73,6 +74,8 @@ ACTOR_LR="${ACTOR_LR:-1e-6}"
 ACTOR_BATCH_SIZE="${ACTOR_BATCH_SIZE:-${TRAIN_BATCH_SIZE}}"
 ACTOR_MICRO_BATCH_SIZE_PER_GPU="${ACTOR_MICRO_BATCH_SIZE_PER_GPU:-1}"
 LOG_PROB_MICRO_BATCH_SIZE_PER_GPU="${LOG_PROB_MICRO_BATCH_SIZE_PER_GPU:-1}"
+NCCL_TIMEOUT="${NCCL_TIMEOUT:-${HCCL_TIMEOUT:-}}"
+ACTOR_USE_TORCH_COMPILE="${ACTOR_USE_TORCH_COMPILE:-}"
 LORA_RANK="${LORA_RANK:-0}"
 LORA_ALPHA="${LORA_ALPHA:-16}"
 KL_LOSS_COEF="${KL_LOSS_COEF:-0.001}"
@@ -96,7 +99,7 @@ COAGENTIC_RANKER_ENABLED="${COAGENTIC_RANKER_ENABLED:-}"
 COAGENTIC_TOOL_CLASS_NAME="${COAGENTIC_TOOL_CLASS_NAME:-verl.tools.coagentic_retriever_tool.CoAgenticRetrieverTool}"
 COAGENTIC_AGENT_LOOP_NAME="${COAGENTIC_AGENT_LOOP_NAME:-coagentic_retriever_agent}"
 COAGENTIC_AGENT_LOOP_CONFIG="${COAGENTIC_AGENT_LOOP_CONFIG:-${PROJECT_ROOT}/config/coagentic_retriever_agent_loop_config.yaml}"
-TOOL_CONFIG="${PROJECT_ROOT}/config/coagentic_retriever_tool_config.yaml"
+TOOL_CONFIG="${TOOL_CONFIG:-${PROJECT_ROOT}/config/coagentic_retriever_tool_config.yaml}"
 
 load_static_tool_config() {
   local parsed
@@ -206,8 +209,14 @@ if [[ "${PYTORCH_CUDA_ALLOC_CONF:-}" == *"expandable_segments:True"* && "${ALLOW
 elif [[ -n "${PYTORCH_CUDA_ALLOC_CONF:-}" ]]; then
   export PYTORCH_CUDA_ALLOC_CONF
 fi
-export CUDA_VISIBLE_DEVICES="${GPU_IDS}"
+co_accel_export_visible_devices "${GPU_IDS}"
 export RAY_EXPERIMENTAL_NOSET_CUDA_VISIBLE_DEVICES=1
+if co_accel_is_npu; then
+  export RAY_EXPERIMENTAL_NOSET_ASCEND_RT_VISIBLE_DEVICES=1
+  NCCL_TIMEOUT="${NCCL_TIMEOUT:-1800}"
+  ACTOR_USE_TORCH_COMPILE="${ACTOR_USE_TORCH_COMPILE:-False}"
+fi
+ACTOR_USE_TORCH_COMPILE="${ACTOR_USE_TORCH_COMPILE:-true}"
 export TOKENIZERS_PARALLELISM=false
 export VLLM_DISABLE_FLASHINFER=1
 export VLLM_USE_FLASHINFER_SAMPLER=0
@@ -262,6 +271,7 @@ exec "${PY}" "${COAGENTIC_MAIN}" \
   actor_rollout_ref.model.trust_remote_code=True \
   +actor_rollout_ref.model.override_config.attn_implementation="${ATTN_IMPLEMENTATION}" \
   actor_rollout_ref.model.use_remove_padding="${USE_REMOVE_PADDING}" \
+  actor_rollout_ref.nccl_timeout="${NCCL_TIMEOUT:-600}" \
   actor_rollout_ref.model.lora_rank="${LORA_RANK}" \
   actor_rollout_ref.model.lora_alpha="${LORA_ALPHA}" \
   actor_rollout_ref.rollout.tensor_model_parallel_size="${TP_SIZE}" \
@@ -297,6 +307,7 @@ exec "${PY}" "${COAGENTIC_MAIN}" \
   actor_rollout_ref.actor.optim.lr_warmup_steps_ratio=0.0 \
   actor_rollout_ref.actor.use_kl_loss=True \
   actor_rollout_ref.actor.kl_loss_type=low_var_kl \
+  actor_rollout_ref.actor.use_torch_compile="${ACTOR_USE_TORCH_COMPILE}" \
   actor_rollout_ref.actor.ulysses_sequence_parallel_size=1 \
   actor_rollout_ref.actor.fsdp_config.param_offload=True \
   actor_rollout_ref.actor.fsdp_config.optimizer_offload=True \
@@ -310,6 +321,7 @@ exec "${PY}" "${COAGENTIC_MAIN}" \
   +custom_reward_function.reward_kwargs.format_penalty="${FORMAT_PENALTY}" \
   trainer.nnodes="${NNODES}" \
   trainer.n_gpus_per_node="${N_GPUS_PER_NODE}" \
+  trainer.device="$(co_accel_device_prefix)" \
   trainer.total_epochs=1 \
   "${trainer_total_step_args[@]}" \
   trainer.experiment_name="${EXP_NAME}" \

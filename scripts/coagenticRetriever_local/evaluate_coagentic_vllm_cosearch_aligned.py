@@ -633,6 +633,13 @@ class LocalE5Ranker:
 
         if device.startswith("cuda") and not torch.cuda.is_available():
             raise RuntimeError(f"ranker device {device} requires CUDA, but torch.cuda.is_available() is False")
+        if device.startswith("npu"):
+            try:
+                import torch_npu  # noqa: F401
+            except Exception as exc:
+                raise RuntimeError(f"ranker device {device} requires torch_npu, but import failed: {exc}") from exc
+            if not hasattr(torch, "npu") or not torch.npu.is_available():
+                raise RuntimeError(f"ranker device {device} requires NPU, but torch.npu.is_available() is False")
         self.torch = torch
         self.functional = F
         self.device = torch.device(device)

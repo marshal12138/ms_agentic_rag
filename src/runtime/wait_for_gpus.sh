@@ -3,6 +3,14 @@
 # Shared GPU wait helpers for training/evaluation task launchers.
 # Can be sourced as a library or executed directly as a small CLI.
 
+if ! declare -F co_accel_device_ids >/dev/null 2>&1; then
+  _gpu_wait_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+  if [[ -f "${_gpu_wait_root}/src/env_manage/compatible_accelerator.sh" ]]; then
+    source "${_gpu_wait_root}/src/env_manage/compatible_accelerator.sh"
+  fi
+  unset _gpu_wait_root
+fi
+
 gpu_wait_is_truthy() {
   case "${1:-}" in
     1|true|TRUE|yes|YES|on|ON) return 0 ;;
@@ -53,6 +61,10 @@ wait_for_gpu_release() {
     return 2
   fi
   if ! command -v nvidia-smi >/dev/null 2>&1; then
+    if [[ "${COSEARCH_ACCELERATOR:-}" == "npu" || "${COSEARCH_ACCELERATOR:-}" == "ascend" ]]; then
+      wait_for_npu_release "${gpu_csv}" "${interval}" "${timeout}" "${label}"
+      return $?
+    fi
     echo "ERROR: nvidia-smi is required for GPU wait." >&2
     return 2
   fi
@@ -100,6 +112,70 @@ wait_for_gpu_release() {
     fi
 
     echo "${label}: target GPUs still busy; checking again in ${interval}s. Busy processes:"
+    cat "${busy_file}"
+    sleep "${interval}"
+  done
+}
+
+wait_for_npu_release() {
+  local npu_csv="$1"
+  local interval="${2:-${WAIT_FOR_GPU_INTERVAL_SECONDS:-30}}"
+  local timeout="${3:-${WAIT_FOR_GPU_TIMEOUT_SECONDS:-0}}"
+  local label="${4:-${WAIT_FOR_GPU_LABEL:-NPU wait}}"
+
+  gpu_wait_validate_gpu_list "${npu_csv}"
+  if ! [[ "${interval}" =~ ^[0-9]+$ ]] || (( interval < 1 )); then
+    echo "ERROR: NPU wait interval must be a positive integer; got ${interval}" >&2
+    return 2
+  fi
+  if ! [[ "${timeout}" =~ ^[0-9]+$ ]]; then
+    echo "ERROR: NPU wait timeout must be a non-negative integer; got ${timeout}" >&2
+    return 2
+  fi
+  if ! command -v npu-smi >/dev/null 2>&1; then
+    echo "ERROR: npu-smi is required for NPU wait." >&2
+    return 2
+  fi
+
+  local tmp_dir
+  tmp_dir="$(mktemp -d)"
+  local npu_file="${tmp_dir}/npus.txt"
+  local available_file="${tmp_dir}/available.txt"
+  local missing_file="${tmp_dir}/missing.txt"
+  local busy_file="${tmp_dir}/busy.txt"
+  local start_ts now_ts elapsed
+
+  gpu_wait_csv_to_lines "${npu_csv}" > "${npu_file}"
+  co_accel_device_ids > "${available_file}"
+  awk 'NR==FNR {want[$1]=1; next} {seen[$1]=1} END {for (npu in want) if (!(npu in seen)) print npu}' "${npu_file}" "${available_file}" > "${missing_file}"
+  if [[ -s "${missing_file}" ]]; then
+    echo "ERROR: ${label}: requested NPU ids do not exist:" >&2
+    cat "${missing_file}" >&2
+    gpu_wait_cleanup_tmp "${tmp_dir}"
+    return 2
+  fi
+
+  start_ts="$(date +%s)"
+  echo "${label}: waiting for NPUs to be free: ${npu_csv}"
+  while true; do
+    co_accel_processes | awk -F', ' 'NR==FNR {want[$1]=1; next} ($1 in want) {print $0}' "${npu_file}" - > "${busy_file}" || true
+    if [[ ! -s "${busy_file}" ]]; then
+      echo "${label}: target NPUs are free."
+      gpu_wait_cleanup_tmp "${tmp_dir}"
+      return 0
+    fi
+
+    now_ts="$(date +%s)"
+    elapsed=$((now_ts - start_ts))
+    if (( timeout > 0 && elapsed >= timeout )); then
+      echo "ERROR: ${label}: timed out after ${elapsed}s waiting for NPUs: ${npu_csv}" >&2
+      echo "Busy processes:" >&2
+      cat "${busy_file}" >&2
+      gpu_wait_cleanup_tmp "${tmp_dir}"
+      return 124
+    fi
+
+    echo "${label}: target NPUs still busy; checking again in ${interval}s. Busy processes:"
     cat "${busy_file}"
     sleep "${interval}"
   done
