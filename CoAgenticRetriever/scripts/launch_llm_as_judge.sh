@@ -3,6 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+ROOT="$(cd "${PROJECT_ROOT}/.." && pwd)"
 CONFIG_PATH="${PROJECT_ROOT}/async_labeling/configs/llm_judge_vllm_deepseek_flash_gpu06_07.yaml"
 
 while [[ "$#" -gt 0 ]]; do
@@ -22,7 +23,17 @@ while [[ "$#" -gt 0 ]]; do
   esac
 done
 
-PY_CONFIG="${PY_CONFIG:-/data04/envs/ms/ms_cosearch_official/bin/python}"
+if [[ -z "${PY_CONFIG:-}" ]]; then
+  if [[ -f "${ROOT}/src/env_manage/compatible_python.sh" ]]; then
+    source "${ROOT}/src/env_manage/compatible_python.sh"
+    PY_CONFIG="${PY}"
+  else
+    PY_CONFIG="/data04/envs/ms/ms_cosearch_official/bin/python"
+  fi
+fi
+if [[ -f "${ROOT}/src/env_manage/compatible_llm_judge.sh" ]]; then
+  source "${ROOT}/src/env_manage/compatible_llm_judge.sh"
+fi
 
 if [[ ! -f "${CONFIG_PATH}" ]]; then
   echo "ERROR: LLM judge service config not found: ${CONFIG_PATH}" >&2
