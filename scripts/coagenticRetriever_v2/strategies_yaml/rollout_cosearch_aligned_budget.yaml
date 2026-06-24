@@ -1,0 +1,21 @@
+# CoSearch-aligned rollout budget defaults for CoAgenticRetriever training.
+#
+# This file owns prompt/context budget defaults. Task scripts should select this
+# YAML instead of exporting MAX_* shell variables for these values.
+
+data:
+  max_prompt_length: 12000
+  max_response_length: 4096
+  apply_chat_template_kwargs:
+    enable_thinking: false
+
+actor_rollout_ref:
+  rollout:
+    prompt_length: 12000
+    response_length: 4096
+    max_model_len: 16096
+    max_num_batched_tokens: 16096
+    multi_turn:
+      max_assistant_turns: 6
+      max_user_turns: 6
+      max_tool_response_length: 4096

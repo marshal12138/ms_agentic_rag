@@ -101,3 +101,5 @@ Thumbs.db
 !/src/**
 /src/**/__pycache__/
 /src/**/*.py[cod]
+/src/**/*.swp
+/src/**/*.swo

@@ -1,0 +1,57 @@
+# CoAgenticRetriever search tool configuration.
+
+tools:
+  # 搜索工具类；agent 发出 search tool call 时会调用这个实现。
+  - class_name: verl.tools.coagentic_retriever_tool.CoAgenticRetrieverTool
+    config:
+      # 工具类型标记；当前实现按本地/原生 HTTP recall retriever + 本地 ranker 使用。
+      type: native
+
+      # recall retriever HTTP 服务地址；工具会向该地址请求候选文档。
+      retrieval_service_url: "http://127.0.0.1:8030/retrieve"
+      # 单次 recall 请求超时时间，单位秒。
+      timeout: 30
+
+      # recall 请求失败后的最大重试次数。
+      max_retries: 3
+      # 第一次重试前等待时间，单位秒。
+      retry_delay: 1.0
+      # 每次失败后重试等待时间的放大倍率。
+      retry_backoff: 2.0
+
+      # recall retriever 每次返回的候选文档数；默认流程是先取 recall top-N。
+      default_top_n: 50
+      # 最终格式化进 tool response、交给 agent 继续 think/generate 的文档数上限。
+      default_top_m: 5
+      # 工具奖励 hit 指标的 cutoff 列表，例如 hit@1/hit@3/hit@5。
+      hit_cutoffs: [1, 3, 5]
+      # 工具奖励指标类型；hit 表示按答案是否命中文档计算，ndcg 表示按 NDCG 计算。
+      tool_score_metric: "hit"
+      # 这些答案被视为简单答案；计算 answer_in_docs 时会特殊处理，避免无意义匹配。
+      trivial_answers: ["yes", "no", "true", "false"]
+      # 格式惩罚系数；供 reward 相关逻辑使用。
+      format_penalty: -0.2
+      # 每个 worker 内允许并发执行的 search tool 请求数。
+      max_concurrent_per_worker: 4
+
+      # 是否启用本地 dense ranker；false 时会跳过 ranker，直接用 recall top-N 的原始顺序。
+      ranker_enabled: true
+      # 本地 dense ranker 配置；ranker_enabled=true 时才会初始化并参与重排。
+      ranker:
+        # ranker 基座模型路径，通常是 e5 retriever encoder。
+        model_path: /data01/ms_wksp/agent_up_to_date/models/retriever/e5-base-v2
+        # 已训练 rank encoder 路径；null 表示直接使用 model_path。
+        encoder_path: null
+        # ranker 推理设备。
+        device: cuda:4
+        # 是否共享 encoder 配置；由 LocalE5RankerWorker 使用。
+        shared_encoder: true
+        # 注意：当前工具代码会对 recall top-N 全量重排；这里的 top_k 不控制重排池大小，
+        # 而是作为最终交给 agent 的文档数上限之一：min(default_top_m, ranker.top_k, 文档数)。
+        top_k: 50
+        # ranker 编码 query 的最大 token 长度。
+        max_query_length: 256
+        # ranker 编码单篇文档/chunk 的最大 token 长度。
+        max_doc_length: 512
+        # 加载 HuggingFace/Transformers 模型时是否允许 remote code。
+        trust_remote_code: true

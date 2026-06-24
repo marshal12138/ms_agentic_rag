@@ -105,4 +105,4 @@ export COAGENTIC_EXTRA_ARGS="${COAGENTIC_EXTRA_ARGS:-${DEFAULT_COAGENTIC_EXTRA_A
 # - RUN_STAMP=... 可固定 run-name 时间戳/前缀，便于复现实验日志目录。
 wait_for_gpus_if_enabled
 
-bash "${ROOT}/scripts/coagenticRetriever_local/01_train_qwen3_4b_ablation_1epoch_timing.sh" "$@"
+bash "${ROOT}/scripts/coagenticRetriever_v2/01_train_qwen3_4b_ablation_1epoch_timing.sh" "$@"

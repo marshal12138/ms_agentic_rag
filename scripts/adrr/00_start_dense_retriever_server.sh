@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-ROOT=/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 # =========================
@@ -16,14 +15,14 @@ EXTERNAL_RETRIEVAL_ROOT="${EXTERNAL_RETRIEVAL_ROOT:-${COAGENTIC_LEARN_ROOT}/data
 RETRIEVAL_DATA_DIR="${RETRIEVAL_DATA_DIR:-${EXTERNAL_RETRIEVAL_ROOT}/wiki-18}"
 INDEX_FILE="${INDEX_FILE:-${RETRIEVAL_DATA_DIR}/e5_Flat.index}"
 CORPUS_FILE="${CORPUS_FILE:-${RETRIEVAL_DATA_DIR}/wiki-18.jsonl}"
-BM25_FILE="${BM25_FILE:-${RETRIEVAL_DATA_DIR}/../bm25_wiki18_20k.pkl}"
+BM25_FILE="${BM25_FILE:-${RETRIEVAL_DATA_DIR}/bm25/bm25}"
 GRAPH_FILE="${GRAPH_FILE:-${SCRIPT_DIR}/wiki_graph.graphml}"
 RETRIEVER_MODEL="${RETRIEVER_MODEL:-${EXTERNAL_MODEL_ROOT}/retriever/e5-base-v2}"
 RETRIEVER_SRC_DIR="${RETRIEVER_SRC_DIR:-${SCRIPT_DIR}/src/retrievers}"
-GPU_DENSE_RETRIEVER_SERVER="${GPU_DENSE_RETRIEVER_SERVER:-${RETRIEVER_SRC_DIR}/gpu_dense_retriever_server.py}"
+GPU_DENSE_RETRIEVER_SERVER="${GPU_DENSE_RETRIEVER_SERVER:-${RETRIEVER_SRC_DIR}/gpu_dense_retriever_server_weight.py}"
 VERIFY_RETRIEVAL_ASSETS="${VERIFY_RETRIEVAL_ASSETS:-${RETRIEVER_SRC_DIR}/verify_official_retrieval_assets.py}"
 
-source "/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/src/env_manage/compatible_python.sh"
+PY="${PY:-/data04/envs/ms/ms_cosearch_official/bin/python}"
 PORT="${PORT:-8030}"
 HOST="${HOST:-0.0.0.0}"
 DEVICE="${DEVICE:-cuda}"

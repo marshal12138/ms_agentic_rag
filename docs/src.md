@@ -255,3 +255,6 @@ GPU 模式资源和对齐注意事项：
 - 训练和评估脚本启动 dense retriever 时，应调用 `src/retrievers/start_dense_retriever_server.sh`。
 - 需要多个 retriever 后端负载均衡时，应调用 `src/retrievers/retrieval_round_robin_proxy.py`。
 - 不要从 `scripts/cosearch_local/` 或 `scripts/coagenticRetriever_local/` 跨目录引用 retriever 启动脚本；这些目录只放各自实验入口。
+
+## `src/configs/
+配置管理
