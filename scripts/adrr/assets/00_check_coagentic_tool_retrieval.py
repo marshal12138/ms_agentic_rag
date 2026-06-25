@@ -17,7 +17,7 @@ def main() -> None:
     parser.add_argument("--top-m", type=int, default=3)
     parser.add_argument("--dense-weight", type=float, default=1.0)
     parser.add_argument("--bm25-weight", type=float, default=0.0)
-    parser.add_argument("--graph-weight", type=float, default=0.0)
+    parser.add_argument("--heavy-weight", type=float, default=0.0)
     parser.add_argument("--expect-contains", default="Röntgen")
     parser.add_argument("--timeout", type=float, default=120.0)
     args = parser.parse_args()
@@ -39,7 +39,7 @@ def main() -> None:
             "queries": [args.query],
             "dense_weight": args.dense_weight,
             "bm25_weight": args.bm25_weight,
-            "graph_weight": args.graph_weight,
+            "heavy_weight": args.heavy_weight,
             "topk": args.top_n,
             "return_scores": True,
         }

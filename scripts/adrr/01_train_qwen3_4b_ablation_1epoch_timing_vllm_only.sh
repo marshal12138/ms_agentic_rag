@@ -49,10 +49,10 @@ case "${RUN_MODE}" in
     exit 2
     ;;
 esac
-AGENT_GPU_IDS="${AGENT_GPU_IDS:-0,1}"
+AGENT_GPU_IDS="${AGENT_GPU_IDS:-0,1,2,3}"
 AGENT_N_GPUS_PER_NODE="${AGENT_N_GPUS_PER_NODE:-$(awk -F',' '{print NF}' <<< "${AGENT_GPU_IDS}")}"
-RECALL_GPU_ID="${RECALL_GPU_ID:-3}"
-RANK_GPU_ID="${RANK_GPU_ID:-2}"
+RECALL_GPU_ID="${RECALL_GPU_ID:-5}"
+RANK_GPU_ID="${RANK_GPU_ID:-4}"
 GPU_IDS="${GPU_IDS:-${AGENT_GPU_IDS},${RANK_GPU_ID}}"
 RANKER_VISIBLE_DEVICE_INDEX="${RANKER_VISIBLE_DEVICE_INDEX:-${AGENT_N_GPUS_PER_NODE}}"
 MAIN_GPU_IDS="${MAIN_GPU_IDS:-${AGENT_GPU_IDS}}"
@@ -249,7 +249,7 @@ import sys
 import urllib.request
 
 url, query = sys.argv[1:3]
-payload = json.dumps({"queries": [query], "bm25_weight":0.3, "dense_weight":0.4, "graph_weight":0.3, "topk": 1, "return_scores": False}).encode("utf-8")
+payload = json.dumps({"queries": [query], "bm25_weight":0.3, "dense_weight":0.4, "heavy_weight":0.3, "topk": 1, "return_scores": False}).encode("utf-8")
 
 request = urllib.request.Request(
     url,

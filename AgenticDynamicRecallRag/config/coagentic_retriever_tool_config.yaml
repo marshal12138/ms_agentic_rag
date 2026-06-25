@@ -45,7 +45,7 @@ tools:
         # ranker 推理设备。注意：主训练进程会设置 CUDA_VISIBLE_DEVICES=GPU_IDS
         # (=AGENT_GPU_IDS,RANK_GPU_ID)，因此这里必须用重映射后的逻辑索引。
         # AGENT 占逻辑 0..N-1，ranker 排在逻辑索引 N (=RANKER_VISIBLE_DEVICE_INDEX)。
-        device: cuda:2
+        device: cuda:4
         # 是否共享 encoder 配置；由 LocalE5RankerWorker 使用。
         shared_encoder: true
         # 注意：当前工具代码会对 recall top-N 全量重排；这里的 top_k 不控制重排池大小，
@@ -61,4 +61,5 @@ tools:
         keys:
           - dense_weight
           - bm25_weight
+          - heavy_weight
         s_t: 1.0

@@ -302,20 +302,21 @@ class CoAgenticRetrieverRayTrainer(RayPPOTrainer):
             else:
                 stats[f"{prefix}/tool_format_correct_rate"] = 0.0
 
-        # Weight parameters: for each weight key (e.g., "dense_weight", "bm25_weight"),
-        # aggregate all values from all samples and compute mean.
-        # Each sample's reward_extra_infos_dict[key] is a list of float values (one per tool call in that rollout).
-        for key in ["dense_weight", "bm25_weight", "graph_weight"]:
-            if key in reward_extra_infos_dict:
-                # Flatten all weight values from all samples.
-                all_values = []
-                for sample_values in reward_extra_infos_dict[key]:
-                    if isinstance(sample_values, list):
-                        all_values.extend([float(v) for v in sample_values if v is not None])
-                    elif sample_values is not None:
-                        # Single value
-                        all_values.append(float(sample_values))
-                if all_values:
-                    stats[f"{prefix}/{key}_mean"] = float(np.mean(all_values))
+        # Weight parameters: read from non_tensor_batch["tool_call_weights"].
+        # Each sample has a list of dicts (one per tool call), each dict maps weight param name -> float.
+        # This path is robust because extra_fields are union-merged across all samples in _postprocess.
+        if "tool_call_weights" in batch.non_tensor_batch:
+            all_weight_values: dict[str, list[float]] = {}
+            for sample_weights in batch.non_tensor_batch["tool_call_weights"]:
+                if not sample_weights:
+                    continue
+                for weight_dict in sample_weights:
+                    if not isinstance(weight_dict, dict):
+                        continue
+                    for key, val in weight_dict.items():
+                        if val is not None:
+                            all_weight_values.setdefault(key, []).append(float(val))
+            for key, values in all_weight_values.items():
+                stats[f"{prefix}/{key}_mean"] = float(np.mean(values))
 
         return stats

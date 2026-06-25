@@ -378,30 +378,31 @@ def default_tool_schema_for_class(class_name: str) -> dict[str, Any]:
     return {
         "type": "function",
         "function": {
-            "name": "search",
-            "description": "Search for relevant documents to answer the user's question.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "The search query to find relevant information.",
-                    },
-                    "bm25_weight":{
-                        "type": "float",
-                        "description": "The weight of bm25 retriever."
-                    },
-                     "dense_weight":{
-                        "type": "float",
-                        "description": "The weight of dense retriever."                                        },
-                      "graph_weight":{
-                        "type": "float",
-                        "description": "The weight of graph retriever."
+                    "name": "search",
+                    "description": "Search for relevant documents to answer the user's question with Hybrid Retriever. The sum of three weights should be 1.0.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": {
+                                "type": "string",
+                                "description": "The search query to find relevant information.",
+                            },
+                            "dense_weight": {
+                                "type": "float",
+                                "description": "The weight of sub Dense Retriever. Value range: [0.0, 1.0], where 0 means disabled and 1 means full contribution."
+                            },
+                            "bm25_weight": {
+                                "type": "float",
+                                "description": "The weight of sub BM25 Retriever. Value range: [0.0, 1.0], where 0 means disabled and 1 means full contribution."
+                            },
+                            "heavy_weight": {
+                                "type": "float",
+                                "description": "The weight of sub Heavy Retriever(need long time). Value range: [0.0, 1.0], where 0 means disabled and 1 means full contribution."
+                            }
                         },
+                        "required": ["query", "dense_weight","bm25_weight", "heavy_weight"],
+                    },
                 },
-                "required": ["query", "bm25_weight", "dense_weight", "graph_weight"],
-            },
-        },
     }
 
 

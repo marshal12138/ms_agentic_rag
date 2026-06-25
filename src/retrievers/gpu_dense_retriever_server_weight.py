@@ -14,6 +14,7 @@ import uvicorn
 from fastapi import FastAPI
 from pydantic import BaseModel
 from transformers import AutoConfig, AutoModel, AutoTokenizer
+import requests
 
 
 def load_corpus(corpus_path: str):
@@ -221,12 +222,38 @@ class GpuTorchFlatRetriever:
             all_scores.append(top_scores)
         
         return all_idxs, all_scores
+    
+    def _heavy_rank(self, query_list: List[str], num: int):
+        # 调用接口召回
+        url = "http://localhost:8033/search"
+        all_idxs = []
+        for query in query_list:
+            payload = {
+                "query": query,
+                "top_k": 50
+            }
 
-    def _rrf_fuse(self, dense_idxs: List[int], bm25_idxs: List[int], weights:List[float], num: int):
+            # 设置超时时间为120秒
+            response = requests.post(url, json=payload, timeout=120)
+
+            # 打印结果
+            if response.status_code == 200:
+                results = response.json()
+                idxs=[]
+                for doc in results['results'][:num]:
+                    idxs.append(doc.get('id'))
+                all_idxs.append(idxs)
+            else:
+                all_idxs.append([])
+        return all_idxs
+
+    def _rrf_fuse(self, dense_idxs: List[int], bm25_idxs: List[int], heavy_idxs: List[int], weights:List[float], num: int):
         fused = {}
         for rank, idx in enumerate(dense_idxs):
             fused[idx] = fused.get(idx, 0.0) + weights[1] / (self.rrf_k + rank + 1)
         for rank, idx in enumerate(bm25_idxs):
+            fused[idx] = fused.get(idx, 0.0) + weights[0] / (self.rrf_k + rank + 1)
+        for rank, idx in enumerate(heavy_idxs):
             fused[idx] = fused.get(idx, 0.0) + weights[0] / (self.rrf_k + rank + 1)
         ranked = sorted(fused.items(), key=lambda kv: kv[1], reverse=True)[:num]
         idxs = [idx for idx, _ in ranked]
@@ -241,13 +268,23 @@ class GpuTorchFlatRetriever:
             num = self.topk
 
         candidate_num = max(num, self.topk)
-        dense_idxs, _ = self._dense_rank(query_list, candidate_num)
-        bm25_idxs, _ = self._bm25_rank(query_list, candidate_num)
+        if len(weights)>1 and weights[1]>0:
+            dense_idxs, _ = self._dense_rank(query_list, candidate_num)
+        else:
+            dense_idxs = [[] for i in range(len(query_list))]
+        if len(weights)>0 and weights[0] >0.0:
+            bm25_idxs, _ = self._bm25_rank(query_list, candidate_num)
+        else:
+            bm25_idxs = [[] for i in range(len(query_list))]
+        if len(weights)>2 and weights[2]!=0:
+            heavy_idxs = self._heavy_rank(query_list, candidate_num)
+        else:
+            heavy_idxs=[[] for i in range(len(query_list))]
 
         all_idxs = []
         all_scores = []
         for i in range(len(query_list)):
-            fused_idxs, fused_scores = self._rrf_fuse(dense_idxs[i], bm25_idxs[i], weights, num)
+            fused_idxs, fused_scores = self._rrf_fuse(dense_idxs[i], bm25_idxs[i], heavy_idxs[i], weights, num)
             all_idxs.append(fused_idxs)
             all_scores.append(fused_scores)
 
@@ -267,7 +304,7 @@ class QueryRequest(BaseModel):
     queries: List[str]
     bm25_weight: float
     dense_weight: float
-    graph_weight: float = 0.0
+    heavy_weight: float
     topk: Optional[int] = None
     return_scores: bool = False
 
@@ -295,7 +332,7 @@ def retrieve_endpoint(request: QueryRequest):
     weights=[]
     weights.append(request.bm25_weight)
     weights.append(request.dense_weight)
-    # weights.append(request.graph_weight)
+    weights.append(request.heavy_weight)
     if request.return_scores:
         results, scores = retriever.batch_search(request.queries, weights, num=topk, return_score=True)
     else:
