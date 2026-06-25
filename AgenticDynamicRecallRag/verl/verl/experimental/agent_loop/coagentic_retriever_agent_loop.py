@@ -255,6 +255,29 @@ class CoAgenticRetrieverAgentLoop(AgentLoopBase):
             )
         return AgentState.GENERATING
 
+    async def _check_tool_args(self, tool_args)->bool:
+        tool = self.tools.get("search")
+        if not tool or not hasattr(tool, 'config'):
+            return True
+
+        args_valid = tool.config.get("args_valid", {})
+        if not args_valid:
+            return True
+
+        keys = args_valid.get("keys", [])
+        s_t = args_valid.get("s_t", 1.0)
+
+        total = 0.0
+        for key in keys:
+            if key not in tool_args:
+                return False
+            try:
+                total += float(tool_args[key])
+            except (TypeError, ValueError):
+                return False
+
+        return abs(total - s_t) < 1e-6
+    
     async def _handle_generating_state(
         self, agent_data: AgentData, sampling_params: dict[str, Any], ignore_termination: bool = False
     ) -> AgentState:
@@ -308,6 +331,13 @@ class CoAgenticRetrieverAgentLoop(AgentLoopBase):
 
         # Determine next state, we only allow 1 tool call per generation turn
         if agent_data.tool_calls and len(agent_data.tool_calls) == 1:
+            # Check tool args validation
+            try:
+                tool_args = json.loads(agent_data.tool_calls[0].arguments)
+                if not await self._check_tool_args(tool_args):
+                    return AgentState.TERMINATED
+            except json.JSONDecodeError:
+                return AgentState.TERMINATED
             self._truncate_after_first_tool_call(agent_data)
             return AgentState.PROCESSING_TOOLS
 
@@ -381,6 +411,7 @@ class CoAgenticRetrieverAgentLoop(AgentLoopBase):
         
         # Process tool responses and update multi_modal_data
         # Removed: agent_data.new_images_this_turn = []
+        # TODO 提取出tool返回的metric结果，对输入的权重参数进行统计。在这里添加tool返回结果，返回的metric被抛弃
         for tool_call_name, (tool_response, tool_reward, _) in zip(tool_call_names, responses):
             message = {"role": "tool", "content": tool_response.text or ""}
 

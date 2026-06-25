@@ -65,7 +65,7 @@ async def _do_search_api_call(
             "queries": [query],      # Single query in a list
             "dense_weight":dense_weight,
             "bm25_weight": bm25_weight,
-            "graph_weight": graph_weight,
+            # "graph_weight": graph_weight,
             "topk": top_k,
             "return_scores": True
         }

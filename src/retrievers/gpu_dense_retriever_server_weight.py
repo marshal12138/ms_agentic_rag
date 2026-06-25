@@ -316,7 +316,7 @@ def main() -> None:
     parser.add_argument("--index_path", required=True)
     parser.add_argument("--corpus_path", required=True)
     parser.add_argument("--bm25_path", required=True)
-    # parser.add_argument("--graph_path", required=True)
+    parser.add_argument("--graph_path", required=True)
     parser.add_argument("--topk", type=int, default=50)
     parser.add_argument("--retriever_name", default="e5")
     parser.add_argument("--retriever_model", required=True)

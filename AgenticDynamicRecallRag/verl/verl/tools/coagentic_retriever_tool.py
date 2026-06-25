@@ -61,12 +61,12 @@ class CoAgenticRetrieverTool(BaseTool):
                                 "type": "float",
                                 "description": "The weight of sub BM25 Retriever. Value range: [0.0, 1.0], where 0 means disabled and 1 means full contribution."
                             },
-                            "graph_weight": {
-                                "type": "float",
-                                "description": "The weight of sub Graph Retriever. Value range: [0.0, 1.0], where 0 means disabled and 1 means full contribution."
-                            }
+                            # "graph_weight": {
+                            #     "type": "float",
+                            #     "description": "The weight of sub Graph Retriever. Value range: [0.0, 1.0], where 0 means disabled and 1 means full contribution."
+                            # }
                         },
-                        "required": ["query", "dense_weight","bm25_weight", "graph_weight"],
+                        "required": ["query", "dense_weight","bm25_weight"],
                     },
                 },
             )
