@@ -290,4 +290,32 @@ class CoAgenticRetrieverRayTrainer(RayPPOTrainer):
         if "tool_reward" in reward_extra_infos_dict:
             stats[f"{prefix}/tool_reward_mean"] = float(np.mean(np.array(reward_extra_infos_dict["tool_reward"])))
 
+        # Tool-call format statistics: compute correct rate as (valid / total) if total > 0.
+        if "tool_format_total" in reward_extra_infos_dict and "tool_format_valid" in reward_extra_infos_dict:
+            tool_format_total_array = _to_float_array(reward_extra_infos_dict["tool_format_total"])
+            tool_format_valid_array = _to_float_array(reward_extra_infos_dict["tool_format_valid"])
+            # Sum across all samples in this batch.
+            total_attempts = float(np.sum(tool_format_total_array))
+            total_valid = float(np.sum(tool_format_valid_array))
+            if total_attempts > 0:
+                stats[f"{prefix}/tool_format_correct_rate"] = total_valid / total_attempts
+            else:
+                stats[f"{prefix}/tool_format_correct_rate"] = 0.0
+
+        # Weight parameters: for each weight key (e.g., "dense_weight", "bm25_weight"),
+        # aggregate all values from all samples and compute mean.
+        # Each sample's reward_extra_infos_dict[key] is a list of float values (one per tool call in that rollout).
+        for key in ["dense_weight", "bm25_weight", "graph_weight"]:
+            if key in reward_extra_infos_dict:
+                # Flatten all weight values from all samples.
+                all_values = []
+                for sample_values in reward_extra_infos_dict[key]:
+                    if isinstance(sample_values, list):
+                        all_values.extend([float(v) for v in sample_values if v is not None])
+                    elif sample_values is not None:
+                        # Single value
+                        all_values.append(float(sample_values))
+                if all_values:
+                    stats[f"{prefix}/{key}_mean"] = float(np.mean(all_values))
+
         return stats

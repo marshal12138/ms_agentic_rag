@@ -109,6 +109,13 @@ class AgentData:
         self.has_search_tool_call: bool = False
         self.invalid_direct_answer_before_search: bool = False
 
+        # Track tool call format validity statistics
+        self.total_tool_calls: int = 0  # Total tool call attempts
+        self.valid_tool_calls: int = 0  # Successfully formatted tool calls
+
+        # Track weight parameters from each tool call
+        self.tool_call_weights: list[dict[str, float]] = []  # List of weight dicts per tool call
+
 
 @register("coagentic_retriever_agent")
 class CoAgenticRetrieverAgentLoop(AgentLoopBase):
@@ -216,6 +223,11 @@ class CoAgenticRetrieverAgentLoop(AgentLoopBase):
             "has_search_tool_call": agent_data.has_search_tool_call,
             "min_one_search": agent_data.has_search_tool_call,
             "invalid_direct_answer_before_search": agent_data.invalid_direct_answer_before_search,
+            # Tool-call format statistics: total attempts vs. correctly-formatted attempts this rollout.
+            "tool_format_total": agent_data.total_tool_calls,
+            "tool_format_valid": agent_data.valid_tool_calls,
+            # All weight params (arg names containing "_weight") emitted by tool calls this rollout.
+            "tool_call_weights": agent_data.tool_call_weights,
         })
 
         # Store tool call details so ranker sample construction can read them.
@@ -331,15 +343,41 @@ class CoAgenticRetrieverAgentLoop(AgentLoopBase):
 
         # Determine next state, we only allow 1 tool call per generation turn
         if agent_data.tool_calls and len(agent_data.tool_calls) == 1:
+            # The model emitted a single tool call this turn: count it as one attempt.
+            agent_data.total_tool_calls += 1
             # Check tool args validation
             try:
                 tool_args = json.loads(agent_data.tool_calls[0].arguments)
-                if not await self._check_tool_args(tool_args):
-                    return AgentState.TERMINATED
             except json.JSONDecodeError:
+                # Malformed JSON arguments -> tool call format error.
+                agent_data.json_correct = False
                 return AgentState.TERMINATED
+
+            # Record every weight parameter (names containing "_weight") for this tool call,
+            # regardless of whether the format is ultimately valid.
+            weight_params: dict[str, float] = {}
+            for key, value in tool_args.items():
+                if "_weight" in key:
+                    try:
+                        weight_params[key] = float(value)
+                    except (TypeError, ValueError):
+                        pass
+            if weight_params:
+                agent_data.tool_call_weights.append(weight_params)
+
+            if not await self._check_tool_args(tool_args):
+                # Args present but invalid (e.g. weights do not sum to 1.0) -> format error.
+                agent_data.json_correct = False
+                return AgentState.TERMINATED
+            # Tool call is correctly formatted.
+            agent_data.valid_tool_calls += 1
             self._truncate_after_first_tool_call(agent_data)
             return AgentState.PROCESSING_TOOLS
+
+        if num_calls > 1:
+            # Emitting more than one tool call in a single turn is itself a malformed attempt.
+            agent_data.total_tool_calls += 1
+            agent_data.json_correct = False
 
         # Check whether we get the answer only after no valid tool call was found.
         # Qwen3-0.6B can append a premature <answer> after a valid <tool_call>;
@@ -492,7 +530,7 @@ class CoAgenticRetrieverAgentLoop(AgentLoopBase):
             tool_args = json.loads(tool_call.arguments)
             tool = self.tools[tool_name]
             kwargs = tools_kwargs.get(tool_name, {})
-            
+
             instance_id, _ = await tool.create(create_kwargs=kwargs.get("create_kwargs", {}))
             tool_execution_response, tool_reward, res = await tool.execute(instance_id, tool_args)
         except Exception as e:

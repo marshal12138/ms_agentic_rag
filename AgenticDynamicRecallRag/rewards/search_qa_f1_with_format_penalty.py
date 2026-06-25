@@ -316,19 +316,25 @@ def search_qa_f1_penalty_compute_score(data_source, solution_str, ground_truth, 
     answer = extract_solution(solution_str=solution_str)
     assert format_penalty <= 0.0, "format_penalty should be non-positive"
 
-    ans_score = 0.0 
+    ans_score = 0.0
     if answer is not None:
         ans_score = compute_f1(answer, ground_truth["target"])
 
     format_valid = compute_format_reward(solution_str)
     min_one_search = _has_min_one_search(solution_str, extra_info)
-    is_format_correct = format_valid and min_one_search
+
+    # Check json_correct from extra_info: tool-call format validity.
+    # If json_correct is False, the agent emitted malformed tool calls (e.g., weights not summing to 1.0).
+    json_correct = _as_bool(extra_info.get("json_correct"), default=True) if extra_info else True
+
+    # Overall format correctness now includes json_correct (tool-call format).
+    is_format_correct = format_valid and min_one_search and json_correct
 
     if is_format_correct:
         total_score = ans_score
     else:
         total_score = format_penalty
-    
+
     result = {
         "score": total_score,
         "valid": is_format_correct,
@@ -345,6 +351,36 @@ def search_qa_f1_penalty_compute_score(data_source, solution_str, ground_truth, 
 
     if extra_info and extra_info.get("invalid_direct_answer_before_search") is not None:
         result["invalid_direct_answer_before_search"] = extra_info.get("invalid_direct_answer_before_search")
+
+    # Add tool-call format statistics: total attempts vs. valid attempts.
+    if extra_info and extra_info.get("tool_format_total") is not None:
+        result["tool_format_total"] = _as_int(extra_info.get("tool_format_total"))
+    if extra_info and extra_info.get("tool_format_valid") is not None:
+        result["tool_format_valid"] = _as_int(extra_info.get("tool_format_valid"))
+
+    # Add weight parameters recorded from all tool calls in this rollout.
+    # tool_call_weights is a list of dicts, each dict has weight param names (e.g., "dense_weight") -> float values.
+    if extra_info and extra_info.get("tool_call_weights") is not None:
+        tool_call_weights = extra_info.get("tool_call_weights")
+        # Flatten weight values across all tool calls: for each weight name, store all its values.
+        if tool_call_weights:
+            # Aggregate all weight keys across tool calls.
+            all_weight_keys = set()
+            for weight_dict in tool_call_weights:
+                if isinstance(weight_dict, dict):
+                    all_weight_keys.update(weight_dict.keys())
+
+            # For each weight key, collect all values across tool calls.
+            for key in all_weight_keys:
+                values = []
+                for weight_dict in tool_call_weights:
+                    if isinstance(weight_dict, dict) and key in weight_dict:
+                        val = weight_dict[key]
+                        if val is not None:
+                            values.append(float(val))
+                # Store in result dict with key name as-is (e.g., "dense_weight", "bm25_weight").
+                if values:
+                    result[key] = values
 
     # print(f"🔧 [DEBUG] answer: {answer}, ground_truth: {ground_truth['target']}, score: {total_score}, ans_score: {ans_score}, format_correct: {float(is_format_correct)}")
     return result

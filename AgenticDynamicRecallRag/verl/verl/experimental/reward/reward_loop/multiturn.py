@@ -58,6 +58,9 @@ class MultiTurnRewardLoopManager(RewardLoopManagerBase):
         extra_info["invalid_direct_answer_before_search"] = data_item.non_tensor_batch.get(
             "invalid_direct_answer_before_search", None
         )
+        extra_info["tool_format_total"] = data_item.non_tensor_batch.get("tool_format_total", None)
+        extra_info["tool_format_valid"] = data_item.non_tensor_batch.get("tool_format_valid", None)
+        extra_info["tool_call_weights"] = data_item.non_tensor_batch.get("tool_call_weights", None)
 
         # Very tricky part: we assume the model is using the chat format, and qwen2.5 or qwen3
         response_str = await self.loop.run_in_executor(
