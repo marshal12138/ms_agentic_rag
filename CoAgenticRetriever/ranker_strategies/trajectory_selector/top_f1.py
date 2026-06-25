@@ -220,7 +220,7 @@ def build_fresh_trajectories_from_dataproto(main_batch, global_steps: int) -> li
                     "metadata": {
                         "tool_score": detail.get("tool_score"),
                         "answer_in_docs": detail.get("answer_in_docs"),
-                        "ranker_failed": detail.get("ranker_failed"),
+                        "search_tool_error": detail.get("search_tool_error"),
                     },
                 }
             )

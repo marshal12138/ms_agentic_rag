@@ -8,9 +8,9 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PARENT_ROOT="$(cd "${ROOT}/.." && pwd)"
+source "${ROOT}/src/env_manage/compatible_python.sh"
 source "${ROOT}/src/env_manage/compatible_accelerator.sh"
 
-PY="${PY:-/data04/envs/ms/ms_cosearch_official/bin/python}"
 PORT="${PORT:-8010}"
 MODE="${MODE:-cpu}"
 GPU_ID="${GPU_ID:-5}"

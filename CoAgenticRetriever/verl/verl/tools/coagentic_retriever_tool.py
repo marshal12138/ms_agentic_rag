@@ -146,19 +146,31 @@ class CoAgenticRetrieverTool(BaseTool):
 
         if not query:
             logger.error("No query provided to CoAgenticRetrieverTool.execute")
-            return AgentToolResponse(text="Error: No query provided"), 0.0, {"ranker_failed": True}
+            return (
+                AgentToolResponse(text="Error: No query provided"),
+                0.0,
+                {
+                    "sub_query": "",
+                    "search_tool_error": True,
+                    "search_tool_error_reason": "no_query",
+                    "tool_score": 0.0,
+                    "answer_in_docs": False,
+                },
+            )
 
         metrics: dict[str, Any] = {
             "sub_query": query,
             "ranker_success": False,
-            "ranker_failed": False,
+            "search_tool_error": False,
+            "search_tool_error_reason": None,
         }
 
         try:
             recall_docs = await self._call_retrieval_api(query, top_n)
         except Exception as exc:
             logger.error(f"Recall retriever failed for query {query[:50]!r}: {exc}")
-            metrics["ranker_failed"] = True
+            metrics["search_tool_error"] = True
+            metrics["search_tool_error_reason"] = "recall_error"
             metrics["recall_failed"] = True
             return AgentToolResponse(text=f"Recall retriever error: {exc}"), 0.0, metrics
 
@@ -207,7 +219,8 @@ class CoAgenticRetrieverTool(BaseTool):
                 metrics["ranker_backend"] = "local"
         except Exception as exc:
             logger.error(f"Dense ranker failed: {type(exc).__name__}: {exc}")
-            metrics["ranker_failed"] = True
+            metrics["search_tool_error"] = True
+            metrics["search_tool_error_reason"] = "ranker_error"
             metrics["ranker_error_type"] = type(exc).__name__
             metrics["ranker_error_message"] = str(exc)
             raise
@@ -233,6 +246,9 @@ class CoAgenticRetrieverTool(BaseTool):
             metrics["tool_score"] = reward if answer_in_docs else 0.0
         elif "tool_score" not in metrics:
             metrics["tool_score"] = 0.0 if not answer_in_docs else reward
+
+        # Backward compat: alias search_tool_error -> ranker_failed for existing consumers
+        metrics.setdefault("ranker_failed", metrics["search_tool_error"])
 
         return AgentToolResponse(text=response_text), reward, metrics
 

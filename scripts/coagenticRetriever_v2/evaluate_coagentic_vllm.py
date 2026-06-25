@@ -821,7 +821,7 @@ class LLMJudgeRanker:
         index: int | None = None,
     ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         if not docs:
-            return [], {"ranker_success": False, "ranker_failed": False, "reranker": "llm_as_judge"}
+            return [], {"ranker_success": False, "search_tool_error": False, "reranker": "llm_as_judge"}
         top_k = len(docs) if top_k is None else min(int(top_k), len(docs))
         messages = self._render_messages(query, docs)
         payload = {
@@ -871,7 +871,7 @@ class LLMJudgeRanker:
                 )
                 return ranked, {
                     "ranker_success": True,
-                    "ranker_failed": False,
+                    "search_tool_error": False,
                     "reranker": "llm_as_judge",
                     "ranker_attempts": attempt,
                     "ranker_error": "",
@@ -902,7 +902,7 @@ class LLMJudgeRanker:
             fallback.append(doc)
         return fallback, {
             "ranker_success": False,
-            "ranker_failed": True,
+            "search_tool_error": True,
             "reranker": "llm_as_judge",
             "ranker_attempts": self.max_retries,
             "ranker_error": str(last_error)[:500] if last_error else "unknown error",
@@ -923,7 +923,7 @@ async def select_final_docs(
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
     meta: dict[str, Any] = {
         "ranker_success": False,
-        "ranker_failed": False,
+        "search_tool_error": False,
         "reranker": args.reranker,
     }
     if args.run_mode == "no-ranker":
@@ -1086,7 +1086,7 @@ async def evaluate_one(
                     final_docs = documents[: args.top_m]
                     ranker_meta = {
                         "ranker_success": False,
-                        "ranker_failed": False,
+                        "search_tool_error": False,
                     }
                 else:
                     ranked_docs, final_docs, ranker_meta = await select_final_docs(
@@ -1111,7 +1111,7 @@ async def evaluate_one(
                 final_docs = []
                 ranker_meta = {
                     "ranker_success": False,
-                    "ranker_failed": True,
+                    "search_tool_error": True,
                 }
                 tool_response_text = "Error: No query provided"
 
