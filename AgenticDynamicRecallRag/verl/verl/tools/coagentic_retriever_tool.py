@@ -116,7 +116,7 @@ class CoAgenticRetrieverTool(BaseTool):
         return instance_id, response
 
     def tool_format(self, params: dict[str, Any])->bool:
-        gt=set(self.tool_schema.function["parameters"]["properties"].keys())
+        gt=set(self.tool_schema.function.parameters.properties.keys())
         label=set(params.keys())
         # 计算总和
         w_sum=0.0

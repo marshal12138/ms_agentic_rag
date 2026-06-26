@@ -289,7 +289,7 @@ exec "${PY}" "${COAGENTIC_MAIN}" \
   actor_rollout_ref.rollout.agent.default_agent_loop="${COAGENTIC_AGENT_LOOP_NAME}" \
   actor_rollout_ref.rollout.agent.agent_loop_config_path="${COAGENTIC_AGENT_LOOP_CONFIG}" \
   actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu="${LOG_PROB_MICRO_BATCH_SIZE_PER_GPU}" \
-  actor_rollout_ref.ref.fsdp_config.param_offload=True \
+  actor_rollout_ref.ref.fsdp_config.param_offload=False \
   actor_rollout_ref.actor.kl_loss_coef="${KL_LOSS_COEF}" \
   actor_rollout_ref.actor.ppo_mini_batch_size="${ACTOR_BATCH_SIZE}" \
   actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu="${ACTOR_MICRO_BATCH_SIZE_PER_GPU}" \
@@ -298,8 +298,8 @@ exec "${PY}" "${COAGENTIC_MAIN}" \
   actor_rollout_ref.actor.use_kl_loss=True \
   actor_rollout_ref.actor.kl_loss_type=low_var_kl \
   actor_rollout_ref.actor.ulysses_sequence_parallel_size=1 \
-  actor_rollout_ref.actor.fsdp_config.param_offload=True \
-  actor_rollout_ref.actor.fsdp_config.optimizer_offload=True \
+  actor_rollout_ref.actor.fsdp_config.param_offload=False \
+  actor_rollout_ref.actor.fsdp_config.optimizer_offload=False \
   actor_rollout_ref.model.enable_gradient_checkpointing=True \
   critic.enable=False \
   reward_model.enable=False \
