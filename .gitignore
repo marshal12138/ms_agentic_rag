@@ -34,6 +34,7 @@ src/checkpoints/__pycache__/
 **/tmp_prompt_check/
 **/wandb/
 **/.hydra/
+/extra-info/
 *.log
 *.stdout
 *.pid

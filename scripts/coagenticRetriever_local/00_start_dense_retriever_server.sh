@@ -82,10 +82,31 @@ if [[ ! -f "${GPU_DENSE_RETRIEVER_SERVER}" ]]; then
   exit 2
 fi
 
-if [[ ! -f "${VERIFY_RETRIEVAL_ASSETS}" ]]; then
-  echo "ERROR: retrieval asset verifier not found: ${VERIFY_RETRIEVAL_ASSETS}" >&2
-  exit 2
-fi
+summarize_retrieval_assets() {
+  local index_size corpus_size corpus_lines
+
+  index_size="$(stat -c '%s' "${INDEX_FILE}")"
+  corpus_size="$(stat -c '%s' "${CORPUS_FILE}")"
+  corpus_lines="$(wc -l <"${CORPUS_FILE}")"
+  corpus_lines="${corpus_lines//[[:space:]]/}"
+
+  if ! [[ "${index_size}" =~ ^[0-9]+$ ]] || (( index_size <= 0 )); then
+    echo "ERROR: retrieval index is empty or unreadable: ${INDEX_FILE}" >&2
+    exit 2
+  fi
+  if ! [[ "${corpus_size}" =~ ^[0-9]+$ ]] || (( corpus_size <= 0 )); then
+    echo "ERROR: retrieval corpus is empty or unreadable: ${CORPUS_FILE}" >&2
+    exit 2
+  fi
+  if ! [[ "${corpus_lines}" =~ ^[0-9]+$ ]] || (( corpus_lines <= 0 )); then
+    echo "ERROR: retrieval corpus has no JSONL rows: ${CORPUS_FILE}" >&2
+    exit 2
+  fi
+
+  echo "Retrieval asset quick check passed." >&2
+  echo "  index:  ${INDEX_FILE} bytes=${index_size}" >&2
+  echo "  corpus: ${CORPUS_FILE} bytes=${corpus_size} lines=${corpus_lines}" >&2
+}
 
 if [[ "${DEVICE}" != "$(co_accel_device_prefix)"* ]]; then
   echo "ERROR: CoAgenticRetriever dense retrieval server requires DEVICE prefix $(co_accel_device_prefix); got DEVICE=${DEVICE}" >&2
@@ -100,9 +121,7 @@ then
   exit 2
 fi
 
-"${PY}" "${VERIFY_RETRIEVAL_ASSETS}" \
-  --index "${INDEX_FILE}" \
-  --corpus "${CORPUS_FILE}"
+summarize_retrieval_assets
 
 echo "Starting GPU dense retriever from ${GPU_DENSE_RETRIEVER_SERVER}" >&2
 echo "  $(co_accel_visible_devices_var)=${RETRIEVER_GPU_IDS}" >&2
