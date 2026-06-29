@@ -249,7 +249,7 @@ import sys
 import urllib.request
 
 url, query = sys.argv[1:3]
-payload = json.dumps({"queries": [query], "bm25_weight":0.3, "dense_weight":0.4, "heavy_weight":0.3, "topk": 1, "return_scores": False}).encode("utf-8")
+payload = json.dumps({"queries": [query], "bm25_weight":0.3, "dense_weight":0.4, "graph_weight":0.3, "topk": 1, "return_scores": False}).encode("utf-8")
 
 request = urllib.request.Request(
     url,

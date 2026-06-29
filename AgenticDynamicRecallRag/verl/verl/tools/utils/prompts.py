@@ -96,7 +96,7 @@ When calling the tool, the <tool_call> block MUST contain ONLY a valid JSON obje
     "query": "<string>",
     "dense_weight": <float>,
     "bm25_weight": <float>,
-    "heavy_weight": <float>
+    "graph_weight": <float>
   }}
 }}
 </tool_call>
@@ -303,7 +303,7 @@ When calling the tool, the <tool_call> block MUST contain ONLY a valid JSON obje
     "query": "<string>",
     "dense_weight": <float>,
     "bm25_weight": <float>,
-    "heavy_weight": <float>
+    "graph_weight": <float>
   }}
 }}
 </tool_call>

@@ -11,10 +11,12 @@ import faiss
 import numpy as np
 import torch
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, status
 from pydantic import BaseModel
 from transformers import AutoConfig, AutoModel, AutoTokenizer
 import requests
+import httpx
+import asyncio
 
 
 def load_corpus(corpus_path: str):
@@ -104,6 +106,7 @@ class GpuTorchFlatRetriever:
         index_path: str,
         corpus_path: str,
         bm25_path: str,
+        graph_path: str,
         retriever_name: str,
         retriever_model: str,
         topk: int,
@@ -118,6 +121,7 @@ class GpuTorchFlatRetriever:
         self.batch_size = query_batch_size
         self.rrf_k=60
         self.bm25_path=bm25_path
+        self.graph_path=graph_path
         t0 = time.time()
 
         index = faiss.read_index(index_path)
@@ -223,37 +227,58 @@ class GpuTorchFlatRetriever:
         
         return all_idxs, all_scores
     
-    def _heavy_rank(self, query_list: List[str], num: int):
-        # 调用接口召回
-        url = "http://localhost:8033/search"
-        all_idxs = []
-        for query in query_list:
-            payload = {
-                "query": query,
-                "top_k": 50
-            }
+    async def _graph_rank(self, query_list: List[str], num: int):
+        # TODO  改成使用图召回
+        # all_idxs = []
+        url = self.graph_path
+        payload = {
+            "queries": query_list,
+            "topk": num
+        }
+        
+        # 设置你期望的硬超时时间（例如：超过 5 秒未响应就判定为超时）
+        TIMEOUT_SECONDS = 10.0
 
-            # 设置超时时间为120秒
-            response = requests.post(url, json=payload, timeout=120)
+        async with httpx.AsyncClient() as client:
+            try:
+                # 使用 asyncio.wait_for 包裹异步请求，强行控制最大执行时长
+                response = await asyncio.wait_for(
+                    client.post(url, json=payload, headers={"Content-Type": "application/json"}),
+                    timeout=TIMEOUT_SECONDS
+                )
+                
+                # 检查 HTTP 状态码是否为 200
+                if response.status_code == 200:
+                    res_data = response.json()
+                
+                    # 严格校验：必须是列表，且内部每个元素也必须是列表
+                    if isinstance(res_data, list) and all(isinstance(sub, list) for sub in res_data):
+                        return res_data
+                    else:
+                        print(f"接口返回格式不符合二维数组预期: {res_data}")
+                        return False
+                else:
+                    print(f"接口响应异常，状态码: {response.status_code}")
+                    return False
 
-            # 打印结果
-            if response.status_code == 200:
-                results = response.json()
-                idxs=[]
-                for doc in results['results'][:num]:
-                    idxs.append(doc.get('id'))
-                all_idxs.append(idxs)
-            else:
-                all_idxs.append([])
-        return all_idxs
+            except asyncio.TimeoutError:
+                # 严格触发了指定的硬超时时间
+                print(f"请求超时：接口未能在 {TIMEOUT_SECONDS} 秒内返回数据。")
+                return False
+                
+            except httpx.RequestError as exc:
+                # 捕获其他网络异常（如服务未启动、拒绝连接等）
+                print(f"网络请求失败: {exc}")
+                return False
+        
 
-    def _rrf_fuse(self, dense_idxs: List[int], bm25_idxs: List[int], heavy_idxs: List[int], weights:List[float], num: int):
+    def _rrf_fuse(self, dense_idxs: List[int], bm25_idxs: List[int], graph_idxs: List[int], weights:List[float], num: int):
         fused = {}
         for rank, idx in enumerate(dense_idxs):
             fused[idx] = fused.get(idx, 0.0) + weights[1] / (self.rrf_k + rank + 1)
         for rank, idx in enumerate(bm25_idxs):
             fused[idx] = fused.get(idx, 0.0) + weights[0] / (self.rrf_k + rank + 1)
-        for rank, idx in enumerate(heavy_idxs):
+        for rank, idx in enumerate(graph_idxs):
             fused[idx] = fused.get(idx, 0.0) + weights[0] / (self.rrf_k + rank + 1)
         ranked = sorted(fused.items(), key=lambda kv: kv[1], reverse=True)[:num]
         idxs = [idx for idx, _ in ranked]
@@ -261,7 +286,7 @@ class GpuTorchFlatRetriever:
         return idxs, scores
 
     @torch.no_grad()
-    def batch_search(self, query_list: List[str], weights: List[float], num: int | None = None, return_score: bool = False):
+    async def batch_search(self, query_list: List[str], weights: List[float], num: int | None = None, return_score: bool = False):
         if isinstance(query_list, str):
             query_list = [query_list]
         if num is None:
@@ -277,14 +302,16 @@ class GpuTorchFlatRetriever:
         else:
             bm25_idxs = [[] for i in range(len(query_list))]
         if len(weights)>2 and weights[2]!=0:
-            heavy_idxs = self._heavy_rank(query_list, candidate_num)
+            graph_idxs = await self._graph_rank(query_list, candidate_num)
+            if isinstance(graph_idxs, bool):
+                return False
         else:
-            heavy_idxs=[[] for i in range(len(query_list))]
+            graph_idxs=[[] for i in range(len(query_list))]
 
         all_idxs = []
         all_scores = []
         for i in range(len(query_list)):
-            fused_idxs, fused_scores = self._rrf_fuse(dense_idxs[i], bm25_idxs[i], heavy_idxs[i], weights, num)
+            fused_idxs, fused_scores = self._rrf_fuse(dense_idxs[i], bm25_idxs[i], graph_idxs[i], weights, num)
             all_idxs.append(fused_idxs)
             all_scores.append(fused_scores)
 
@@ -304,7 +331,7 @@ class QueryRequest(BaseModel):
     queries: List[str]
     bm25_weight: float
     dense_weight: float
-    heavy_weight: float
+    graph_weight: float
     topk: Optional[int] = None
     return_scores: bool = False
 
@@ -327,17 +354,19 @@ def gpu_status():
 
 
 @app.post("/retrieve")
-def retrieve_endpoint(request: QueryRequest):
+async def retrieve_endpoint(request: QueryRequest):
     topk = request.topk or default_topk
     weights=[]
     weights.append(request.bm25_weight)
     weights.append(request.dense_weight)
-    weights.append(request.heavy_weight)
+    weights.append(request.graph_weight)
     if request.return_scores:
-        results, scores = retriever.batch_search(request.queries, weights, num=topk, return_score=True)
+        results, scores = await retriever.batch_search(request.queries, weights, num=topk, return_score=True)
     else:
-        results = retriever.batch_search(request.queries, weights, num=topk, return_score=False)
+        results = await retriever.batch_search(request.queries, weights, num=topk, return_score=False)
         scores = None
+    if isinstance(results,bool):
+        return {"code": 400, "message": "heavy retriever out of time"}, status.HTTP_400_BAD_REQUEST
     resp = []
     for i, single_result in enumerate(results):
         if request.return_scores:
@@ -370,7 +399,7 @@ def main() -> None:
         index_path=args.index_path,
         corpus_path=args.corpus_path,
         bm25_path=args.bm25_path,
-        # graph_path=args.graph_path,
+        graph_path=args.graph_path,
         retriever_name=args.retriever_name,
         retriever_model=args.retriever_model,
         topk=args.topk,

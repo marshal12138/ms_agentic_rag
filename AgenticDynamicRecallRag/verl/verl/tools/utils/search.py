@@ -15,7 +15,7 @@ async def call_search_api(
     search_api_url: str,
     dense_weight: float,
     bm25_weight: float,
-    heavy_weight: float,
+    graph_weight: float,
     top_k: int = 50,
     semaphore: asyncio.Semaphore = None,
     timeout: float = 60.0
@@ -44,9 +44,9 @@ async def call_search_api(
     # Use context manager for semaphore if provided
     if semaphore:
         async with semaphore:
-            return await _do_search_api_call(query, search_api_url, dense_weight, bm25_weight, heavy_weight, top_k, timeout)
+            return await _do_search_api_call(query, search_api_url, dense_weight, bm25_weight, graph_weight, top_k, timeout)
     else:
-        return await _do_search_api_call(query, search_api_url, dense_weight, bm25_weight, heavy_weight, top_k, timeout)
+        return await _do_search_api_call(query, search_api_url, dense_weight, bm25_weight, graph_weight, top_k, timeout)
 
 
 async def _do_search_api_call(
@@ -54,7 +54,7 @@ async def _do_search_api_call(
     search_api_url: str,
     dense_weight: float,
     bm25_weight: float,
-    heavy_weight: float,
+    graph_weight: float,
     top_k: int,
     timeout: float
 ) -> Dict[str, Any]:
@@ -65,7 +65,7 @@ async def _do_search_api_call(
             "queries": [query],      # Single query in a list
             "dense_weight":dense_weight,
             "bm25_weight": bm25_weight,
-            "heavy_weight": heavy_weight,
+            "graph_weight": graph_weight,
             "topk": top_k,
             "return_scores": True
         }

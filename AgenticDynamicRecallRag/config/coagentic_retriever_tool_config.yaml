@@ -61,5 +61,5 @@ tools:
         keys:
           - dense_weight
           - bm25_weight
-          - heavy_weight
+          - graph_weight
         s_t: 1.0

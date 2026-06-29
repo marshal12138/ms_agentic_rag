@@ -61,12 +61,12 @@ class CoAgenticRetrieverTool(BaseTool):
                                 "type": "float",
                                 "description": "The weight of sub BM25 Retriever. Value range: [0.0, 1.0], where 0 means disabled and 1 means full contribution."
                             },
-                            "heavy_weight": {
+                            "graph_weight": {
                                 "type": "float",
-                                "description": "The weight of sub Heavy Retriever(need long time). Value range: [0.0, 1.0], where 0 means disabled and 1 means full contribution."
+                                "description": "The weight of sub graph Retriever. Value range: [0.0, 1.0], where 0 means disabled and 1 means full contribution."
                             }
                         },
-                        "required": ["query", "dense_weight","bm25_weight", "heavy_weight"],
+                        "required": ["query", "dense_weight","bm25_weight", "graph_weight"],
                     },
                 },
             )
@@ -140,7 +140,7 @@ class CoAgenticRetrieverTool(BaseTool):
 
         dense_weight = to_float_or_none(parameters.get("dense_weight"))
         bm25_weight = to_float_or_none(parameters.get("bm25_weight"))
-        heavy_weight = to_float_or_none(parameters.get("heavy_weight"))
+        graph_weight = to_float_or_none(parameters.get("graph_weight"))
         top_n = int(create_kwargs.get("top_n", self.default_top_n))
         top_m = int(create_kwargs.get("top_m", self.default_top_m))
         answers = create_kwargs.get("answers", [])
@@ -157,7 +157,7 @@ class CoAgenticRetrieverTool(BaseTool):
             "sub_query": query,
             "w_dense":dense_weight,
             "w_bm25": bm25_weight,
-            "w_heavy": heavy_weight,
+            "w_heavy": graph_weight,
             "ranker_success": False,
             "ranker_failed": False,
             "ranker_fallback": False,
@@ -166,7 +166,7 @@ class CoAgenticRetrieverTool(BaseTool):
         }
 
         try:
-            recall_docs = await self._call_retrieval_api(query, dense_weight, bm25_weight, heavy_weight, top_n)
+            recall_docs = await self._call_retrieval_api(query, dense_weight, bm25_weight, graph_weight, top_n)
         except Exception as exc:
             logger.error(f"Recall retriever failed for query {query[:50]!r}: {exc}")
             metrics["ranker_failed"] = True
@@ -282,7 +282,7 @@ class CoAgenticRetrieverTool(BaseTool):
         metrics["average_hit_at_ks"] = reward
         return float(reward)
 
-    async def _call_retrieval_api(self, query: str, dense_weight: float, bm25_weight: float, heavy_weight: float, top_n: int) -> list[dict]:
+    async def _call_retrieval_api(self, query: str, dense_weight: float, bm25_weight: float, graph_weight: float, top_n: int) -> list[dict]:
         last_error = None
         retry_delay = self.retry_delay
 
@@ -295,7 +295,7 @@ class CoAgenticRetrieverTool(BaseTool):
                         search_api_url=self.retrieval_url,
                         dense_weight=dense_weight, 
                         bm25_weight=bm25_weight,
-                        heavy_weight=heavy_weight,
+                        graph_weight=graph_weight,
                         top_k=top_n,
                         semaphore=None,
                         timeout=self.timeout,
