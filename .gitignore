@@ -35,6 +35,7 @@ src/checkpoints/__pycache__/
 **/wandb/
 **/.hydra/
 /extra-info/
+AgenticDynamicRecallRag/method_validation_check/result/
 *.log
 *.stdout
 *.pid
