@@ -1428,8 +1428,16 @@ def write_outputs(args: EvalArgs, metrics: list[dict[str, Any]], traces: list[di
     if args.rollout_data_dir is not None:
         args.rollout_data_dir.mkdir(parents=True, exist_ok=True)
     (args.trace_dir / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+    run_config = {key: str(value) for key, value in vars(args).items()}
+    run_config.update(
+        {
+            "recall_final_top_n": str(args.top_n),
+            "searchTool_final_top_m": str(args.top_m),
+            "ranker_final_top_k": str(args.ranker_top_k),
+        }
+    )
     (args.trace_dir / "run_config.json").write_text(
-        json.dumps({key: str(value) for key, value in vars(args).items()}, ensure_ascii=False, indent=2),
+        json.dumps(run_config, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
 
@@ -1466,27 +1474,33 @@ def write_report(args: EvalArgs, summary: dict[str, Any], metrics: list[dict[str
         f"- Wall time: `{fmt(elapsed_s)}s`",
         f"- Status counts: `{status_counts}`",
         "",
+        "## Retrieval Cutoffs",
+        "",
+        f"- RECALL_FINAL_TOP_N: `{args.top_n}`",
+        f"- SEARCH_TOOL_FINAL_TOP_M: `{args.top_m}`",
+        f"- RANKER_FINAL_TOP_K: `{args.ranker_top_k}`",
+        "",
         "## Eval Path",
         "",
     ]
     if args.run_mode == "no-ranker":
         lines.extend(
             [
-                f"- Search path: `agent LLM -> recall retriever top-{args.top_n} -> recall top-{args.top_m} tool response -> agent LLM`",
+                f"- Search path: `agent LLM -> recall retriever recall_final_top_n={args.top_n} -> searchTool_final_top_m={args.top_m} tool response -> agent LLM`",
                 "- Dense ranker participation: `disabled`",
             ]
         )
     elif args.run_mode == "full":
         lines.extend(
             [
-                f"- Search path: `agent LLM -> recall retriever top-{args.top_n} -> {args.reranker} reorder -> top-{min(args.top_m, args.ranker_top_k)} tool response -> agent LLM`",
+                f"- Search path: `agent LLM -> recall retriever recall_final_top_n={args.top_n} -> {args.reranker} reorder -> ranker_final_top_k={args.ranker_top_k} -> searchTool_final_top_m={min(args.top_m, args.ranker_top_k)} tool response -> agent LLM`",
                 f"- Ranker participation: `{args.reranker}`",
             ]
         )
     else:
         lines.extend(
             [
-                f"- Search path: `recall retriever top-{args.top_n} -> {args.reranker} reorder -> top-{min(args.top_m, args.ranker_top_k)} output`",
+                f"- Search path: `recall retriever recall_final_top_n={args.top_n} -> {args.reranker} reorder -> ranker_final_top_k={args.ranker_top_k} -> output top-{min(args.top_m, args.ranker_top_k)}`",
                 "- Agent LLM participation: `disabled`",
             ]
         )

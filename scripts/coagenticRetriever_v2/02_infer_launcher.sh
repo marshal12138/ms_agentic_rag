@@ -12,83 +12,68 @@ source "${ASSETS_DIR}/00_project_paths.sh"
 source "${ROOT}/src/logs/report_system/logging_reports.sh"
 setup_agent_iteration_paths "${ROOT}"
 source "/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/src/env_manage/compatible_python.sh"
-EVALUATOR="${EVALUATOR:-${SCRIPT_DIR}/evaluate_coagentic_vllm_cosearch_aligned.py}"
+source "/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/src/env_manage/compatible_accelerator.sh"
 PROJECT_ROOT="${COAGENTIC_PROJECT_ROOT:-${ROOT}/CoAgenticRetriever}"
-TOOL_CONFIG="${PROJECT_ROOT}/config/coagentic_retriever_tool_config.yaml"
-EVAL_BUDGET_YAML="${EVAL_BUDGET_YAML:-${ROOT}/scripts/coagenticRetriever_local/strategies_yaml/rollout_cosearch_aligned_budget.yaml}"
 
-load_eval_budget_config() {
-  if [[ -z "${EVAL_BUDGET_YAML}" ]]; then
-    return 0
-  fi
-  if [[ ! -f "${EVAL_BUDGET_YAML}" ]]; then
-    echo "ERROR: EVAL_BUDGET_YAML not found: ${EVAL_BUDGET_YAML}" >&2
-    exit 2
-  fi
+CONFIG_COMPILER="${ASSETS_DIR}/eval_launcher/compile_config.py"
+if [[ ! -f "${CONFIG_COMPILER}" ]]; then
+  echo "ERROR: eval launcher config compiler not found: ${CONFIG_COMPILER}" >&2
+  exit 2
+fi
 
-  local parsed
-  parsed="$("${PY}" - "${EVAL_BUDGET_YAML}" <<'PY'
-import shlex
-import sys
-from pathlib import Path
+EVAL_RUNTIME_ENV_SH="$("${PY}" "${CONFIG_COMPILER}" \
+  --repo-root "${ROOT}" \
+  --script-dir "${SCRIPT_DIR}" \
+  --assets-dir "${ASSETS_DIR}" \
+  --project-root "${PROJECT_ROOT}" \
+  --external-model-root "${EXTERNAL_MODEL_ROOT}" \
+  --external-retrieval-root "${EXTERNAL_RETRIEVAL_ROOT}" \
+  --device-prefix "$(co_accel_device_prefix)" \
+  --visible-devices-var "$(co_accel_visible_devices_var)" \
+  --accelerator "${COSEARCH_ACCELERATOR}" \
+  -- "$@")"
 
-path = Path(sys.argv[1])
-try:
-    import yaml
-    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-except ModuleNotFoundError:
-    from omegaconf import OmegaConf
-    data = OmegaConf.to_container(OmegaConf.load(path), resolve=True) or {}
-
-def get(path, default=""):
-    cur = data
-    for key in path.split("."):
-        if not isinstance(cur, dict) or key not in cur:
-            return default
-        cur = cur[key]
-    return cur
-
-def emit(name, value):
-    if isinstance(value, bool):
-        value = str(value).lower()
-    elif value is None:
-        value = ""
-    else:
-        value = str(value)
-    print(f"{name}={shlex.quote(value)}")
-
-emit("BUDGET_MAX_PROMPT_LENGTH", get("data.max_prompt_length"))
-emit("BUDGET_MAX_RESPONSE_LENGTH", get("data.max_response_length"))
-emit("BUDGET_ENABLE_THINKING", get("data.apply_chat_template_kwargs.enable_thinking"))
-emit("BUDGET_MAX_MODEL_LEN", get("actor_rollout_ref.rollout.max_model_len"))
-emit("BUDGET_MAX_ASSISTANT_TURNS", get("actor_rollout_ref.rollout.multi_turn.max_assistant_turns"))
-emit("BUDGET_MAX_USER_TURNS", get("actor_rollout_ref.rollout.multi_turn.max_user_turns"))
-emit("BUDGET_MAX_TOOL_RESPONSE_LENGTH", get("actor_rollout_ref.rollout.multi_turn.max_tool_response_length"))
-PY
-)"
-  eval "${parsed}"
-}
-
-load_eval_budget_config
+if [[ -z "${EVAL_RUNTIME_ENV_SH}" || ! -f "${EVAL_RUNTIME_ENV_SH}" ]]; then
+  echo "ERROR: eval config compiler did not produce a source-able runtime env file." >&2
+  echo "       output=${EVAL_RUNTIME_ENV_SH}" >&2
+  exit 2
+fi
+# shellcheck disable=SC1090
+source "${EVAL_RUNTIME_ENV_SH}"
+if [[ -n "${EVAL_PASSTHROUGH_ARGS_FILE:-}" && -f "${EVAL_PASSTHROUGH_ARGS_FILE}" ]]; then
+  mapfile -t EVAL_PASSTHROUGH_ARGS < "${EVAL_PASSTHROUGH_ARGS_FILE}"
+  set -- "${EVAL_PASSTHROUGH_ARGS[@]}"
+else
+  set --
+fi
+EVALUATOR="${EVALUATOR:-${SCRIPT_DIR}/evaluate_coagentic_vllm.py}"
+PROJECT_ROOT="${COAGENTIC_PROJECT_ROOT:-${PROJECT_ROOT:-${ROOT}/CoAgenticRetriever}}"
+TOOL_CONFIG="${TOOL_CONFIG:-${PROJECT_ROOT}/config/coagentic_retriever_tool_config.yaml}"
 
 
 # common-use
 GROUP_NAME="${GROUP_NAME:-coAgenticRetriever}"
 resolve_coagentic_group_identity "${GROUP_NAME}"
-STRATEGY_NAME="${STRATEGY_NAME:-default}" # 评估对象的策略名，作为评估任务的核心id
-ENABLE_THINKING="${ENABLE_THINKING:-${BUDGET_ENABLE_THINKING:-false}}"
+EVAL_TASK_NAME="${EVAL_TASK_NAME:-default}"
+ENABLE_THINKING="${ENABLE_THINKING:-false}"
 DEFAULT_COAGENTIC_DATA_PATH="${ROOT}/data/coAgenticRetriever/albation_1/co_search_ablation.eval.parquet"
 DATA_PATH="${DATA_PATH:-${DEFAULT_COAGENTIC_DATA_PATH}}"
-AGENT_MODEL="${AGENT_MODEL:-${MODEL_PATH:-}}"
-MAX_EVAL_NUM="${MAX_EVAL_NUM:-${VAL_MAX_SAMPLES:--1}}"
-VAL_MAX_SAMPLES="${VAL_MAX_SAMPLES:-${MAX_EVAL_NUM}}"
+AGENT_MODEL="${AGENT_MODEL:-}"
+MAX_EVAL_NUM="${MAX_EVAL_NUM:--1}"
 EVAL_BATCH_SIZE="${EVAL_BATCH_SIZE:-32}"
 
 
 
-setup_coagentic_eval_artifact_defaults "${ROOT}" "${STRATEGY_NAME}"
-RUN_NAME="${RUN_NAME:-${STRATEGY_NAME}}"
+EVAL_TASK_SLUG="${EVAL_TASK_SLUG:-$(slugify_cosearch_name "${EVAL_TASK_NAME}")}"
+TASK_NAME="${TASK_NAME:-$(date +%y%m%d-%H%M)-${EVAL_TASK_SLUG}}"
+EVAL_LOG_ROOT="${EVAL_LOG_ROOT:-${ROOT}/log/eval_res/${GROUP_SLUG}}"
+EVAL_REPORT_ROOT="${EVAL_REPORT_ROOT:-${ROOT}/reports/eval/${GROUP_SLUG}}"
+TRACE_DIR="${TRACE_DIR:-${EVAL_LOG_ROOT}/${TASK_NAME}}"
+REPORT_PATH="${REPORT_PATH:-${EVAL_REPORT_ROOT}/${TASK_NAME}.report.md}"
+RUNTIME_LOG_DIR="${RUNTIME_LOG_DIR:-${TRACE_DIR}/runtime_logs}"
+RUN_NAME="${RUN_NAME:-${EVAL_TASK_SLUG}}"
 EXP_NAME="${EXP_NAME:-${RUN_NAME}}"
+mkdir -p "${EVAL_REPORT_ROOT}" "${TRACE_DIR}" "${RUNTIME_LOG_DIR}"
 
 RUN_MODE="${RUN_MODE:-full}"
 case "${RUN_MODE}" in
@@ -101,7 +86,7 @@ case "${RUN_MODE}" in
     exit 2
     ;;
 esac
-RERANKER="${RERANKER:-${reranker:-dense_e5}}"
+RERANKER="${RERANKER:-dense_e5}"
 case "${RERANKER}" in
   dense|e5|dense-e5)
     RERANKER="dense_e5"
@@ -116,33 +101,22 @@ case "${RERANKER}" in
     ;;
 esac
 
-CHECKPOINT_DIR="${CHECKPOINT_DIR:-}"
-RESUME_FROM_PATH="${RESUME_FROM_PATH:-}"
-MODEL_SOURCE_FROM_CHECKPOINT="${RESUME_FROM_PATH:-${CHECKPOINT_DIR:-}}"
-
-MODEL_PATH="${MODEL_PATH:-${AGENT_MODEL}}"
 RECALL_MODEL_PATH="${RECALL_MODEL_PATH:-${EXTERNAL_MODEL_ROOT}/retriever/e5-base-v2}"
-RANKER_MODEL="${RANKER_MODEL:-${RANKER_MODEL_PATH:-}}"
-RANKER_BASE_MODEL="${RANKER_BASE_MODEL:-${RANKER_BASE_MODEL_PATH:-}}"
-RANKER_ENCODER_PATH="${RANKER_ENCODER_PATH:-${RANK_ENCODER_PATH:-}}"
+RANKER_MODEL="${RANKER_MODEL:-}"
+RANKER_BASE_MODEL="${RANKER_BASE_MODEL:-}"
+RANKER_ENCODER_PATH="${RANKER_ENCODER_PATH:-}"
 
 CORPUS_JSONL="${CORPUS_JSONL:-${EXTERNAL_RETRIEVAL_ROOT}/wiki-18/wiki-18.jsonl}"
 
-VAL_MAX_SAMPLES="${VAL_MAX_SAMPLES:-${MAX_EVAL_NUM}}"
 MAX_EVAL_STEPS="${MAX_EVAL_STEPS:-1}"
 MAX_RANKER_STEPS="${MAX_RANKER_STEPS:-${MAX_EVAL_STEPS}}"
 # 是否保持完整轨迹：full/partial
 KEEP_TRACE="${KEEP_TRACE:-partial}"
 
-TOP_N="${TOP_N:-${RECALL_TOP_K:-50}}"
-RECALL_TOP_K="${RECALL_TOP_K:-${TOP_N}}"
-TOP_M="${TOP_M:-${TOP_K:-5}}"
-TOP_K="${TOP_K:-${TOP_M}}"
-RANK_TOP_K="${RANK_TOP_K:-${RANKER_TOP_K:-${TOP_M}}}"
-RANKER_TOP_K="${RANKER_TOP_K:-${RANK_TOP_K}}"
+RECALL_FINAL_TOP_N="${RECALL_FINAL_TOP_N:-50}"
+SEARCH_TOOL_FINAL_TOP_M="${SEARCH_TOOL_FINAL_TOP_M:-5}"
+RANKER_FINAL_TOP_K="${RANKER_FINAL_TOP_K:-${RECALL_FINAL_TOP_N}}"
 
-EXPLICIT_PROXY_PORT="${PROXY_PORT+x}"
-EXPLICIT_RETRIEVAL_SERVICE_URL="${RETRIEVAL_SERVICE_URL+x}"
 PROXY_PORT="${PROXY_PORT:-8030}"
 RETRIEVAL_SERVICE_URL="${RETRIEVAL_SERVICE_URL:-http://127.0.0.1:${PROXY_PORT}/retrieve}"
 RECALL_GPU_ID="${RECALL_GPU_ID:-5}"
@@ -155,13 +129,13 @@ AGENT_SERVED_MODEL="${AGENT_SERVED_MODEL:-cosearch-agent}"
 VLLM_STARTUP_TIMEOUT="${VLLM_STARTUP_TIMEOUT:-1800}"
 GPU_MEMORY_UTILIZATION="${GPU_MEMORY_UTILIZATION:-0.60}"
 MAX_NUM_SEQS="${MAX_NUM_SEQS:-${EVAL_BATCH_SIZE}}"
-MAX_MODEL_LEN="${MAX_MODEL_LEN:-${BUDGET_MAX_MODEL_LEN:-12288}}"
+MAX_MODEL_LEN="${MAX_MODEL_LEN:-12288}"
 
-MAX_ASSISTANT_TURNS="${MAX_ASSISTANT_TURNS:-${BUDGET_MAX_ASSISTANT_TURNS:-6}}"
-MAX_USER_TURNS="${MAX_USER_TURNS:-${BUDGET_MAX_USER_TURNS:-6}}"
-MAX_PROMPT_LENGTH="${MAX_PROMPT_LENGTH:-${BUDGET_MAX_PROMPT_LENGTH:-11264}}"
-MAX_RESPONSE_LENGTH="${MAX_RESPONSE_LENGTH:-${BUDGET_MAX_RESPONSE_LENGTH:-1024}}"
-MAX_TOOL_RESPONSE_LENGTH="${MAX_TOOL_RESPONSE_LENGTH:-${BUDGET_MAX_TOOL_RESPONSE_LENGTH:-4096}}"
+MAX_ASSISTANT_TURNS="${MAX_ASSISTANT_TURNS:-6}"
+MAX_USER_TURNS="${MAX_USER_TURNS:-6}"
+MAX_PROMPT_LENGTH="${MAX_PROMPT_LENGTH:-11264}"
+MAX_RESPONSE_LENGTH="${MAX_RESPONSE_LENGTH:-1024}"
+MAX_TOOL_RESPONSE_LENGTH="${MAX_TOOL_RESPONSE_LENGTH:-4096}"
 TEMPERATURE="${TEMPERATURE:-0.0}"
 TOP_P="${TOP_P:-1.0}"
 REQUEST_TIMEOUT="${REQUEST_TIMEOUT:-180}"
@@ -175,7 +149,7 @@ RECALL_SERVICE_WAIT_SECONDS="${RECALL_SERVICE_WAIT_SECONDS:-240}"
 RETRIEVAL_PREFLIGHT_QUERY="${RETRIEVAL_PREFLIGHT_QUERY:-who got the first nobel prize in physics?}"
 RETRIEVAL_PREFLIGHT_EXPECT="${RETRIEVAL_PREFLIGHT_EXPECT:-}"
 
-RANKER_DEVICE="${RANKER_DEVICE:-cuda:0}"
+RANKER_DEVICE="${RANKER_DEVICE:-$(co_accel_device_spec 0)}"
 RANKER_MAX_QUERY_LENGTH="${RANKER_MAX_QUERY_LENGTH:-192}"
 RANKER_MAX_DOC_LENGTH="${RANKER_MAX_DOC_LENGTH:-256}"
 LLM_JUDGE_ENDPOINT="${LLM_JUDGE_ENDPOINT:-http://127.0.0.1:8067/v1/chat/completions}"
@@ -190,16 +164,9 @@ LLM_JUDGE_RETRY_DELAY="${LLM_JUDGE_RETRY_DELAY:-2.0}"
 LLM_JUDGE_RETRY_BACKOFF="${LLM_JUDGE_RETRY_BACKOFF:-2.0}"
 TRUST_REMOTE_CODE="${TRUST_REMOTE_CODE:-true}"
 INJECT_TOOL_SCHEMA="${INJECT_TOOL_SCHEMA:-false}"
-FORMAT_PENALTY="${FORMAT_PENALTY:--0.2}"
-SAVE_TOP_N_DOCUMENTS="${SAVE_TOP_N_DOCUMENTS:-false}"
-COAGENTIC_TOOL_CLASS_NAME="${COAGENTIC_TOOL_CLASS_NAME:-verl.tools.coagentic_retriever_tool.CoAgenticRetrieverTool}"
-COAGENTIC_RANKER_ENABLED="${COAGENTIC_RANKER_ENABLED:-true}"
-if [[ "${RUN_MODE}" == "no-ranker" ]]; then
-  COAGENTIC_RANKER_ENABLED=false
-fi
-TOOL_MAX_CONCURRENT_PER_WORKER="${TOOL_MAX_CONCURRENT_PER_WORKER:-2}"
 RANKER_CONFIG_DEVICE="${RANKER_CONFIG_DEVICE:-${RANKER_DEVICE}}"
 STOP_SEQUENCES="${STOP_SEQUENCES:-}"
+LLM_IO_MAX_RECORDS="${LLM_IO_MAX_RECORDS:-20}"
 
 
 OUT_DIR="${OUT_DIR:-${TRACE_DIR}}"
@@ -208,7 +175,7 @@ ROLLOUT_DATA_DIR="${ROLLOUT_DATA_DIR:-${OUT_DIR}/rollout_data}"
 VALIDATION_DATA_DIR="${VALIDATION_DATA_DIR:-${OUT_DIR}/validation_data}"
 METRICS_JSONL="${METRICS_JSONL:-${LOG_DIR}/${RUN_NAME}.metrics.jsonl}"
 SEARCH_TIMING_JSONL="${SEARCH_TIMING_JSONL:-${LOG_DIR}/${RUN_NAME}.search_timing.jsonl}"
-LLM_IO_JSONL="${LLM_IO_JSONL:-${COAGENTIC_RETRIEVER_LLM_IO_JSONL:-${LOG_DIR}/${RUN_NAME}.llm_io.jsonl}}"
+LLM_IO_JSONL="${LLM_IO_JSONL:-${LOG_DIR}/${RUN_NAME}.llm_io.jsonl}"
 INFER_LOG="${INFER_LOG:-${LOG_DIR}/${RUN_NAME}.infer.log}"
 RECALL_SERVICE_LOG="${RECALL_SERVICE_LOG:-${LOG_DIR}/${RUN_NAME}.recall_retriever_server.log}"
 RANKER_OUTPUT_JSONL="${RANKER_OUTPUT_JSONL:-${OUT_DIR}/ranker_infer_smoke.jsonl}"
@@ -226,94 +193,6 @@ is_truthy() {
   esac
 }
 
-load_static_tool_config() {
-  local parsed
-  parsed="$("${PY}" -c '
-import shlex
-import sys
-from pathlib import Path
-
-path = Path(sys.argv[1])
-try:
-    import yaml
-    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-except ModuleNotFoundError:
-    from omegaconf import OmegaConf
-    data = OmegaConf.to_container(OmegaConf.load(path), resolve=True) or {}
-
-tool = (data.get("tools") or [{}])[0]
-config = tool.get("config") or {}
-ranker = config.get("ranker") or {}
-
-def emit(name, value):
-    if isinstance(value, bool):
-        value = str(value).lower()
-    elif value is None:
-        value = ""
-    else:
-        value = str(value)
-    print(f"{name}={shlex.quote(value)}")
-
-emit("STATIC_TOOL_CLASS_NAME", tool.get("class_name", ""))
-emit("STATIC_RETRIEVAL_SERVICE_URL", config.get("retrieval_service_url", ""))
-try:
-    from urllib.parse import urlparse
-    emit("STATIC_RETRIEVAL_PORT", urlparse(str(config.get("retrieval_service_url", ""))).port or "")
-except Exception:
-    emit("STATIC_RETRIEVAL_PORT", "")
-emit("STATIC_DEFAULT_TOP_N", config.get("default_top_n", ""))
-emit("STATIC_DEFAULT_TOP_M", config.get("default_top_m", ""))
-emit("STATIC_MAX_RETRIES", config.get("max_retries", ""))
-emit("STATIC_RETRY_DELAY", config.get("retry_delay", ""))
-emit("STATIC_RETRY_BACKOFF", config.get("retry_backoff", ""))
-emit("STATIC_FORMAT_PENALTY", config.get("format_penalty", ""))
-emit("STATIC_MAX_CONCURRENT_PER_WORKER", config.get("max_concurrent_per_worker", ""))
-emit("STATIC_RANKER_ENABLED", config.get("ranker_enabled", ""))
-emit("STATIC_RANKER_MODEL_PATH", ranker.get("model_path", ""))
-emit("STATIC_RANKER_ENCODER_PATH", ranker.get("encoder_path", ""))
-emit("STATIC_RANKER_DEVICE", ranker.get("device", ""))
-emit("STATIC_RANKER_TOP_K", ranker.get("top_k", ""))
-emit("STATIC_RANKER_MAX_QUERY_LENGTH", ranker.get("max_query_length", ""))
-emit("STATIC_RANKER_MAX_DOC_LENGTH", ranker.get("max_doc_length", ""))
-emit("STATIC_TRUST_REMOTE_CODE", ranker.get("trust_remote_code", ""))
-' "${TOOL_CONFIG}")"
-  eval "${parsed}"
-
-  COAGENTIC_TOOL_CLASS_NAME="${STATIC_TOOL_CLASS_NAME}"
-  if [[ -z "${EXPLICIT_RETRIEVAL_SERVICE_URL}" ]]; then
-    RETRIEVAL_SERVICE_URL="${STATIC_RETRIEVAL_SERVICE_URL}"
-  fi
-  if [[ -z "${EXPLICIT_PROXY_PORT}" && -n "${STATIC_RETRIEVAL_PORT}" ]]; then
-    PROXY_PORT="${STATIC_RETRIEVAL_PORT}"
-  elif [[ -n "${EXPLICIT_PROXY_PORT}" && -z "${EXPLICIT_RETRIEVAL_SERVICE_URL}" ]]; then
-    RETRIEVAL_SERVICE_URL="http://127.0.0.1:${PROXY_PORT}/retrieve"
-  fi
-  TOP_N="${STATIC_DEFAULT_TOP_N}"
-  RECALL_TOP_K="${STATIC_DEFAULT_TOP_N}"
-  TOP_M="${STATIC_DEFAULT_TOP_M}"
-  TOP_K="${STATIC_DEFAULT_TOP_M}"
-  RANK_TOP_K="${STATIC_RANKER_TOP_K}"
-  RANKER_TOP_K="${STATIC_RANKER_TOP_K}"
-  RETRIEVAL_MAX_RETRIES="${STATIC_MAX_RETRIES}"
-  RETRIEVAL_RETRY_DELAY="${STATIC_RETRY_DELAY}"
-  RETRIEVAL_RETRY_BACKOFF="${STATIC_RETRY_BACKOFF}"
-  FORMAT_PENALTY="${STATIC_FORMAT_PENALTY}"
-  COAGENTIC_RANKER_ENABLED="${STATIC_RANKER_ENABLED}"
-  RANKER_DEVICE="${STATIC_RANKER_DEVICE}"
-  RANKER_CONFIG_DEVICE="${STATIC_RANKER_DEVICE}"
-  RANKER_MAX_QUERY_LENGTH="${STATIC_RANKER_MAX_QUERY_LENGTH}"
-  RANKER_MAX_DOC_LENGTH="${STATIC_RANKER_MAX_DOC_LENGTH}"
-  TOOL_MAX_CONCURRENT_PER_WORKER="${STATIC_MAX_CONCURRENT_PER_WORKER}"
-  TRUST_REMOTE_CODE="${STATIC_TRUST_REMOTE_CODE}"
-  if [[ "${RUN_MODE}" == "no-ranker" ]]; then
-    COAGENTIC_RANKER_ENABLED=false
-  elif [[ "${RUN_MODE}" == "full" || "${RUN_MODE}" == "ranker-only" ]]; then
-    COAGENTIC_RANKER_ENABLED=true
-  fi
-}
-
-load_static_tool_config
-
 cleanup() {
   if [[ -n "${AGENT_PGID}" ]] && kill -0 "-${AGENT_PGID}" 2>/dev/null; then
     kill -TERM "-${AGENT_PGID}" 2>/dev/null || true
@@ -329,21 +208,21 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 validate_recall_preflight_args() {
-  if ! [[ "${RECALL_TOP_K}" =~ ^[0-9]+$ ]] || (( RECALL_TOP_K < 1 )); then
-    echo "ERROR: RECALL_TOP_K must be a positive integer; got ${RECALL_TOP_K}" >&2
+  if ! [[ "${RECALL_FINAL_TOP_N}" =~ ^[0-9]+$ ]] || (( RECALL_FINAL_TOP_N < 1 )); then
+    echo "ERROR: RECALL_FINAL_TOP_N must be a positive integer; got ${RECALL_FINAL_TOP_N}" >&2
     exit 2
   fi
-  if ! [[ "${TOP_M}" =~ ^[0-9]+$ ]] || (( TOP_M < 1 )); then
-    echo "ERROR: TOP_M must be a positive integer; got ${TOP_M}" >&2
+  if ! [[ "${SEARCH_TOOL_FINAL_TOP_M}" =~ ^[0-9]+$ ]] || (( SEARCH_TOOL_FINAL_TOP_M < 1 )); then
+    echo "ERROR: SEARCH_TOOL_FINAL_TOP_M must be a positive integer; got ${SEARCH_TOOL_FINAL_TOP_M}" >&2
     exit 2
   fi
-  if (( TOP_M > RECALL_TOP_K )); then
-    echo "ERROR: TOP_M=${TOP_M} exceeds RECALL_TOP_K=${RECALL_TOP_K}" >&2
+  if (( SEARCH_TOOL_FINAL_TOP_M > RECALL_FINAL_TOP_N )); then
+    echo "ERROR: SEARCH_TOOL_FINAL_TOP_M=${SEARCH_TOOL_FINAL_TOP_M} exceeds RECALL_FINAL_TOP_N=${RECALL_FINAL_TOP_N}" >&2
     exit 2
   fi
-  if (( TOP_M > 5 )); then
-    echo "ERROR: TOP_M=${TOP_M} is invalid for current reward preflight; answer_match_reward supports at most 5 visible documents." >&2
-    echo "       TOP_M is agent-visible docs. Do not pass RANK_TOP_K/ranker.top_k here." >&2
+  if (( SEARCH_TOOL_FINAL_TOP_M > 5 )); then
+    echo "ERROR: SEARCH_TOOL_FINAL_TOP_M=${SEARCH_TOOL_FINAL_TOP_M} is invalid for current reward preflight; answer_match_reward supports at most 5 visible documents." >&2
+    echo "       SEARCH_TOOL_FINAL_TOP_M is agent-visible docs. Do not pass ranker cutoffs here." >&2
     exit 2
   fi
 }
@@ -389,10 +268,10 @@ run_recall_preflight() {
       --project-root "${PROJECT_ROOT}" \
       --url "${RETRIEVAL_SERVICE_URL}" \
       --query "${RETRIEVAL_PREFLIGHT_QUERY}" \
-      --top-n "${RECALL_TOP_K}" \
-      --top-m "${TOP_M}" \
+      --top-n "${RECALL_FINAL_TOP_N}" \
+      --top-m "${SEARCH_TOOL_FINAL_TOP_M}" \
       --expect-contains "${RETRIEVAL_PREFLIGHT_EXPECT}" 2>&1)"; then
-    echo "recall retrieval semantic preflight passed: top_n=${RECALL_TOP_K} top_m=${TOP_M}"
+    echo "recall retrieval semantic preflight passed: top_n=${RECALL_FINAL_TOP_N} top_m=${SEARCH_TOOL_FINAL_TOP_M}"
     return 0
   fi
   status=$?
@@ -423,12 +302,13 @@ ensure_recall_service() {
     exit 2
   fi
 
-  echo "starting recall retrieval service; gpu=${RECALL_GPU_ID}; log=${RECALL_SERVICE_LOG}"
+  echo "starting recall retrieval service; accelerator=${COSEARCH_ACCELERATOR}; device_id=${RECALL_GPU_ID}; log=${RECALL_SERVICE_LOG}"
   PORT="${PROXY_PORT}" \
   RECALL_GPU_ID="${RECALL_GPU_ID}" \
   RETRIEVER_GPU_IDS="${RECALL_GPU_ID}" \
   RETRIEVER_MODEL="${RECALL_MODEL_PATH}" \
-  DEVICE=cuda \
+  RECALL_FINAL_TOP_N="${RECALL_FINAL_TOP_N}" \
+  DEVICE="${RETRIEVER_DEVICE:-$(co_accel_device_prefix)}" \
   PY="${PY}" \
     bash "${SCRIPT_DIR}/00_start_dense_retriever_server.sh" >"${RECALL_SERVICE_LOG}" 2>&1 &
   RECALL_SERVICE_PID=$!
@@ -503,8 +383,8 @@ start_agent_vllm() {
     echo "       Stop the existing service or choose another AGENT_PORT before rerunning." >&2
     exit 4
   fi
-  echo "starting agent vLLM server on GPUs ${AGENT_GPU_IDS}; model=${model_path}; log=${log}"
-  setsid env CUDA_VISIBLE_DEVICES="${AGENT_GPU_IDS}" \
+  echo "starting agent vLLM server on ${COSEARCH_ACCELERATOR} devices ${AGENT_GPU_IDS}; model=${model_path}; log=${log}"
+  setsid env $(co_accel_env_visible_devices_cmd "${AGENT_GPU_IDS}") \
     VLLM_DISABLE_FLASHINFER=1 \
     VLLM_USE_FLASHINFER_SAMPLER=0 \
     VLLM_ATTENTION_BACKEND="${VLLM_ATTENTION_BACKEND:-FLASH_ATTN}" \
@@ -542,18 +422,18 @@ check_paths() {
   require_path "${RECALL_MODEL_PATH}" "recall model"
   if [[ "${RUN_MODE}" != "ranker-only" ]]; then
     if [[ -z "${AGENT_MODEL}" ]]; then
-      echo "ERROR: AGENT_MODEL or MODEL_PATH must be explicitly set for RUN_MODE=${RUN_MODE}; no default agent model is allowed in eval." >&2
+      echo "ERROR: AGENT_MODEL must be explicitly set for RUN_MODE=${RUN_MODE}; no default agent model is allowed in eval." >&2
       exit 2
     fi
     require_path "${AGENT_MODEL}" "agent model"
   fi
   if [[ "${RUN_MODE}" != "no-ranker" && "${RERANKER}" == "dense_e5" ]]; then
     if [[ -z "${RANKER_MODEL}" ]]; then
-      echo "ERROR: RANKER_MODEL or RANKER_MODEL_PATH must be explicitly set for RUN_MODE=${RUN_MODE}; no default ranker model is allowed in eval." >&2
+      echo "ERROR: RANKER_MODEL must be explicitly set for RUN_MODE=${RUN_MODE}; no default ranker model is allowed in eval." >&2
       exit 2
     fi
     if [[ -z "${RANKER_BASE_MODEL}" ]]; then
-      echo "ERROR: RANKER_BASE_MODEL or RANKER_BASE_MODEL_PATH must be explicitly set for RUN_MODE=${RUN_MODE}; use the tokenizer/base model such as e5-base-v2." >&2
+      echo "ERROR: RANKER_BASE_MODEL must be explicitly set for RUN_MODE=${RUN_MODE}; use the tokenizer/base model such as e5-base-v2." >&2
       exit 2
     fi
     require_path "${RANKER_MODEL}" "ranker model"
@@ -612,7 +492,8 @@ write_shell_report() {
 - Group: ${GROUP_NAME}
 - Group slug: ${GROUP_SLUG}
 - Task: ${TASK_NAME}
-- Strategy: ${STRATEGY_NAME}
+- Eval task: ${EVAL_TASK_NAME}
+- Eval task slug: ${EVAL_TASK_SLUG}
 - Run name: ${RUN_NAME}
 - Run mode: ${RUN_MODE}
 - Reranker: ${RERANKER}
@@ -639,22 +520,25 @@ write_shell_report() {
 - Metrics JSONL: ${METRICS_JSONL} (${metrics_rows} rows)
 - Search timing JSONL: ${SEARCH_TIMING_JSONL} (${timing_rows} rows)
 - LLM IO JSONL: ${LLM_IO_JSONL} (${llm_io_rows} rows)
+- LLM IO max records: ${LLM_IO_MAX_RECORDS}
 - Ranker output JSONL: ${RANKER_OUTPUT_JSONL} (${ranker_rows} rows)
 - Validation data dir: ${VALIDATION_DATA_DIR}
 - Rollout data dir: ${ROLLOUT_DATA_DIR}
 - Tool config: ${TOOL_CONFIG}
-- Eval budget YAML: ${EVAL_BUDGET_YAML:-none}
+- Eval budget config: ${EVAL_BUDGET_CONFIG:-unknown}
 
 ## Key Config
 
-- TOP_N: ${TOP_N}
-- TOP_M: ${TOP_M}
-- RANKER_TOP_K: ${RANKER_TOP_K}
+- RECALL_FINAL_TOP_N: ${RECALL_FINAL_TOP_N}
+- SEARCH_TOOL_FINAL_TOP_M: ${SEARCH_TOOL_FINAL_TOP_M}
+- RANKER_FINAL_TOP_K: ${RANKER_FINAL_TOP_K}
 - MAX_EVAL_NUM: ${MAX_EVAL_NUM}
 - EVAL_BATCH_SIZE: ${EVAL_BATCH_SIZE}
 - ENABLE_THINKING: ${ENABLE_THINKING}
 - MAX_MODEL_LEN: ${MAX_MODEL_LEN}
 - STOP_SEQUENCES: ${STOP_SEQUENCES:-none}
+- COSEARCH_ACCELERATOR: ${COSEARCH_ACCELERATOR}
+- $(co_accel_visible_devices_var): ${AGENT_GPU_IDS}
 - AGENT_GPU_IDS: ${AGENT_GPU_IDS}
 - RANK_GPU_ID: ${RANK_GPU_ID}
 - RANKER_CUDA_VISIBLE_DEVICES: ${RANKER_CUDA_VISIBLE_DEVICES}
@@ -673,33 +557,29 @@ RUN_NAME=${RUN_NAME}
 EXP_NAME=${EXP_NAME}
 GROUP_NAME=${GROUP_NAME}
 GROUP_SLUG=${GROUP_SLUG}
-STRATEGY_NAME=${STRATEGY_NAME}
-STRATEGY_SLUG=${STRATEGY_SLUG}
+EVAL_TASK_NAME=${EVAL_TASK_NAME}
+EVAL_TASK_SLUG=${EVAL_TASK_SLUG}
 RUN_MODE=${RUN_MODE}
 RERANKER=${RERANKER}
+COSEARCH_ACCELERATOR=${COSEARCH_ACCELERATOR}
+VISIBLE_DEVICES_VAR=$(co_accel_visible_devices_var)
+$(co_accel_visible_devices_var)=${AGENT_GPU_IDS}
 PROJECT_ROOT=${PROJECT_ROOT}
 PY=${PY}
 EVALUATOR=${EVALUATOR}
 AGENT_MODEL=${AGENT_MODEL}
-MODEL_PATH=${MODEL_PATH}
 RECALL_MODEL_PATH=${RECALL_MODEL_PATH}
 RANKER_MODEL=${RANKER_MODEL}
 RANKER_BASE_MODEL=${RANKER_BASE_MODEL}
 RANKER_ENCODER_PATH=${RANKER_ENCODER_PATH}
-CHECKPOINT_DIR=${CHECKPOINT_DIR}
-RESUME_FROM_PATH=${RESUME_FROM_PATH}
 DATA_PATH=${DATA_PATH}
 MAX_EVAL_NUM=${MAX_EVAL_NUM}
-VAL_MAX_SAMPLES=${VAL_MAX_SAMPLES}
 EVAL_BATCH_SIZE=${EVAL_BATCH_SIZE}
 MAX_RANKER_STEPS=${MAX_RANKER_STEPS}
 KEEP_TRACE=${KEEP_TRACE}
-TOP_N=${TOP_N}
-TOP_M=${TOP_M}
-TOP_K=${TOP_K}
-RECALL_TOP_K=${RECALL_TOP_K}
-RANKER_TOP_K=${RANKER_TOP_K}
-RANK_TOP_K=${RANK_TOP_K}
+RECALL_FINAL_TOP_N=${RECALL_FINAL_TOP_N}
+SEARCH_TOOL_FINAL_TOP_M=${SEARCH_TOOL_FINAL_TOP_M}
+RANKER_FINAL_TOP_K=${RANKER_FINAL_TOP_K}
 TRACE_DIR=${TRACE_DIR}
 OUT_DIR=${OUT_DIR}
 REPORT_PATH=${REPORT_PATH}
@@ -710,6 +590,7 @@ ENV_PATH=${ENV_PATH}
 METRICS_JSONL=${METRICS_JSONL}
 SEARCH_TIMING_JSONL=${SEARCH_TIMING_JSONL}
 LLM_IO_JSONL=${LLM_IO_JSONL}
+LLM_IO_MAX_RECORDS=${LLM_IO_MAX_RECORDS}
 RANKER_OUTPUT_JSONL=${RANKER_OUTPUT_JSONL}
 ROLLOUT_DATA_DIR=${ROLLOUT_DATA_DIR}
 VALIDATION_DATA_DIR=${VALIDATION_DATA_DIR}
@@ -740,7 +621,8 @@ LLM_JUDGE_RETRY_BACKOFF=${LLM_JUDGE_RETRY_BACKOFF}
 TRUST_REMOTE_CODE=${TRUST_REMOTE_CODE}
 ENABLE_THINKING=${ENABLE_THINKING}
 TOOL_CONFIG=${TOOL_CONFIG}
-EVAL_BUDGET_YAML=${EVAL_BUDGET_YAML}
+EVAL_BUDGET_CONFIG=${EVAL_BUDGET_CONFIG}
+EVAL_BUDGET_CONFIG_FILE=${EVAL_BUDGET_CONFIG_FILE}
 STOP_SEQUENCES=${STOP_SEQUENCES}
 MAX_ASSISTANT_TURNS=${MAX_ASSISTANT_TURNS}
 MAX_USER_TURNS=${MAX_USER_TURNS}
@@ -781,6 +663,7 @@ llm_io_args=()
 if [[ -n "${LLM_IO_JSONL}" ]]; then
   llm_io_args+=(--llm-io-jsonl "${LLM_IO_JSONL}")
 fi
+llm_io_args+=(--llm-io-max-records "${LLM_IO_MAX_RECORDS}")
 
 check_paths
 write_env_file
@@ -791,7 +674,8 @@ if [[ "${DRY_RUN:-0}" == "1" ]]; then
   echo "TRACE_DIR=${TRACE_DIR}"
   echo "RUNTIME_LOG_DIR=${RUNTIME_LOG_DIR}"
   echo "REPORT_PATH=${REPORT_PATH}"
-  echo "STRATEGY_NAME=${STRATEGY_NAME}"
+  echo "EVAL_TASK_NAME=${EVAL_TASK_NAME}"
+  echo "EVAL_TASK_SLUG=${EVAL_TASK_SLUG}"
   echo "RUN_NAME=${RUN_NAME}"
   echo "RUN_MODE=${RUN_MODE}"
   echo "RERANKER=${RERANKER}"
@@ -813,6 +697,8 @@ if [[ "${DRY_RUN:-0}" == "1" ]]; then
   echo "LLM_JUDGE_ENDPOINT=${LLM_JUDGE_ENDPOINT}"
   echo "LLM_JUDGE_MODEL=${LLM_JUDGE_MODEL}"
   echo "LLM_JUDGE_PROMPT_PATH=${LLM_JUDGE_PROMPT_PATH}"
+  echo "COSEARCH_ACCELERATOR=${COSEARCH_ACCELERATOR}"
+  echo "$(co_accel_visible_devices_var)=${AGENT_GPU_IDS}"
   echo "AGENT_GPU_IDS=${AGENT_GPU_IDS}"
   echo "RANK_GPU_ID=${RANK_GPU_ID}"
   echo "RANKER_CUDA_VISIBLE_DEVICES=${RANKER_CUDA_VISIBLE_DEVICES}"
@@ -821,8 +707,9 @@ if [[ "${DRY_RUN:-0}" == "1" ]]; then
   echo "METRICS_JSONL=${METRICS_JSONL}"
   echo "SEARCH_TIMING_JSONL=${SEARCH_TIMING_JSONL}"
   echo "LLM_IO_JSONL=${LLM_IO_JSONL}"
+  echo "LLM_IO_MAX_RECORDS=${LLM_IO_MAX_RECORDS}"
   echo "TOOL_CONFIG=${TOOL_CONFIG}"
-  echo "EVAL_BUDGET_YAML=${EVAL_BUDGET_YAML}"
+  echo "EVAL_BUDGET_CONFIG=${EVAL_BUDGET_CONFIG}"
   echo "STOP_SEQUENCES=${STOP_SEQUENCES:-none}"
   write_shell_report "dry-run"
   exit 0
@@ -895,12 +782,12 @@ env "${evaluator_env[@]}" "${PY}" "${EVALUATOR}" run \
   --keep-trace "${KEEP_TRACE}" \
   --trace-dir "${TRACE_DIR}" \
   --report-path "${REPORT_PATH}" \
-  --strategy-name "${STRATEGY_NAME}" \
+  --eval-task-name "${EVAL_TASK_NAME}" \
   --retrieval-url "${RETRIEVAL_SERVICE_URL}" \
   --agent-served-model "${AGENT_SERVED_MODEL}" \
-  --top-n "${TOP_N}" \
-  --top-m "${TOP_M}" \
-  --ranker-top-k "${RANKER_TOP_K}" \
+  --top-n "${RECALL_FINAL_TOP_N}" \
+  --top-m "${SEARCH_TOOL_FINAL_TOP_M}" \
+  --ranker-top-k "${RANKER_FINAL_TOP_K}" \
   --max-assistant-turns "${MAX_ASSISTANT_TURNS}" \
   --max-user-turns "${MAX_USER_TURNS}" \
   --max-tool-response-length "${MAX_TOOL_RESPONSE_LENGTH}" \

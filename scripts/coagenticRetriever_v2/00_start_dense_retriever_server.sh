@@ -27,7 +27,7 @@ HOST="${HOST:-0.0.0.0}"
 DEVICE="${DEVICE:-$(co_accel_device_prefix)}"
 RECALL_GPU_ID="${RECALL_GPU_ID:-5}"
 RETRIEVER_GPU_IDS="${RETRIEVER_GPU_IDS:-${GPU_ID:-${RECALL_GPU_ID}}}"
-RECALL_TOP_K="${RECALL_TOP_K:-50}"
+RECALL_FINAL_TOP_N="${RECALL_FINAL_TOP_N:-50}"
 RETRIEVER_NAME="${RETRIEVER_NAME:-e5}"
 DOC_DTYPE="${DOC_DTYPE:-float16}"
 QUERY_BATCH_SIZE="${QUERY_BATCH_SIZE:-32}"
@@ -60,7 +60,7 @@ DOC_DTYPE=${DOC_DTYPE}
 QUERY_BATCH_SIZE=${QUERY_BATCH_SIZE}
 HOST=${HOST}
 PORT=${PORT}
-RECALL_TOP_K=${RECALL_TOP_K}
+RECALL_FINAL_TOP_N=${RECALL_FINAL_TOP_N}
 EOF
   exit 0
 fi
@@ -107,12 +107,12 @@ fi
 echo "Starting GPU dense retriever from ${GPU_DENSE_RETRIEVER_SERVER}" >&2
 echo "  $(co_accel_visible_devices_var)=${RETRIEVER_GPU_IDS}" >&2
 echo "  device=${DEVICE}; doc embeddings will be loaded into ${COSEARCH_ACCELERATOR} memory as ${DOC_DTYPE}" >&2
-echo "  retrieval endpoint=http://${HOST}:${PORT}/retrieve, topk=${RECALL_TOP_K}" >&2
+echo "  retrieval endpoint=http://${HOST}:${PORT}/retrieve, topk=${RECALL_FINAL_TOP_N}" >&2
 
 exec env $(co_accel_env_visible_devices_cmd "${RETRIEVER_GPU_IDS}") "${PY}" "${GPU_DENSE_RETRIEVER_SERVER}" \
   --index_path "${INDEX_FILE}" \
   --corpus_path "${CORPUS_FILE}" \
-  --topk "${RECALL_TOP_K}" \
+  --topk "${RECALL_FINAL_TOP_N}" \
   --retriever_name "${RETRIEVER_NAME}" \
   --retriever_model "${RETRIEVER_MODEL}" \
   --host "${HOST}" \

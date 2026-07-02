@@ -91,8 +91,8 @@ data/coAgenticRetriever/albation_1/val.parquet
 For custom paths:
 
 ```bash
-TRAIN_DATA="['/path/to/train.parquet']" VAL_DATA="['/path/to/val.parquet']" \
-bash scripts/train_coagentic_retriever_grpo.sh
+EXP_NAME=my_coagentic_retriever_run \
+bash ../scripts/coagenticRetriever_v2/01_train_launcher.sh --main_run_config=coAgenticRetriever_main
 ```
 
 ---
@@ -103,11 +103,14 @@ Pass the retriever URL as an environment variable when using an already running
 retriever:
 
 ```bash
-RETRIEVAL_SERVICE_URL="http://<retriever-hostname>:8030/retrieve" bash scripts/train_coagentic_retriever_grpo.sh
+RETRIEVAL_SERVICE_URL="http://<retriever-hostname>:8030/retrieve" \
+EXP_NAME=my_coagentic_retriever_run \
+bash ../scripts/coagenticRetriever_v2/01_train_launcher.sh --main_run_config=coAgenticRetriever_main
 ```
 
-The script generates the tool config at runtime with this URL injected, so no
-manual tool-config editing is needed.
+The v2 launcher generates a per-run tool config from the final Hydra config, so
+recall/ranker cutoffs stay in the canonical config chain instead of the static
+tool template.
 
 ---
 

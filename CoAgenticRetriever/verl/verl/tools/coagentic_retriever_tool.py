@@ -83,10 +83,9 @@ class CoAgenticRetrieverTool(BaseTool):
 
         self.retrieval_url = _require_config(config, "retrieval_service_url")
         self.timeout = float(_require_config(config, "timeout"))
-        self.default_top_n = int(_require_config(config, "default_top_n"))
-        self.default_top_m = int(_require_config(config, "default_top_m"))
+        self.recall_final_top_n = int(_require_config(config, "recall_final_top_n"))
+        self.search_tool_final_top_m = int(_require_config(config, "searchTool_final_top_m"))
         self.hit_cutoffs = list(_require_config(config, "hit_cutoffs"))
-        self.format_penalty = float(_require_config(config, "format_penalty"))
         self.trivial_answers = set(
             answer.lower().strip()
             for answer in _require_config(config, "trivial_answers")
@@ -105,7 +104,7 @@ class CoAgenticRetrieverTool(BaseTool):
         self.ranker_backend = "disabled"
         self.ranker_actor_name = ""
         self.ranker_actor_namespace = None
-        self.ranker_top_k = self.default_top_n
+        self.ranker_final_top_k = self.recall_final_top_n
         self.ranker_max_query_length = 0
         self.ranker_max_doc_length = 0
         if self.ranker_enabled:
@@ -115,7 +114,7 @@ class CoAgenticRetrieverTool(BaseTool):
                 raise ValueError("ranker.required must be true when ranker_enabled=true")
             self.ranker_actor_name = str(_require_config(ranker_config, "actor_name"))
             self.ranker_actor_namespace = _require_present_config(ranker_config, "actor_namespace")
-            self.ranker_top_k = int(_require_config(ranker_config, "top_k"))
+            self.ranker_final_top_k = int(_require_config(ranker_config, "final_top_k"))
             self.ranker_max_query_length = int(_require_config(ranker_config, "max_query_length"))
             self.ranker_max_doc_length = int(_require_config(ranker_config, "max_doc_length"))
         self.ranker = None
@@ -140,8 +139,8 @@ class CoAgenticRetrieverTool(BaseTool):
     async def execute(self, instance_id: str, parameters: dict[str, Any], **kwargs):
         create_kwargs = self._instance_kwargs.get(instance_id, {})
         query = parameters.get("query")
-        top_n = int(create_kwargs.get("top_n", self.default_top_n))
-        top_m = int(create_kwargs.get("top_m", self.default_top_m))
+        top_n = int(create_kwargs.get("top_n", self.recall_final_top_n))
+        top_m = int(create_kwargs.get("top_m", self.search_tool_final_top_m))
         answers = create_kwargs.get("answers", [])
 
         if not query:
@@ -225,10 +224,12 @@ class CoAgenticRetrieverTool(BaseTool):
             metrics["ranker_error_message"] = str(exc)
             raise
 
-        agent_top_k = min(top_m, self.ranker_top_k, len(ranked_docs))
+        ranked_docs = ranked_docs[: min(self.ranker_final_top_k, len(ranked_docs))]
+        agent_top_k = min(top_m, len(ranked_docs))
         final_docs = ranked_docs[:agent_top_k]
         metrics["rank_top50_docs"] = ranked_docs[:top_n]
-        metrics["rank_top5_docs"] = final_docs
+        metrics["rank_top5_docs"] = ranked_docs[:5]
+        metrics["rank_final_top_docs"] = ranked_docs
         metrics["num_ranked_docs"] = len(ranked_docs)
 
         response_text = format_tool_response(final_docs)

@@ -1,0 +1,33 @@
+# eval_CAR_asy_labl_v0701a_npu_fix 这次任务的 overlay。
+#
+# overlay 只写“本次任务相对 eval runtime base 的差异”。公共默认值继续放在：
+# - CoAgenticRetriever/config/eval_runtime/coagentic_retriever_vllm.yaml
+# - CoAgenticRetriever/config/eval_budget/coagentic_retriever_aligned_budget.yaml
+# - CoAgenticRetriever/config/resource/local_eval_4gpu_0_3.yaml
+
+identity:
+  # 本次评估任务名。会出现在 EVAL_TASK_NAME、日志目录、报告文件名和 run_config.json 中。
+  eval_task_name: async_label_dpskv4f_v0702_no_ranker
+
+mode:
+  # 本次验证走 no-ranker：agent 只使用 recall retriever 返回的候选，不启用 dense ranker 重排。
+  run_mode: no-ranker
+  # no-ranker 下该字段不会真正参与重排；保留 dense_e5 是为了和 base runtime 的合法取值一致。
+  reranker: dense_e5
+
+models:
+  # agent vLLM 加载的最新 checkpoint。
+  agent_model: /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/checkpoints/qwen3_4b_probe/coAgenticRetriever/260702-010936-CAR_async_ranker_training_ds_flash_mix_signal_b3_v1_select_all/global_step_79
+  # 同一个 checkpoint 也记录为 ranker_model，方便切回 full/ranker-only 时有明确模型来源。
+  # no-ranker 模式不会加载 dense ranker。
+  ranker_model: /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/checkpoints/qwen3_4b_probe/coAgenticRetriever/260702-010936-CAR_async_ranker_training_ds_flash_mix_signal_b3_v1_select_all/global_step_79
+  # ranker tokenizer/base model。no-ranker 模式不加载，但保留用于 full 模式审计和后续切换。
+  ranker_base_model: /data01/ms_wksp/agent_up_to_date/models/retriever/e5-base-v2
+
+data:
+  # 本次评估使用的 eval parquet。
+  data_path: /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/data/coAgenticRetriever/albation_1/co_search_ablation.eval.parquet
+
+tool:
+  # 当前验证不把 tool schema 注入 prompt，保持和 NPU eval launcher 对齐。
+  inject_tool_schema: false

@@ -139,7 +139,7 @@ TOP_N="${TOP_N:-${RECALL_TOP_K:-50}}"
 RECALL_TOP_K="${RECALL_TOP_K:-${TOP_N}}"
 TOP_M="${TOP_M:-${TOP_K:-5}}"
 TOP_K="${TOP_K:-${TOP_M}}"
-RANK_TOP_K="${RANK_TOP_K:-${RANKER_TOP_K:-${TOP_M}}}"
+RANK_TOP_K="${RANK_TOP_K:-${RANKER_TOP_K:-${RECALL_TOP_K}}}"
 RANKER_TOP_K="${RANKER_TOP_K:-${RANK_TOP_K}}"
 
 EXPLICIT_PROXY_PORT="${PROXY_PORT+x}"
@@ -262,8 +262,8 @@ try:
     emit("STATIC_RETRIEVAL_PORT", urlparse(str(config.get("retrieval_service_url", ""))).port or "")
 except Exception:
     emit("STATIC_RETRIEVAL_PORT", "")
-emit("STATIC_DEFAULT_TOP_N", config.get("default_top_n", ""))
-emit("STATIC_DEFAULT_TOP_M", config.get("default_top_m", ""))
+emit("STATIC_RECALL_FINAL_TOP_N", config.get("recall_final_top_n") or config.get("default_top_n", ""))
+emit("STATIC_SEARCH_TOOL_FINAL_TOP_M", config.get("searchTool_final_top_m") or config.get("default_top_m", ""))
 emit("STATIC_MAX_RETRIES", config.get("max_retries", ""))
 emit("STATIC_RETRY_DELAY", config.get("retry_delay", ""))
 emit("STATIC_RETRY_BACKOFF", config.get("retry_backoff", ""))
@@ -273,7 +273,7 @@ emit("STATIC_RANKER_ENABLED", config.get("ranker_enabled", ""))
 emit("STATIC_RANKER_MODEL_PATH", ranker.get("model_path", ""))
 emit("STATIC_RANKER_ENCODER_PATH", ranker.get("encoder_path", ""))
 emit("STATIC_RANKER_DEVICE", ranker.get("device", ""))
-emit("STATIC_RANKER_TOP_K", ranker.get("top_k", ""))
+emit("STATIC_RANKER_FINAL_TOP_K", ranker.get("final_top_k") or ranker.get("top_k", ""))
 emit("STATIC_RANKER_MAX_QUERY_LENGTH", ranker.get("max_query_length", ""))
 emit("STATIC_RANKER_MAX_DOC_LENGTH", ranker.get("max_doc_length", ""))
 emit("STATIC_TRUST_REMOTE_CODE", ranker.get("trust_remote_code", ""))
@@ -289,12 +289,18 @@ emit("STATIC_TRUST_REMOTE_CODE", ranker.get("trust_remote_code", ""))
   elif [[ -n "${EXPLICIT_PROXY_PORT}" && -z "${EXPLICIT_RETRIEVAL_SERVICE_URL}" ]]; then
     RETRIEVAL_SERVICE_URL="http://127.0.0.1:${PROXY_PORT}/retrieve"
   fi
-  TOP_N="${STATIC_DEFAULT_TOP_N}"
-  RECALL_TOP_K="${STATIC_DEFAULT_TOP_N}"
-  TOP_M="${STATIC_DEFAULT_TOP_M}"
-  TOP_K="${STATIC_DEFAULT_TOP_M}"
-  RANK_TOP_K="${STATIC_RANKER_TOP_K}"
-  RANKER_TOP_K="${STATIC_RANKER_TOP_K}"
+  if [[ -n "${STATIC_RECALL_FINAL_TOP_N}" ]]; then
+    TOP_N="${STATIC_RECALL_FINAL_TOP_N}"
+    RECALL_TOP_K="${STATIC_RECALL_FINAL_TOP_N}"
+  fi
+  if [[ -n "${STATIC_SEARCH_TOOL_FINAL_TOP_M}" ]]; then
+    TOP_M="${STATIC_SEARCH_TOOL_FINAL_TOP_M}"
+    TOP_K="${STATIC_SEARCH_TOOL_FINAL_TOP_M}"
+  fi
+  if [[ -n "${STATIC_RANKER_FINAL_TOP_K}" ]]; then
+    RANK_TOP_K="${STATIC_RANKER_FINAL_TOP_K}"
+    RANKER_TOP_K="${STATIC_RANKER_FINAL_TOP_K}"
+  fi
   RETRIEVAL_MAX_RETRIES="${STATIC_MAX_RETRIES}"
   RETRIEVAL_RETRY_DELAY="${STATIC_RETRY_DELAY}"
   RETRIEVAL_RETRY_BACKOFF="${STATIC_RETRY_BACKOFF}"
@@ -314,6 +320,9 @@ emit("STATIC_TRUST_REMOTE_CODE", ranker.get("trust_remote_code", ""))
 }
 
 load_static_tool_config
+RECALL_FINAL_TOP_N="${RECALL_TOP_K}"
+SEARCH_TOOL_FINAL_TOP_M="${TOP_M}"
+RANKER_FINAL_TOP_K="${RANKER_TOP_K}"
 
 cleanup() {
   if [[ -n "${AGENT_PGID}" ]] && kill -0 "-${AGENT_PGID}" 2>/dev/null; then
@@ -648,9 +657,12 @@ write_shell_report() {
 
 ## Key Config
 
-- TOP_N: ${TOP_N}
-- TOP_M: ${TOP_M}
-- RANKER_TOP_K: ${RANKER_TOP_K}
+- RECALL_FINAL_TOP_N: ${RECALL_FINAL_TOP_N}
+- SEARCH_TOOL_FINAL_TOP_M: ${SEARCH_TOOL_FINAL_TOP_M}
+- RANKER_FINAL_TOP_K: ${RANKER_FINAL_TOP_K}
+- Runtime alias TOP_N: ${TOP_N}
+- Runtime alias TOP_M: ${TOP_M}
+- Runtime alias RANKER_TOP_K: ${RANKER_TOP_K}
 - MAX_EVAL_NUM: ${MAX_EVAL_NUM}
 - EVAL_BATCH_SIZE: ${EVAL_BATCH_SIZE}
 - ENABLE_THINKING: ${ENABLE_THINKING}
@@ -700,6 +712,12 @@ VAL_MAX_SAMPLES=${VAL_MAX_SAMPLES}
 EVAL_BATCH_SIZE=${EVAL_BATCH_SIZE}
 MAX_RANKER_STEPS=${MAX_RANKER_STEPS}
 KEEP_TRACE=${KEEP_TRACE}
+RECALL_FINAL_TOP_N=${RECALL_FINAL_TOP_N}
+SEARCH_TOOL_FINAL_TOP_M=${SEARCH_TOOL_FINAL_TOP_M}
+RANKER_FINAL_TOP_K=${RANKER_FINAL_TOP_K}
+STATIC_RECALL_FINAL_TOP_N=${STATIC_RECALL_FINAL_TOP_N}
+STATIC_SEARCH_TOOL_FINAL_TOP_M=${STATIC_SEARCH_TOOL_FINAL_TOP_M}
+STATIC_RANKER_FINAL_TOP_K=${STATIC_RANKER_FINAL_TOP_K}
 TOP_N=${TOP_N}
 TOP_M=${TOP_M}
 TOP_K=${TOP_K}

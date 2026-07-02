@@ -198,6 +198,7 @@ ensure_recall_service() {
   PORT="${PROXY_PORT}" \
   RECALL_GPU_ID="${RECALL_GPU_ID}" \
   RETRIEVER_GPU_IDS="${RECALL_GPU_ID}" \
+  RECALL_FINAL_TOP_N="${RECALL_TOP_K}" \
   DEVICE="${RETRIEVER_DEVICE}" \
   PY="${PY}" \
     bash "${SCRIPT_DIR}/00_start_dense_retriever_server.sh" >"${RECALL_SERVICE_LOG}" 2>&1 &
@@ -301,6 +302,9 @@ if [[ "${DRY_RUN:-0}" == "1" ]]; then
   echo "search timing jsonl: ${SEARCH_TIMING_JSONL}"
   echo "nvidia-smi csv: ${NVIDIA_SMI_CSV}"
   echo "report prefix: ${REPORT_PREFIX}"
+  echo "recall final top-N: hydra=${HYDRA_RECALL_FINAL_TOP_N:-${RECALL_TOP_K}} runtime_tool=${RUNTIME_TOOL_RECALL_FINAL_TOP_N:-${RECALL_TOP_K}}"
+  echo "ranker final top-K: hydra=${HYDRA_RANKER_FINAL_TOP_K:-} runtime_tool=${RUNTIME_TOOL_RANKER_FINAL_TOP_K:-}"
+  echo "searchTool final top-M: static=${SEARCH_TOOL_FINAL_TOP_M:-${TOP_M}} runtime_tool=${RUNTIME_TOOL_SEARCH_TOOL_FINAL_TOP_M:-${SEARCH_TOOL_FINAL_TOP_M:-${TOP_M}}}"
   echo "rollout trace mode: ${ROLLOUT_TRACE_MODE}"
   echo "checkpoint dir is reserved for actual model checkpoint writes: ${OUT_DIR}"
   if [[ "${CANONICAL_CONFIG_MODE}" == "1" ]]; then
@@ -354,6 +358,12 @@ export RETRIEVAL_PREFLIGHT_QUERY
 export RETRIEVAL_PREFLIGHT_EXPECT
 export TOP_N
 export TOP_M
+export HYDRA_RECALL_FINAL_TOP_N
+export HYDRA_RANKER_FINAL_TOP_K
+export RUNTIME_TOOL_RECALL_FINAL_TOP_N
+export RUNTIME_TOOL_RANKER_FINAL_TOP_K
+export SEARCH_TOOL_FINAL_TOP_M
+export RUNTIME_TOOL_SEARCH_TOOL_FINAL_TOP_M
 export NEEDS_LLM_JUDGE_SERVICE
 export ASYNC_RANKER_TRAINING_YAML
 export LLM_JUDGE_ENDPOINT

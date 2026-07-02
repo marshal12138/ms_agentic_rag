@@ -204,8 +204,8 @@ try:
     emit("STATIC_RETRIEVAL_PORT", urlparse(str(config.get("retrieval_service_url", ""))).port or "")
 except Exception:
     emit("STATIC_RETRIEVAL_PORT", "")
-emit("STATIC_DEFAULT_TOP_N", config.get("default_top_n", ""))
-emit("STATIC_DEFAULT_TOP_M", config.get("default_top_m", ""))
+emit("STATIC_RECALL_FINAL_TOP_N", config.get("recall_final_top_n") or config.get("default_top_n", ""))
+emit("STATIC_SEARCH_TOOL_FINAL_TOP_M", config.get("searchTool_final_top_m") or config.get("default_top_m", ""))
 emit("STATIC_FORMAT_PENALTY", config.get("format_penalty", ""))
 emit("STATIC_RANKER_ENABLED", config.get("ranker_enabled", ""))
 ' "${TOOL_CONFIG}")"
@@ -215,9 +215,13 @@ emit("STATIC_RANKER_ENABLED", config.get("ranker_enabled", ""))
   if [[ -n "${STATIC_RETRIEVAL_PORT}" ]]; then
     PROXY_PORT="${STATIC_RETRIEVAL_PORT}"
   fi
-  RECALL_TOP_K="${STATIC_DEFAULT_TOP_N}"
-  TOP_N="${STATIC_DEFAULT_TOP_N}"
-  TOP_M="${STATIC_DEFAULT_TOP_M}"
+  if [[ -n "${STATIC_RECALL_FINAL_TOP_N}" ]]; then
+    RECALL_TOP_K="${STATIC_RECALL_FINAL_TOP_N}"
+    TOP_N="${STATIC_RECALL_FINAL_TOP_N}"
+  fi
+  if [[ -n "${STATIC_SEARCH_TOOL_FINAL_TOP_M}" ]]; then
+    TOP_M="${STATIC_SEARCH_TOOL_FINAL_TOP_M}"
+  fi
   FORMAT_PENALTY="${STATIC_FORMAT_PENALTY}"
   RECALL_RETRIEVER_CONFIG_DEVICE="$(co_accel_device_spec "${RECALL_GPU_ID}")"
   COAGENTIC_RANKER_ENABLED="${STATIC_RANKER_ENABLED}"
@@ -237,6 +241,9 @@ emit("STATIC_RANKER_ENABLED", config.get("ranker_enabled", ""))
 }
 
 load_static_tool_config
+RECALL_FINAL_TOP_N="${RECALL_TOP_K}"
+SEARCH_TOOL_FINAL_TOP_M="${TOP_M}"
+RANKER_FINAL_TOP_K="${RANK_TOP_K:-${RECALL_TOP_K}}"
 RANKER_DEVICE_TRAIN="${RANKER_DEVICE_TRAIN:-}"
 RECALL_RETRIEVER_DEVICE="${RECALL_RETRIEVER_DEVICE:-$(co_accel_device_spec 1)}"
 
@@ -566,6 +573,9 @@ RECALL_GPU_ID=${RECALL_GPU_ID}
 RANK_GPU_ID=${RANK_GPU_ID}
 RANKER_VISIBLE_DEVICE_INDEX=${RANKER_VISIBLE_DEVICE_INDEX}
 TOOL_CONFIG=${TOOL_CONFIG}
+RECALL_FINAL_TOP_N=${RECALL_FINAL_TOP_N}
+SEARCH_TOOL_FINAL_TOP_M=${SEARCH_TOOL_FINAL_TOP_M}
+RANKER_FINAL_TOP_K=${RANKER_FINAL_TOP_K}
 RECALL_TOP_K=${RECALL_TOP_K}
 RANK_TOP_K=${RANK_TOP_K}
 TOP_N=${TOP_N}
@@ -607,6 +617,9 @@ if [[ "${DRY_RUN:-0}" == "1" ]]; then
   echo "search timing jsonl: ${SEARCH_TIMING_JSONL}"
   echo "nvidia-smi csv: ${NVIDIA_SMI_CSV}"
   echo "report prefix: ${REPORT_PREFIX}"
+  echo "recall final top-N: ${RECALL_FINAL_TOP_N}"
+  echo "ranker final top-K: ${RANKER_FINAL_TOP_K}"
+  echo "searchTool final top-M: ${SEARCH_TOOL_FINAL_TOP_M}"
   echo "rollout trace mode: ${ROLLOUT_TRACE_MODE}"
   echo "checkpoint dir is reserved for actual model checkpoint writes: ${OUT_DIR}"
   if is_truthy "${ENABLE_ASYNC_RANKER_TRAINING}"; then
@@ -719,6 +732,9 @@ export RETRIEVAL_PREFLIGHT_QUERY
 export RETRIEVAL_PREFLIGHT_EXPECT
 export TOP_N
 export TOP_M
+export RECALL_FINAL_TOP_N
+export SEARCH_TOOL_FINAL_TOP_M
+export RANKER_FINAL_TOP_K
 export ENABLE_ASYNC_RANKER_TRAINING
 export ASYNC_RANKER_TRAINING_YAML
 export LLM_JUDGE_ENDPOINT
@@ -731,9 +747,9 @@ export COAGENTIC_RETRIEVER_LLM_IO_MAX_RECORDS="${COAGENTIC_RETRIEVER_LLM_IO_MAX_
 export COAGENTIC_MAIN="${PROJECT_ROOT}/main_coagentic_retriever.py"
 USER_COAGENTIC_EXTRA_ARGS="${COAGENTIC_EXTRA_ARGS:-}"
 if [[ "${EFFECTIVE_RUN_MODE}" == "no-ranker" ]]; then
-  DEFAULT_COAGENTIC_EXTRA_ARGS="trainer.ranker_trainable=false trainer.ranker_update_mode=disabled trainer.disable_reranker_rollout=true ranker_training.shared_inference_ranker.enable=false ranker_training.async_ranker_training.enable=false ranker_training.signal_source=pseudo_rank recall_retriever.model_path=${RECALL_MODEL_PATH} recall_retriever.device=${RECALL_RETRIEVER_CONFIG_DEVICE} recall_retriever.service_url=${RETRIEVAL_SERVICE_URL} recall_retriever.top_k=${RECALL_TOP_K} recall_retriever.trainable=false recall_retriever.index_refresh=false"
+  DEFAULT_COAGENTIC_EXTRA_ARGS="trainer.ranker_trainable=false trainer.ranker_update_mode=disabled trainer.disable_reranker_rollout=true ranker_training.shared_inference_ranker.enable=false ranker_training.async_ranker_training.enable=false ranker_training.signal_source=pseudo_rank recall_retriever.model_path=${RECALL_MODEL_PATH} recall_retriever.device=${RECALL_RETRIEVER_CONFIG_DEVICE} recall_retriever.service_url=${RETRIEVAL_SERVICE_URL} recall_retriever.recall_final_top_n=${RECALL_TOP_K} recall_retriever.trainable=false recall_retriever.index_refresh=false"
 else
-  DEFAULT_COAGENTIC_EXTRA_ARGS="trainer.ranker_trainable=true trainer.ranker_update_mode=contrastive trainer.disable_reranker_rollout=true recall_retriever.model_path=${RECALL_MODEL_PATH} recall_retriever.device=${RECALL_RETRIEVER_CONFIG_DEVICE} recall_retriever.service_url=${RETRIEVAL_SERVICE_URL} recall_retriever.top_k=${RECALL_TOP_K} recall_retriever.trainable=false recall_retriever.index_refresh=false ranker_training.construction_log_jsonl=${LOG_DIR}/${RUN_NAME}.contrastive_construction.jsonl"
+  DEFAULT_COAGENTIC_EXTRA_ARGS="trainer.ranker_trainable=true trainer.ranker_update_mode=contrastive trainer.disable_reranker_rollout=true recall_retriever.model_path=${RECALL_MODEL_PATH} recall_retriever.device=${RECALL_RETRIEVER_CONFIG_DEVICE} recall_retriever.service_url=${RETRIEVAL_SERVICE_URL} recall_retriever.recall_final_top_n=${RECALL_TOP_K} recall_retriever.trainable=false recall_retriever.index_refresh=false ranker_training.construction_log_jsonl=${LOG_DIR}/${RUN_NAME}.contrastive_construction.jsonl"
 fi
 if [[ -n "${RANKER_STEPS_PER_GLOBAL_STEP}" ]]; then
   DEFAULT_COAGENTIC_EXTRA_ARGS+=" trainer.ranker_steps_per_global_step=${RANKER_STEPS_PER_GLOBAL_STEP}"

@@ -14,7 +14,6 @@ import argparse
 import asyncio
 import json
 import math
-import os
 import re
 import string
 import time
@@ -67,7 +66,7 @@ class EvalArgs:
     keep_trace: str
     trace_dir: Path
     report_path: Path
-    strategy_name: str
+    eval_task_name: str
     retrieval_url: str
     agent_base_url: str | None
     agent_served_model: str
@@ -87,6 +86,7 @@ class EvalArgs:
     retry_delay: float
     retry_backoff: float
     llm_io_jsonl: Path | None
+    llm_io_max_records: int
     metrics_jsonl: Path | None
     search_timing_jsonl: Path | None
     ranker_output_jsonl: Path | None
@@ -111,10 +111,9 @@ def append_jsonl(path: Path | None, record: dict[str, Any]) -> None:
         fp.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
 
 
-def write_llm_io_trace(path: Path | None, record: dict[str, Any]) -> None:
+def write_llm_io_trace(path: Path | None, record: dict[str, Any], max_records: int = 0) -> None:
     if path is None:
         return
-    max_records = int(os.getenv("COAGENTIC_RETRIEVER_LLM_IO_MAX_RECORDS", "0") or 0)
     if max_records > 0 and path.exists():
         with path.open("r", encoding="utf-8") as fp:
             if sum(1 for _ in fp) >= max_records:
@@ -708,6 +707,7 @@ class LLMJudgeRanker:
         retry_delay: float,
         retry_backoff: float,
         llm_io_jsonl: Path | None,
+        llm_io_max_records: int,
     ) -> None:
         self.endpoint = endpoint
         self.model = model
@@ -719,6 +719,7 @@ class LLMJudgeRanker:
         self.retry_delay = float(retry_delay)
         self.retry_backoff = float(retry_backoff)
         self.llm_io_jsonl = llm_io_jsonl
+        self.llm_io_max_records = int(llm_io_max_records)
         text = prompt_path.read_text(encoding="utf-8")
         self.system_template, self.user_template = self._parse_prompt(text)
 
@@ -868,6 +869,7 @@ class LLMJudgeRanker:
                         "usage": data.get("usage") or {},
                         "elapsed_s": time.perf_counter() - started,
                     },
+                    self.llm_io_max_records,
                 )
                 return ranked, {
                     "ranker_success": True,
@@ -889,6 +891,7 @@ class LLMJudgeRanker:
                         "error": str(exc)[:500],
                         "elapsed_s": time.perf_counter() - started,
                     },
+                    self.llm_io_max_records,
                 )
                 if attempt < self.max_retries:
                     await asyncio.sleep(delay)
@@ -942,7 +945,8 @@ async def select_final_docs(
     else:
         ranked_docs = ranker.rank_topk(query=query, docs=documents, top_k=len(documents))
         meta["ranker_success"] = True
-    agent_top_k = min(args.top_m, args.ranker_top_k, len(ranked_docs))
+    ranked_docs = ranked_docs[: min(args.ranker_top_k, len(ranked_docs))]
+    agent_top_k = min(args.top_m, len(ranked_docs))
     return ranked_docs, ranked_docs[:agent_top_k], meta
 
 
@@ -1046,6 +1050,7 @@ async def evaluate_one(
                     "stop": args.stop_sequences,
                 },
             },
+            args.llm_io_max_records,
         )
 
         prompt_ids.extend(assistant_ids)
@@ -1421,8 +1426,16 @@ def write_outputs(args: EvalArgs, metrics: list[dict[str, Any]], traces: list[di
     if args.rollout_data_dir is not None:
         args.rollout_data_dir.mkdir(parents=True, exist_ok=True)
     (args.trace_dir / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+    run_config = {key: str(value) for key, value in vars(args).items()}
+    run_config.update(
+        {
+            "recall_final_top_n": str(args.top_n),
+            "searchTool_final_top_m": str(args.top_m),
+            "ranker_final_top_k": str(args.ranker_top_k),
+        }
+    )
     (args.trace_dir / "run_config.json").write_text(
-        json.dumps({key: str(value) for key, value in vars(args).items()}, ensure_ascii=False, indent=2),
+        json.dumps(run_config, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
 
@@ -1436,7 +1449,7 @@ def write_report(args: EvalArgs, summary: dict[str, Any], metrics: list[dict[str
     lines = [
         "# CoAgenticRetriever vLLM Evaluation Report",
         "",
-        f"- Strategy: `{args.strategy_name}`",
+        f"- Eval task: `{args.eval_task_name}`",
         f"- Run mode: `{args.run_mode}`",
         f"- Reranker: `{args.reranker}`",
         f"- Enable thinking: `{str(args.enable_thinking).lower()}`",
@@ -1455,9 +1468,16 @@ def write_report(args: EvalArgs, summary: dict[str, Any], metrics: list[dict[str
         f"- Runtime metrics JSONL: `{args.metrics_jsonl if args.metrics_jsonl else ''}`",
         f"- Search timing JSONL: `{args.search_timing_jsonl if args.search_timing_jsonl else ''}`",
         f"- LLM IO JSONL: `{args.llm_io_jsonl if args.llm_io_jsonl else ''}`",
+        f"- LLM IO max records: `{args.llm_io_max_records}`",
         f"- Validation data dir: `{args.validation_data_dir if args.validation_data_dir else ''}`",
         f"- Wall time: `{fmt(elapsed_s)}s`",
         f"- Status counts: `{status_counts}`",
+        "",
+        "## Retrieval Cutoffs",
+        "",
+        f"- RECALL_FINAL_TOP_N: `{args.top_n}`",
+        f"- SEARCH_TOOL_FINAL_TOP_M: `{args.top_m}`",
+        f"- RANKER_FINAL_TOP_K: `{args.ranker_top_k}`",
         "",
         "## Eval Path",
         "",
@@ -1465,21 +1485,21 @@ def write_report(args: EvalArgs, summary: dict[str, Any], metrics: list[dict[str
     if args.run_mode == "no-ranker":
         lines.extend(
             [
-                f"- Search path: `agent LLM -> recall retriever top-{args.top_n} -> recall top-{args.top_m} tool response -> agent LLM`",
+                f"- Search path: `agent LLM -> recall retriever recall_final_top_n={args.top_n} -> searchTool_final_top_m={args.top_m} tool response -> agent LLM`",
                 "- Dense ranker participation: `disabled`",
             ]
         )
     elif args.run_mode == "full":
         lines.extend(
             [
-                f"- Search path: `agent LLM -> recall retriever top-{args.top_n} -> {args.reranker} reorder -> top-{min(args.top_m, args.ranker_top_k)} tool response -> agent LLM`",
+                f"- Search path: `agent LLM -> recall retriever recall_final_top_n={args.top_n} -> {args.reranker} reorder -> ranker_final_top_k={args.ranker_top_k} -> searchTool_final_top_m={min(args.top_m, args.ranker_top_k)} tool response -> agent LLM`",
                 f"- Ranker participation: `{args.reranker}`",
             ]
         )
     else:
         lines.extend(
             [
-                f"- Search path: `recall retriever top-{args.top_n} -> {args.reranker} reorder -> top-{min(args.top_m, args.ranker_top_k)} output`",
+                f"- Search path: `recall retriever recall_final_top_n={args.top_n} -> {args.reranker} reorder -> ranker_final_top_k={args.ranker_top_k} -> output top-{min(args.top_m, args.ranker_top_k)}`",
                 "- Agent LLM participation: `disabled`",
             ]
         )
@@ -1534,6 +1554,7 @@ def make_ranker(args: EvalArgs) -> Ranker | None:
             retry_delay=args.llm_judge_retry_delay,
             retry_backoff=args.llm_judge_retry_backoff,
             llm_io_jsonl=args.llm_io_jsonl,
+            llm_io_max_records=args.llm_io_max_records,
         )
     if args.ranker_model is None or args.ranker_encoder is None:
         raise ValueError("ranker_model and ranker_encoder are required when dense ranker is enabled")
@@ -1641,7 +1662,7 @@ def parse_run_args(ns: argparse.Namespace) -> EvalArgs:
         keep_trace=ns.keep_trace,
         trace_dir=ns.trace_dir,
         report_path=ns.report_path,
-        strategy_name=ns.strategy_name,
+        eval_task_name=ns.eval_task_name,
         retrieval_url=ns.retrieval_url,
         agent_base_url=ns.agent_base_url,
         agent_served_model=ns.agent_served_model,
@@ -1661,6 +1682,7 @@ def parse_run_args(ns: argparse.Namespace) -> EvalArgs:
         retry_delay=ns.retry_delay,
         retry_backoff=ns.retry_backoff,
         llm_io_jsonl=ns.llm_io_jsonl,
+        llm_io_max_records=ns.llm_io_max_records,
         metrics_jsonl=ns.metrics_jsonl,
         search_timing_jsonl=ns.search_timing_jsonl,
         ranker_output_jsonl=ns.ranker_output_jsonl,
@@ -1715,7 +1737,7 @@ def main() -> int:
     run_parser.add_argument("--keep-trace", choices=["partial", "full"], default="partial")
     run_parser.add_argument("--trace-dir", type=Path, required=True)
     run_parser.add_argument("--report-path", type=Path, required=True)
-    run_parser.add_argument("--strategy-name", default="default")
+    run_parser.add_argument("--eval-task-name", default="default")
     run_parser.add_argument("--retrieval-url", required=True)
     run_parser.add_argument("--agent-base-url", default=None)
     run_parser.add_argument("--agent-served-model", default="coagentic-agent")
@@ -1735,6 +1757,7 @@ def main() -> int:
     run_parser.add_argument("--retry-delay", type=float, default=1.0)
     run_parser.add_argument("--retry-backoff", type=float, default=2.0)
     run_parser.add_argument("--llm-io-jsonl", type=Path, default=None)
+    run_parser.add_argument("--llm-io-max-records", type=int, default=20)
     run_parser.add_argument("--metrics-jsonl", type=Path, default=None)
     run_parser.add_argument("--search-timing-jsonl", type=Path, default=None)
     run_parser.add_argument("--ranker-output-jsonl", type=Path, default=None)

@@ -1,0 +1,195 @@
+# CoAgenticRetriever vLLM eval 的 runtime 默认配置。
+#
+# 这个文件只放“如何评估”的稳定默认值：evaluator、run mode、vLLM、retrieval、
+# ranker、LLM judge、tool 和 artifact。具体某次实验的 checkpoint、数据集、
+# no-ranker/full 模式等差异，应写在 task overlay 中。
+
+identity:
+  # 用户可读的一次评估任务名。launcher 会派生成 EVAL_TASK_NAME/EVAL_TASK_SLUG，
+  # 并参与默认 TASK_NAME、报告名和日志目录命名。
+  eval_task_name: default
+
+mode:
+  # 评估模式。
+  # full: agent + recall retriever + reranker。
+  # no-ranker: agent + recall retriever，不启用 dense/LLM reranker。
+  # ranker-only: 不启动 agent，只做 ranker/retrieval 评估。
+  run_mode: full
+  # reranker 类型。dense_e5 使用本地 E5 dense ranker；llm_as_judge 使用外部 LLM judge 重排。
+  reranker: dense_e5
+
+entrypoint:
+  # Python evaluator 入口。Bash launcher 启动服务后会调用该脚本的 run 子命令。
+  evaluator: scripts/coagenticRetriever_v2/evaluate_coagentic_vllm.py
+
+models:
+  # agent vLLM 要加载的模型或 checkpoint。full/no-ranker eval 必填，通常由 task overlay 覆盖。
+  agent_model: null
+  # dense ranker 权重路径。full/ranker-only 且 reranker=dense_e5 时必填。
+  ranker_model: null
+  # ranker tokenizer/base model 路径。未显式设置时会从训练侧 ranker_base 配置派生。
+  ranker_base_model: null
+  # ranker encoder 路径。留空时 evaluator 会按 ranker_model/ranker_base_model 自动解析。
+  ranker_encoder_path: null
+  # recall retriever 模型路径。留空时从训练侧 recall config 或 external models/e5-base-v2 派生。
+  recall_model_path: null
+
+data:
+  # eval parquet/jsonl 数据路径。留空时使用训练 data config 中的第一个 val_files。
+  data_path: null
+  # 最大评估样本数；-1 表示全量评估。task 或命令行可临时覆盖为小样本 smoke test。
+  max_eval_num: -1
+  # evaluator batch size，主要影响数据读取和并发调度，不改变模型 batch 语义。
+  eval_batch_size: 32
+  # ranker-only 或 smoke 场景的最大 eval step 默认值。
+  max_eval_steps: 1
+  # ranker-only 额外步数上限；留空时沿用 max_eval_steps。
+  max_ranker_steps: null
+  # trace 保留级别。partial 只保留关键记录，full 会保留更完整的对话/检索过程。
+  keep_trace: partial
+
+generation:
+  # agent 采样温度。评估默认 0，保证结果更稳定。
+  temperature: 0.0
+  # nucleus sampling 参数。temperature=0 时通常影响很小，仍显式记录以便审计。
+  top_p: 1.0
+  # agent completion 请求超时时间，单位秒。
+  request_timeout: 180
+  # 额外 stop sequence 列表。空列表表示不追加 evaluator 侧 stop token。
+  stop_sequences: []
+
+vllm:
+  # agent vLLM 服务监听地址。
+  agent_host: 127.0.0.1
+  # agent vLLM 服务端口。
+  agent_port: 8040
+  # vLLM served-model-name，evaluator 调 OpenAI-compatible API 时使用。
+  agent_served_model: coagentic-retriever-agent
+  # 等待 agent vLLM 服务可用的最长时间，单位秒。
+  startup_timeout: 1800
+  # vLLM GPU/NPU 显存利用率上限。
+  gpu_memory_utilization: 0.60
+  # vLLM max-num-seqs。留空时从 eval budget 的 rollout.max_num_seqs 派生。
+  max_num_seqs: null
+  # agent vLLM dtype。
+  dtype: bfloat16
+  # 是否强制 eager。NPU/Ascend 环境下通常更稳。
+  enforce_eager: true
+  # vLLM 加载模型时是否 trust remote code。
+  trust_remote_code_for_server: true
+  # vLLM attention backend。当前 NPU 适配链路使用 FLASH_ATTN。
+  attention_backend: FLASH_ATTN
+  # 是否禁用 flashinfer。当前 NPU eval 链路保持禁用。
+  disable_flashinfer: true
+  # 是否使用 flashinfer sampler。当前 NPU eval 链路保持关闭。
+  use_flashinfer_sampler: false
+  # tokenizer 并行开关，默认关闭以减少日志噪声和 fork 后并发问题。
+  tokenizers_parallelism: false
+  # true 时复用已有 agent vLLM 服务，不由 launcher 启动新服务。
+  reuse_existing_server: false
+
+retrieval:
+  # recall retriever 本地代理端口。若 retrieval_service_url 留空，会拼成 http://127.0.0.1:${proxy_port}/retrieve。
+  proxy_port: 8030
+  # 显式 recall retriever HTTP 地址。留空时从 tool config 或 proxy_port 派生。
+  retrieval_service_url: null
+  # evaluator 调 recall retriever 的最大重试次数。
+  max_retries: 1
+  # 第一次重试前等待时间，单位秒。
+  retry_delay: 0.5
+  # 每次失败后重试等待时间的放大倍率。
+  retry_backoff: 1.0
+  # recall 服务 semantic preflight 查询，用于确认服务返回格式和检索语义可用。
+  preflight_query: "who got the first nobel prize in physics?"
+  # preflight 期望命中的文本片段。空字符串表示只检查返回结构和数量。
+  preflight_expect: ""
+  # recall retriever 服务使用的 device。留空时由 accelerator 适配脚本给出 npu/cuda 前缀。
+  retriever_device: null
+
+ranker:
+  # dense ranker 推理 device。留空时默认使用当前 accelerator 的 0 号本地 device。
+  device: null
+  # ranker 进程可见设备 ID。留空时使用 resource config 的 RANK_GPU_ID。
+  cuda_visible_devices: null
+  # 写入 runtime tool config 的 ranker device。留空时和 device 保持一致。
+  config_device: null
+  # ranker query 最大 token 长度。留空时从训练侧 ranker_base 配置派生。
+  max_query_length: null
+  # ranker doc 最大 token 长度。留空时从训练侧 ranker_base 配置派生。
+  max_doc_length: null
+
+llm_judge:
+  # LLM-as-judge OpenAI-compatible endpoint。只有 reranker=llm_as_judge 且非 no-ranker 时使用。
+  endpoint: http://127.0.0.1:8067/v1/chat/completions
+  # LLM judge served model 名称。
+  model: DeepSeek-V4-Flash
+  # LLM judge listwise rerank prompt。
+  prompt_path: CoAgenticRetriever/async_ranker_training/prompts/llm_judge_rank50_v1.md
+  # 每篇候选文档送入 judge prompt 的最大字符数。
+  max_chunk_chars: 512
+  # LLM judge 单次响应最大 token 数。
+  max_tokens: 1024
+  # LLM judge 采样温度，评估默认 0。
+  temperature: 0.0
+  # LLM judge 请求超时时间，单位秒。
+  request_timeout: 600
+  # LLM judge 请求最大重试次数。
+  max_retries: 3
+  # LLM judge 第一次重试前等待时间，单位秒。
+  retry_delay: 2.0
+  # LLM judge 每次失败后重试等待时间的放大倍率。
+  retry_backoff: 2.0
+
+tool:
+  # full/ranker-only 默认 tool config 模板。compiler 会复制为本次 run 的 runtime tool config。
+  tool_config: CoAgenticRetriever/config/coagentic_retriever_tool_config.yaml
+  # no-ranker 默认 tool config 模板。run_mode=no-ranker 且未显式覆盖 TOOL_CONFIG 时使用。
+  no_ranker_tool_config: CoAgenticRetriever/config/coagentic_retriever_tool_config_no_ranker.yaml
+  # 是否把 tool schema 注入 agent prompt。当前 no-ranker 验证默认 false，与原 NPU eval launcher 对齐。
+  inject_tool_schema: false
+  # evaluator/ranker 加载 tokenizer/model 时是否 trust remote code。
+  trust_remote_code: true
+
+logging:
+  # LLM IO JSONL 最多记录多少条 prompt/output 明细。0 表示不限制。
+  llm_io_max_records: 20
+
+artifacts:
+  # eval 日志根目录。留空时默认 log/eval_res/<GROUP_SLUG>。
+  eval_log_root: null
+  # eval report 根目录。留空时默认 reports/eval/<GROUP_SLUG>。
+  eval_report_root: null
+  # 本次运行目录名。留空时用 <RUN_STAMP>-<EVAL_TASK_SLUG>。
+  task_name: null
+  # runtime 文件名前缀。留空时用 eval_task_slug。
+  run_name: null
+  # 实验名。留空时等于 run_name。
+  exp_name: null
+  # trace 根目录。留空时使用 eval_log_root/task_name。
+  trace_dir: null
+  # runtime log 目录。留空时使用 trace_dir/runtime_logs。
+  runtime_log_dir: null
+  # evaluator 输出目录。留空时使用 trace_dir。
+  out_dir: null
+  # runtime 日志目录。留空时使用 runtime_log_dir。
+  log_dir: null
+  # Markdown report 路径。留空时使用 eval_report_root/task_name.report.md。
+  report_path: null
+  # per-example metrics JSONL。留空时在 log_dir 下生成。
+  metrics_jsonl: null
+  # search timing JSONL。留空时在 log_dir 下生成。
+  search_timing_jsonl: null
+  # LLM prompt/output trace JSONL。留空时在 log_dir 下生成。
+  llm_io_jsonl: null
+  # evaluator stdout/stderr 日志。留空时在 log_dir 下生成。
+  infer_log: null
+  # recall retriever 服务日志。留空时在 log_dir 下生成。
+  recall_service_log: null
+  # ranker-only 输出 JSONL。留空时在 out_dir 下生成。
+  ranker_output_jsonl: null
+  # rollout data 输出目录。留空时在 out_dir 下生成。
+  rollout_data_dir: null
+  # validation data 输出目录。留空时在 out_dir 下生成。
+  validation_data_dir: null
+  # 最终 runtime env 审计文件路径。留空时在 log_dir 下生成。
+  env_path: null

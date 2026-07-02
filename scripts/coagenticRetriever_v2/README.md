@@ -1,171 +1,71 @@
-# CoAgenticRetriever Local Scripts
+# CoAgenticRetriever v2 Scripts
 
-This directory contains local entries for the retriever contrastive framework.
+This directory contains the canonical launcher entries for CoAgenticRetriever training and evaluation.
 
 ## Files
 
 ```text
 00_start_dense_retriever_server.sh
 01_train_launcher.sh
-02_infer_qwen3_4b_ablation_val_only.sh
+02_infer_launcher.sh
 assets/
+evaluate_coagentic_vllm.py
 ```
 
-The scripts default to:
+## Training
 
-```text
-PROJECT_ROOT=/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/CoAgenticRetriever
-TRAIN_DATA=/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/data/co_search/local_flashrag/co_search_ablation.train.parquet
-VAL_DATA=/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/data/co_search/local_flashrag/co_search_ablation.eval.parquet
-RECALL_MODEL_PATH=/data01/ms_wksp/agent_up_to_date/models/retriever/e5-base-v2
-```
+Training is driven by `01_train_launcher.sh`. Task scripts select a `main_run` config and overlays; the Python compiler resolves Hydra groups, resource config, tool config and runtime env before Bash starts services and training.
 
-The retriever contrastive worker and local dense retrieval server are
-CUDA-only. If CUDA is not visible to PyTorch, the local entries fail
-immediately.
-
-`00_start_dense_retriever_server.sh` is the frozen recall service launcher. It
-calls `src/retrievers/gpu_dense_retriever_server.py` directly, binds the service
-to GPU05 by default through `CUDA_VISIBLE_DEVICES=5`, and loads the FAISS flat
-doc embedding matrix into GPU memory as a torch tensor (`DOC_DTYPE=float16` by
-default). It does not use the legacy Search-R1 CPU retrieval server.
-
-## Full Mode
-
-Default training mode is full mode. It launches the CoAgenticRetriever/VERL
-trainer, updates the agent LLM through the normal PPO/GRPO path, enriches
-rollout tool traces with the current dense rank retriever's top50 ordering, and
-updates the trainable shared-encoder E5 rank retriever through contrastive loss.
-
-Default GPU intent:
-
-```text
-GPU00-03: agent LLM VERL workers
-GPU04: trainable dense rank retriever
-GPU05: frozen recall retrieval service
-```
-
-This physical GPU mapping is represented in two places: YAML defaults under
-`CoAgenticRetriever/config/retriever_contrastive.yaml`, and override variables
-in the local scheduling scripts. The `CoAgenticRetriever` core Python code only
-consumes configured device strings and does not hard-code GPU IDs.
-
-In `01_train_launcher.sh`, `AGENT_GPU_IDS` is the
-explicit agent-LLM physical GPU list. `GPU_IDS` is the full-mode process
-visible GPU list and defaults to `${AGENT_GPU_IDS},${RANK_GPU_ID}`.
-
-Training scripts no longer use a fixed default `RUN_NAME`. Pass `EXP_NAME`,
-and the script constructs a unique `RUN_NAME=<timestamp>-<EXP_NAME>`. By
-default, a non-empty existing log/checkpoint target causes the script to abort
-instead of reusing that directory.
+Example:
 
 ```bash
-EXP_NAME=qwen3_4b_probe_rule_v1 \
-TOTAL_STEPS=2 \
-RETRIEVER_CONTRASTIVE_BATCH_SIZE=4 \
-RETRIEVER_NEG_PER_POS=3 \
-bash scripts/coagenticRetriever_v2/01_train_launcher.sh
+bash scripts/coagenticRetriever_v2/01_train_launcher.sh \
+  --main_run_config=coAgenticRetriever_main
 ```
 
-Outputs:
+## Evaluation
 
-```text
-log/train_logs/<YYMMDD-HHMM>-coagentic_ranker_contrastive_smoke/
-log/train_logs/<YYMMDD-HHMM>-coagentic_ranker_contrastive_smoke/coagentic_ranker_contrastive_smoke.train.log
-log/train_logs/<YYMMDD-HHMM>-coagentic_ranker_contrastive_smoke/coagentic_ranker_contrastive_smoke.metrics.jsonl
-log/train_logs/<YYMMDD-HHMM>-coagentic_ranker_contrastive_smoke/coagentic_ranker_contrastive_smoke.contrastive_construction.jsonl
-checkpoints/qwen3_4b_probe/coagentic_ranker_contrastive_smoke/
-```
+Evaluation is driven by `02_infer_launcher.sh`. The launcher is config-compiled from eval runtime, budget and resource groups.
 
-The checkpoint directory is not created by dry-run or logging setup. Rollout
-and validation traces default to the train log directory; the checkpoint
-directory is reserved for actual model checkpoint writes. Retained trainable
-checkpoint content is kept under `global_step_*/`, and old root-level
-`retriever/`, `rollout_data/`, and similar legacy residue is cleaned after a
-successful run.
-
-Canonical full training mode is `RUN_MODE=full`.
-
-## Dense Reranker Only
-
-This mode validates only the dense rank retriever contrastive framework. It
-does not start full LLM rollout and does not update the agent LLM. It still
-starts the same frozen recall service through `00_start_dense_retriever_server.sh`
-by default, then trains the dense rank retriever from recall top50.
+Canonical task shape:
 
 ```bash
-EXP_NAME=qwen3_4b_dense_only_rule_v1 \
-RUN_MODE=ranker-only \
-TOTAL_STEPS=2 \
-RETRIEVER_CONTRASTIVE_BATCH_SIZE=4 \
-RETRIEVER_NEG_PER_POS=3 \
-bash scripts/coagenticRetriever_v2/01_train_launcher.sh
+bash scripts/coagenticRetriever_v2/02_infer_launcher.sh \
+  --main_run_config=coAgenticRetriever_main \
+  --EVAL_RUNTIME_CONFIG=coagentic_retriever_vllm \
+  --EVAL_BUDGET_CONFIG=coagentic_retriever_aligned_budget \
+  --RESOURCE_CONFIG=local_eval_4gpu_0_3 \
+  --OVERLAY_YAML=tasks/eval_tasks/coAgenticRetriever/configs/eval_CAR_asy_labl_v0701a_npu_fix_overlay.yaml
 ```
 
-## Dense Reranker Only Inference
+The user-facing eval task name is `identity.eval_task_name` in the eval overlay. Runtime reports and audit env files use `EVAL_TASK_NAME` and `EVAL_TASK_SLUG`.
 
-Loads the trained `rank_encoder`, starts the frozen recall service by default,
-and uses the shared E5 rank encoder to rerank top50 -> top5.
-`CHECKPOINT_DIR` can point either to the run root or directly to
-`global_step_*/ranker`.
+## Eval Config Groups
 
-```bash
-MAX_EVAL_STEPS=1 \
-CHECKPOINT_DIR=/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/checkpoints/qwen3_4b_probe/coagentic_ranker_contrastive_smoke \
-bash scripts/coagenticRetriever_local/02_infer_qwen3_4b_ablation_val_only.sh
+`CoAgenticRetriever/config/main_run/coAgenticRetriever_main.yaml` selects eval groups:
+
+```yaml
+eval_config_groups:
+  eval_runtime: coagentic_retriever_vllm
+  eval_budget: coagentic_retriever_aligned_budget
+  resource: local_eval_4gpu_0_3
 ```
 
-Output:
+The runtime config owns evaluator/vLLM/retrieval/tool/artifact defaults. The budget config owns prompt, response and multi-turn limits. The resource config owns device layout and service start/stop behavior.
+
+## Eval Outputs
+
+For each eval run, the compiler writes audit files under the runtime log directory:
 
 ```text
-log/eval_res/<TASK_NAME>/ranker_infer_smoke.jsonl
-log/eval_res/<TASK_NAME>/runtime_logs/coagentic_ranker_infer_smoke.infer.log
+<RUN_NAME>.eval_runtime_env.sh
+<RUN_NAME>.env
+<RUN_NAME>.eval_args.txt
+<RUN_NAME>.eval_overlay_yamls.txt
+<RUN_NAME>.eval_passthrough_args.txt
+<RUN_NAME>.final_eval_config.yaml
+<RUN_NAME>.final_eval_config.json
+<RUN_NAME>.tool_config.yaml
 ```
 
-## Full VERL Entry
-
-The full-mode path uses `CoAgenticRetriever/main_coagentic_retriever.py`
-and enables:
-
-```text
-trainer.ranker_trainable=true
-trainer.ranker_update_mode=contrastive
-trainer.ranker_steps_per_global_step=2
-save_top_n_documents=true
-```
-
-`save_top_n_documents=true` is required because retriever training consumes the
-top-N documents saved by `CoAgenticRetrieverTool` into rollout `tool_call_details`.
-
-## Key Overrides
-
-```bash
-RUN_MODE=full|ranker-only
-AUTO_START_RECALL_SERVICE=1
-AUTO_STOP_RECALL_SERVICE=1
-TOTAL_STEPS=2
-TRAIN_BATCH_SIZE=64
-ACTOR_BATCH_SIZE=64
-N_ROLLOUTS=8
-RETRIEVER_CONTRASTIVE_BATCH_SIZE=32
-RETRIEVER_NEG_PER_POS=15
-RETRIEVER_POSITIVE_TOP_K=5
-RETRIEVER_TEMPERATURE=0.05
-AGENT_GPU_IDS=0,1,2,3
-AGENT_N_GPUS_PER_NODE=4
-GPU_IDS=0,1,2,3,4
-RECALL_GPU_ID=5
-RANK_GPU_ID=4
-RANKER_VISIBLE_DEVICE_INDEX=4
-RECALL_RETRIEVER_CONFIG_DEVICE=cuda:5
-RANKER_CONFIG_DEVICE=cuda:4
-PROXY_PORT=8030
-RETRIEVAL_SERVICE_URL=http://127.0.0.1:8030/retrieve
-RECALL_TOP_K=50
-RANK_TOP_K=5
-RANKER_DEVICE_TRAIN=cuda:0
-RECALL_RETRIEVER_DEVICE=cuda:1
-RETRIEVER_DEVICE=cuda
-DENSE_RERANKER_ONLY_CUDA_VISIBLE_DEVICES=4,5
-DRY_RUN=1
-```
+The evaluator writes metrics, traces, summary and report files under `log/eval_res/<group>/<task_name>/` and `reports/eval/<group>/`.

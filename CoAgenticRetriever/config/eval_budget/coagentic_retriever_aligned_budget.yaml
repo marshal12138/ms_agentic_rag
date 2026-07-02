@@ -1,0 +1,29 @@
+# CoAgenticRetriever eval budget 默认值。
+#
+# 这个文件的结构刻意对齐训练 Hydra budget 分支，让 eval 的 prompt、response、
+# multi-turn 和 vLLM sequence budget 与训练语义一致，而不是散落在 Bash 默认值里。
+
+data:
+  # 输入 prompt 最大 token 数；超出时 evaluator 会按上下文裁剪策略处理。
+  max_prompt_length: 12000
+  # agent 单次 response 最大 token 数。
+  max_response_length: 4096
+  # 传给 tokenizer chat template 的参数。
+  apply_chat_template_kwargs:
+    # 关闭 thinking 模式，保持和当前 eval launcher/NPU 验证链路一致。
+    enable_thinking: false
+
+actor_rollout_ref:
+  rollout:
+    # vLLM 最大上下文长度。通常应约等于 prompt budget + response budget。
+    max_model_len: 16096
+    # vLLM 同时处理的最大序列数；eval runtime 的 vllm.max_num_seqs 留空时会使用这里。
+    max_num_seqs: 32
+    # 多轮 tool-use 对话预算。
+    multi_turn:
+      # 单个样本最多允许多少轮 assistant 生成。
+      max_assistant_turns: 6
+      # 单个样本最多允许多少轮 user/tool observation。
+      max_user_turns: 6
+      # 单次 tool response 最大 token 数，避免检索结果过长挤爆上下文。
+      max_tool_response_length: 4096

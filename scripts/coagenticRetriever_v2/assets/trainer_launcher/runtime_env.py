@@ -5,7 +5,7 @@
 - run identity：`GROUP_NAME`、`RUN_NAME`、`LOG_DIR`。
 - 日志/report/checkpoint 路径默认值。
 - GPU/service/report/checkpoint 等 launcher 运行态默认值。
-- 从静态 tool config 同步 retrieval URL、top_n/top_m 等服务侧参数。
+- 从静态 tool config 同步 retrieval URL、agent 可见 top-M 等工具侧参数。
 
 它不写 Hydra 参数文件，也不启动任何服务。这样 `compile_config.py` 可以只描述
 高层编译流程，而不用承载一长串 shell env 默认值。
@@ -283,7 +283,6 @@ def apply_common_defaults(ctx: CompilerContext, env: dict[str, str], *, canonica
         "RANKER_NEG_PER_POS",
         "RANKER_POSITIVE_TOP_K",
         "RANKER_TEMPERATURE",
-        "RANK_TOP_K",
         "RANKER_CONFIG_DEVICE",
     ]:
         set_default(env, name, "")
@@ -297,7 +296,7 @@ def apply_common_defaults(ctx: CompilerContext, env: dict[str, str], *, canonica
 def apply_tool_config(ctx: CompilerContext, env: dict[str, str]) -> None:
     """用静态 tool YAML 同步检索服务相关参数。
 
-    retrieval URL、top_n/top_m、format_penalty 等信息本来就存在于 tool config 中。
+    retrieval URL、agent 可见 top-M 等信息存在于 tool config 中。
     launcher 读取它们后用于三件事：服务预检、`.env` 审计、Hydra runtime override。
     """
 
@@ -306,19 +305,16 @@ def apply_tool_config(ctx: CompilerContext, env: dict[str, str]) -> None:
         env["RETRIEVAL_SERVICE_URL"] = tool.retrieval_service_url
     if tool.retrieval_port:
         env["PROXY_PORT"] = tool.retrieval_port
-    if tool.default_top_n:
-        env["RECALL_TOP_K"] = tool.default_top_n
-        env["TOP_N"] = tool.default_top_n
-    if tool.default_top_m:
-        env["TOP_M"] = tool.default_top_m
+    if not tool.search_tool_final_top_m:
+        raise ValueError(f"tool config must explicitly set config.searchTool_final_top_m: {env['TOOL_CONFIG']}")
+    env["TOP_M"] = tool.search_tool_final_top_m
+    env["SEARCH_TOOL_FINAL_TOP_M"] = tool.search_tool_final_top_m
     if tool.class_name:
         env["COAGENTIC_TOOL_CLASS_NAME"] = tool.class_name
     if tool.max_concurrent_per_worker:
         env["TOOL_MAX_CONCURRENT_PER_WORKER"] = tool.max_concurrent_per_worker
     if tool.ranker_enabled:
         env["COAGENTIC_RANKER_ENABLED"] = tool.ranker_enabled
-    if tool.format_penalty:
-        env["FORMAT_PENALTY"] = tool.format_penalty
 
     env["RECALL_RETRIEVER_CONFIG_DEVICE"] = ctx.device_spec(env["RECALL_GPU_ID"])
     if not env.get("GPU_IDS"):

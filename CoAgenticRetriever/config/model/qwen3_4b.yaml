@@ -1,43 +1,68 @@
-# Qwen3-4B model defaults for canonical CoSearch-aligned training.
+# Qwen3-4B 模型配置。
+#
+# 训练链路直接使用这里的 HF model 默认值。eval compiler 会读取 path 并写入审计配置，
+# 但具体 eval 的 agent checkpoint 通常由 task overlay 的 models.agent_model 覆盖。
 
+# Hydra 实例化模型配置时使用的目标配置类。
 _target_: verl.workers.config.HFModelConfig
 
+# 基础 Qwen3-4B 模型路径。
 path: /data01/ms_wksp/agent_up_to_date/models/llm/Qwen3-4B
 
+# Hugging Face config 路径；null 表示使用 path 下的 config.json。
 hf_config_path: null
 
+# tokenizer 路径；null 表示使用 path 下的 tokenizer。
 tokenizer_path: null
 
+# 是否使用 shared memory 加载权重。
 use_shm: false
 
+# 加载 Hugging Face 模型/tokenizer 时是否允许 remote code。
 trust_remote_code: true
 
+# 自定义 chat template；null 表示使用模型默认模板。
 custom_chat_template: null
 
+# 额外外部库；null 表示不加载。
 external_lib: null
 
+# 覆盖 Hugging Face config 的字段。
 override_config:
+  # 训练侧 attention 实现。eval vLLM attention backend 在 eval_runtime.vllm 中单独配置。
   attn_implementation: flash_attention_2
 
+# 是否启用 gradient checkpointing，降低训练显存占用。
 enable_gradient_checkpointing: true
 
+# 是否启用 activation offload。
 enable_activation_offload: false
 
+# 是否移除 padding 以提高训练效率。
 use_remove_padding: true
 
+# LoRA rank。0 表示不启用 LoRA。
 lora_rank: 0
 
+# LoRA alpha；仅 lora_rank > 0 时有意义。
 lora_alpha: 16
 
+# LoRA 作用的模块范围。
 target_modules: all-linear
 
+# LoRA 排除模块；null 表示不额外排除。
 exclude_modules: null
 
+# 已有 LoRA adapter 路径；null 表示不加载 adapter。
 lora_adapter_path: null
 
+# 是否启用 Liger kernel。
 use_liger: false
 
+# 是否启用 fused kernels。
 use_fused_kernels: false
 
+# fused kernel 具体选项。
 fused_kernel_options:
+  # fused kernel 后端实现。
   impl_backend: torch

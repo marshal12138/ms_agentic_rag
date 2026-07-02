@@ -116,3 +116,71 @@ TIMING_ALIASES = {
     "ranker/contrastive_total": ["timing_s/ranker_contrastive_total"],
 }
 
+
+def _env_value(env, key):
+    value = env.get(key, "")
+    return "" if value is None else str(value)
+
+
+def _first_env_value(env, *keys):
+    for key in keys:
+        value = _env_value(env, key)
+        if value:
+            return value
+    return ""
+
+
+def build_extra_markdown_sections(context):
+    env = context.get("env") or {}
+    lines = [
+        "## Retrieval Cutoffs",
+        "",
+        "| meaning | field | value |",
+        "| --- | --- | ---: |",
+        (
+            "| recall candidate pool | `HYDRA_RECALL_FINAL_TOP_N` / `RECALL_FINAL_TOP_N` | "
+            f"`{_first_env_value(env, 'HYDRA_RECALL_FINAL_TOP_N', 'RECALL_FINAL_TOP_N')}` |"
+        ),
+        (
+            "| recall candidate pool written to runtime tool config | "
+            "`RUNTIME_TOOL_RECALL_FINAL_TOP_N` | "
+            f"`{_env_value(env, 'RUNTIME_TOOL_RECALL_FINAL_TOP_N')}` |"
+        ),
+        (
+            "| ranker keeps after rerank | `HYDRA_RANKER_FINAL_TOP_K` / `RANKER_FINAL_TOP_K` | "
+            f"`{_first_env_value(env, 'HYDRA_RANKER_FINAL_TOP_K', 'RANKER_FINAL_TOP_K')}` |"
+        ),
+        (
+            "| ranker keeps after rerank written to runtime tool config | "
+            "`RUNTIME_TOOL_RANKER_FINAL_TOP_K` | "
+            f"`{_env_value(env, 'RUNTIME_TOOL_RANKER_FINAL_TOP_K')}` |"
+        ),
+        (
+            "| agent-visible docs from static tool config | "
+            "`SEARCH_TOOL_FINAL_TOP_M` | "
+            f"`{_env_value(env, 'SEARCH_TOOL_FINAL_TOP_M')}` |"
+        ),
+        (
+            "| agent-visible docs written to runtime tool config | "
+            "`RUNTIME_TOOL_SEARCH_TOOL_FINAL_TOP_M` | "
+            f"`{_env_value(env, 'RUNTIME_TOOL_SEARCH_TOOL_FINAL_TOP_M')}` |"
+        ),
+        "",
+        "## Retrieval Cutoff Runtime Aliases",
+        "",
+        "| alias | value | note |",
+        "| --- | ---: | --- |",
+        (
+            "| `RECALL_TOP_K` | "
+            f"`{_env_value(env, 'RECALL_TOP_K')}` | Runtime/preflight alias for recall final top-N. |"
+        ),
+        (
+            "| `TOP_N` | "
+            f"`{_env_value(env, 'TOP_N')}` | Runtime/preflight alias for recall final top-N. |"
+        ),
+        (
+            "| `TOP_M` | "
+            f"`{_env_value(env, 'TOP_M')}` | Runtime/preflight alias for searchTool final top-M. |"
+        ),
+    ]
+    return "\n".join(lines)

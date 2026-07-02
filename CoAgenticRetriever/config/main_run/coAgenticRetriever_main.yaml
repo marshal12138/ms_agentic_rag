@@ -16,21 +16,44 @@ trainer_main_hydra_config: coagentic_retriever_trainer
 #     no-ranker tool config。
 run_mode: full
 
+# 训练链路默认配置组。
+# 这些配置组由 v2 训练 compiler 读取；eval compiler 也会借用 data/model/rollout/ranker_base
+# 来派生默认 eval 数据路径、recall 模型路径、ranker token length 和 ranker top-K 等事实。
 trainer_config_groups:
+  # 训练和 eval 默认数据配置；eval 若未在 overlay 中写 data.data_path，会使用该数据配置里的 val_files。
   data: co_search_ablation
+  # agent 基座模型配置；eval overlay 通常会把 models.agent_model 覆盖成具体 checkpoint。
   model: qwen3_4b
+  # rollout 配置；eval 主要复用其中和模型/工具上下文一致的配置事实，不直接启动训练 rollout。
   rollout: cosearch_async_qwen3_4b
+  # ranker 基础配置；eval 从这里读取 recall_final_top_n、ranker.top_k 和 ranker token length。
   ranker_base: ranker_contrastive
+  # async ranker training 基础配置；训练使用，eval 不直接启动 async 训练流程。
   async_ranker_training_base: async_ranker_training
 
+# eval 链路默认配置组。
+# main_run 只负责“选哪组配置”，不写 run_mode、reranker、模型路径、budget 等细节。
+# task 脚本中的 --EVAL_RUNTIME_CONFIG / --EVAL_BUDGET_CONFIG / --RESOURCE_CONFIG 会覆盖这里。
+eval_config_groups:
+  # eval runtime：evaluator、run_mode、reranker、vLLM、retrieval、ranker、LLM judge、tool、artifact 默认值。
+  eval_runtime: coagentic_retriever_vllm
+  # eval budget：prompt/response/multi-turn/vLLM sequence budget，结构对齐训练 Hydra budget。
+  eval_budget: coagentic_retriever_aligned_budget
+  # eval resource：本地评估时 agent/ranker/recall/LLM judge 的设备布局和服务开关。
+  resource: local_eval_4gpu_0_3
+
+# 训练链路默认资源配置。eval 不使用这个字段，eval 资源走 eval_config_groups.resource。
 resource_config: local_8gpu_0_7
 
+# 训练链路服务配置。eval runtime 里有自己的 llm_judge.* 默认值。
 service_configs:
   llm_judge_service_config: CoAgenticRetriever/async_ranker_training/configs/llm_judge_vllm_deepseek_flash_gpu06_07.yaml
 
+# 训练链路运行时配置。eval runtime 里有自己的 tool.tool_config / tool.no_ranker_tool_config。
 runtime_configs:
   tool_config: CoAgenticRetriever/config/coagentic_retriever_tool_config.yaml
 
+# 训练任务默认 overlay。eval task 不使用这里的 overlay，而是从 eval task 脚本传 --OVERLAY_YAML。
 overlay_yamls:
   - scripts/coagenticRetriever_v2/strategies_yaml/async_ranker_training_deepseek_flash_rank50_select_all.yaml
   - tasks/train_tasks/coAgenticRetriever/configs/mix_signal_b3_overlay.yaml

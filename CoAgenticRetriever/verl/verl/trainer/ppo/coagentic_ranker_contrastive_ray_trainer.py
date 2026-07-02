@@ -350,7 +350,9 @@ class CoAgenticRankerContrastiveRayTrainer(CoAgenticRetrieverRayTrainer):
                     or detail.get("top_n_documents")
                     or []
                 )
-                recall_docs = _as_python_list(recall_docs)[: int(_cfg_require(self.config, "recall_retriever.top_k"))]
+                recall_docs = _as_python_list(recall_docs)[
+                    : int(_cfg_require(self.config, "recall_retriever.recall_final_top_n"))
+                ]
                 if not recall_docs:
                     continue
                 sub_query = str(detail.get("sub_query") or "")
@@ -368,11 +370,13 @@ class CoAgenticRankerContrastiveRayTrainer(CoAgenticRetrieverRayTrainer):
                     )
                 if not rank_top50:
                     continue
-                detail["rank_top50_docs"] = rank_top50
-                detail["rank_top5_docs"] = rank_top50[: int(_cfg_require(self.config, "ranker.top_k"))]
-                detail["ranked_passages"] = rank_top50
+                rank_final_top_docs = rank_top50[: int(_cfg_require(self.config, "ranker.top_k"))]
+                detail["rank_top50_docs"] = rank_final_top_docs
+                detail["rank_top5_docs"] = rank_final_top_docs[:5]
+                detail["rank_final_top_docs"] = rank_final_top_docs
+                detail["ranked_passages"] = rank_final_top_docs
                 enriched_tool_calls += 1
-                ranked_docs_count += len(rank_top50)
+                ranked_docs_count += len(rank_final_top_docs)
 
         main_batch.meta_info["ranker_trace"] = {
             "enriched_tool_calls": enriched_tool_calls,

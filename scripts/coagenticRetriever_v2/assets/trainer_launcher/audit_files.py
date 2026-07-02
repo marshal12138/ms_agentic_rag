@@ -40,6 +40,16 @@ def _audit_bool(value: Any) -> str:
     return str(value)
 
 
+def populate_reward_audit(env: dict[str, str], config_data: Mapping[str, Any]) -> None:
+    """Record reward-only audit fields derived from final Hydra config."""
+
+    format_penalty = _select_config_value(config_data, "custom_reward_function.reward_kwargs.format_penalty")
+    env["REWARD_FORMAT_PENALTY"] = "" if format_penalty is None else str(format_penalty)
+    env["REWARD_FORMAT_PENALTY_SOURCE"] = (
+        "custom_reward_function.reward_kwargs.format_penalty" if format_penalty is not None else ""
+    )
+
+
 def populate_ranker_training_sample_builder_audit(
     env: dict[str, str],
     config_data: Mapping[str, Any],
@@ -241,9 +251,24 @@ def write_audit_env(compiled: CompiledConfig, ctx: CompilerContext) -> None:
         "RECALL_TOP_K",
         "TOP_N",
         "TOP_M",
+        "SEARCH_TOOL_FINAL_TOP_M",
         "RECALL_RETRIEVER_CONFIG_DEVICE",
-        "FORMAT_PENALTY",
+        "REWARD_FORMAT_PENALTY",
+        "REWARD_FORMAT_PENALTY_SOURCE",
         "SOURCE_TOOL_CONFIG",
+        "HYDRA_RECALL_FINAL_TOP_N",
+        "HYDRA_RANKER_FINAL_TOP_K",
+        "RUNTIME_TOOL_RECALL_FINAL_TOP_N",
+        "RUNTIME_TOOL_RANKER_FINAL_TOP_K",
+        "RUNTIME_TOOL_SEARCH_TOOL_FINAL_TOP_M",
+        "HYDRA_RANKER_CONFIG_SOURCE",
+        "HYDRA_RANKER_MODEL_PATH",
+        "HYDRA_RANKER_ENCODER_PATH",
+        "HYDRA_RANKER_DEVICE",
+        "HYDRA_RANKER_MAX_QUERY_LENGTH",
+        "HYDRA_RANKER_MAX_DOC_LENGTH",
+        "RUNTIME_TOOL_RANKER_MAX_QUERY_LENGTH",
+        "RUNTIME_TOOL_RANKER_MAX_DOC_LENGTH",
         "RANKER_TRAINING_SIGNAL_SOURCE",
         "RANKER_TRAINING_RANKER_TRAINABLE",
         "RANKER_TRAINING_UPDATE_MODE",
@@ -481,6 +506,12 @@ def build_runtime_env_for_bash(compiled: CompiledConfig, ctx: CompilerContext) -
         "RANKER_TEMPERATURE",
         "RANK_TOP_K",
         "RANKER_CONFIG_DEVICE",
+        "HYDRA_RECALL_FINAL_TOP_N",
+        "HYDRA_RANKER_FINAL_TOP_K",
+        "RUNTIME_TOOL_RECALL_FINAL_TOP_N",
+        "RUNTIME_TOOL_RANKER_FINAL_TOP_K",
+        "SEARCH_TOOL_FINAL_TOP_M",
+        "RUNTIME_TOOL_SEARCH_TOOL_FINAL_TOP_M",
         "RECALL_TOP_K",
         "TOP_N",
         "TOP_M",
@@ -490,7 +521,6 @@ def build_runtime_env_for_bash(compiled: CompiledConfig, ctx: CompilerContext) -
         "COAGENTIC_TOOL_CLASS_NAME",
         "TOOL_MAX_CONCURRENT_PER_WORKER",
         "COAGENTIC_RANKER_ENABLED",
-        "FORMAT_PENALTY",
         "RECALL_SERVICE_LOG",
         "TRAIN_LOG",
         "METRICS_JSONL",

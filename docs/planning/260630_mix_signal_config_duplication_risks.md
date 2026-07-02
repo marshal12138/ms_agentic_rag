@@ -1,6 +1,6 @@
 # Mix Signal 配置重复与漂移隐患记录
 
-本文现在只保留还需要继续判断的配置点。已经收敛、已经补校验、或者不再作为当前风险跟踪的内容，不在正文里展开。
+本文现在只保留还需要继续判断的配置点，以及已经落地、会影响风险判断的关键事实。已经收敛、已经补校验、或者不再作为当前风险跟踪的内容，只在必要处简要说明。
 
 本文的判断口径仍然是：
 
@@ -11,7 +11,7 @@
 
 ## 本次已执行的代码改动
 
-第 484 行那条建议已经落地：审计文件现在会输出 ranker training 当前到底走哪条 sample builder 路径。
+ranker training sample builder 的审计已经落地：审计文件现在会输出 ranker training 当前到底走哪条 sample builder 路径。
 
 新增 `.env` 字段：
 
@@ -25,6 +25,21 @@
 - `RANKER_TRAINING_ACTIVE_SAMPLE_BUILDER_DISABLED_REASON`
 
 这个审计值来自最终 Hydra config，不从单个 overlay 猜。当前 no-ranker 下会明确写成 disabled；full async 模式下才会摘出实际启用的 async sample builder。
+
+top-N/top-M/top-K 相关日志和报告也已经同步：
+
+- canonical v2 dry-run 会直接打印 recall final top-N、ranker final top-K、searchTool final top-M。
+- canonical `.env` 会记录 Hydra、runtime tool config、静态 tool config 三边的最终 top 值。
+- 训练 metrics report 会增加 `Retrieval Cutoffs` 小节。
+- 新 v2 eval 的 shell report、`.env`、Python eval report、`run_config.json` 会直接展示 `RECALL_FINAL_TOP_N`、`SEARCH_TOOL_FINAL_TOP_M`、`RANKER_FINAL_TOP_K` 和 `LLM_IO_MAX_RECORDS`。
+
+`format_penalty` 的 canonical 训练侧重复也已经收敛：
+
+- 最终 answer 格式惩罚的事实源只剩 Hydra `custom_reward_function.reward_kwargs.format_penalty`。
+- 静态 CoAgenticRetriever tool config 不再写 `format_penalty`。
+- `CoAgenticRetrieverTool` 不再读取 `format_penalty`。
+- v2 launcher 会拒绝静态 tool config 里的 `config.format_penalty`。
+- canonical `.env` 只记录 `REWARD_FORMAT_PENALTY` 和 `REWARD_FORMAT_PENALTY_SOURCE`。
 
 ## 当前入口与真实运行形态
 
@@ -46,346 +61,373 @@
 
 ## P1 隐患
 
-### 6. ranker 路径、设备和 token 长度分散在多处
-
-这个点先保留，但不是本文这次的重点。
-
-full 模式下有两个 ranker 角色：
-
-- 训练侧 ranker：被 contrastive update 更新。
-- 推理侧 shared ranker：rollout/search tool 调用它来重排 recall 候选。
-
-这两边最好使用同一套 encoder 语义。现在 ranker 的模型路径、encoder 路径、device、query/doc 最大长度，既能在 Hydra ranker 配置里看到，也能在 tool config 的 `ranker` 段里看到。runtime override 会注入 Hydra 的 `ranker.device`，但不会自动改写静态 tool 模板里的所有 ranker 字段。
-
-后续重点不是“看到重复就删”，而是先确认哪些字段还有运行意义：
-
-- `ranker.max_query_length/max_doc_length`：训练侧和 shared ranker 推理侧应保持一致。
-- tool config 里的 `ranker.max_query_length/max_doc_length`：full 模式下 tool 会把它们传给 ranker actor 的调用路径，不能随便当成纯注释。
-- tool config 里的 `ranker.model_path/encoder_path/device`：ray actor 模式下主要是模板残留还是仍被某些调试路径消费，需要单独确认。
-
-建议后续补一个 full-mode 静态校验：最终 Hydra 的 ranker token length 要和运行时 tool config 的 ranker token length 一致。
-
 ### 7. top-N / top-M / top-K / max-docs 名字相似但不是一回事
 
-这是本文现在最需要讲清楚的点之一。这里的问题不是“有很多 top 字段所以一定错”，而是这些字段名字太像，但处在不同阶段，改错一个数字会悄悄改变实验语义。
+这一项已经做了一轮代码收敛，但还要继续跟踪 rank50 judge 的一致性校验。
 
-先把一条 search tool call 的链路按顺序拆开：
+先说当前结论：
 
-1. agent 生成一个 search query。
-2. tool 用 `top_n` 去 recall 服务拿候选文档。
-3. 如果 no-ranker，就保持 recall 原顺序；如果 full ranker，就对这批候选做 dense rerank。
-4. tool 只把前 `top_m` 篇左右的文档格式化进 tool response，让 agent 继续生成。
-5. full async ranker training 还会把 rank 后的 50 篇文档交给 LLM judge，让 judge 排序并产出 ranker 训练信号。
+- 训练侧不保留旧 top 字段兼容。旧字段如果出现在训练配置里，会直接报错。
+- v2 eval 侧已经迁到 canonical runtime config，入口只接受结构化配置和明确支持的 override。
+- 正确的新 Hydra overlay 不会失效。`recall_retriever.recall_final_top_n` 和 `ranker.top_k` 会在最终 Hydra compose 后写进本次 run 的 runtime tool config。
+- 错误的旧 overlay 不会静默失效。`recall_retriever.top_k`、`ranker.final_top_k`、顶层 `default_top_n/default_top_m/searchTool_final_top_m` 都会被 canonical launcher 拒绝。
 
-这里至少有六组“看起来像 top-k”的配置。
+这次收敛的方向是：不要再让静态 tool config、Hydra recall 配置、Hydra ranker 配置同时写很像的 `top_k` 字段。现在按语义拆成三层：
 
-| 名字 | 当前值 | 真实含义 | 主要消费者 |
-| --- | ---: | --- | --- |
-| tool `default_top_n` | 50 | 每次 recall 请求返回多少篇候选 | `CoAgenticRetrieverTool.execute()` 调 recall API |
-| tool `default_top_m` | 5 | 最终塞进 tool response、agent 真正看见多少篇 | `final_docs = ranked_docs[:agent_top_k]` |
-| tool `ranker.top_k` | 50 | tool 侧最终可见文档的额外上限之一 | `min(top_m, ranker.top_k, len(ranked_docs))` |
-| Hydra `recall_retriever.top_k` | 50 | 训练侧补 ranker trace 时最多取多少篇 recall docs | ranker trainer enrichment |
-| Hydra `ranker.top_k` | 5 | 训练侧写 `rank_top5_docs` 时保留多少篇 | ranker trainer enrichment |
-| judge `max_docs_per_request` | 50 | 每个 LLM judge 请求应该评估多少篇文档 | async ranker training request/prompt |
-| sample builder `positive_top_k` | 5 | judge 排名前几篇当作 positive | `llm_judge_topk` signal builder |
+| 语义 | 当前事实源 | 当前值 | 谁消费 |
+| --- | --- | ---: | --- |
+| recall 候选池大小 | Hydra `recall_retriever.recall_final_top_n` | 50 | launcher 生成 runtime tool config；trainer enrichment 截取 recall docs |
+| ranker 排序后保留多少篇 | Hydra `ranker.top_k` | 50 | launcher 生成 runtime tool config；trainer enrichment 写 rank-final docs |
+| agent 最终看多少篇 | tool config `searchTool_final_top_m` | 5 | `CoAgenticRetrieverTool.execute()` 格式化 tool response |
+| judge 每次评估多少篇 | async ranker training stage `max_docs_per_request` | 50 | async judge request/prompt/schema |
+| judge 排名前几篇算 positive | async sample builder `positive_top_k` | 5 | `llm_judge_topk` signal builder |
 
-#### recall top-N 是候选池大小
+#### 本次删除和改名的字段
 
-tool config 里的 `default_top_n: 50` 是第一层候选池大小。tool 执行时会这样取值：
+静态 tool config 以前是这样：
 
-- 如果 `create_kwargs` 显式传了 `top_n`，就用它。
-- 否则用 tool config 的 `default_top_n`。
+```yaml
+# CoAgenticRetriever/config/coagentic_retriever_tool_config.yaml
+default_top_n: 50
+default_top_m: 5
+ranker:
+  top_k: 50
+```
 
-然后 tool 调 recall 服务，并把结果记录成类似：
+现在变成：
 
-- `recall_top50_docs = recall_docs[:top_n]`
+```yaml
+# CoAgenticRetriever/config/coagentic_retriever_tool_config.yaml
+searchTool_final_top_m: 5
+ranker:
+  backend: ray_actor
+  required: true
+```
 
-所以这里的 50 不是 agent 看到的文档数，而是后面 ranker、judge、训练信号能使用的候选池大小。
+也就是说：
 
-#### agent top-M 是 agent 可见文档数
+- `default_top_n` 已删除。静态 tool config 不再决定 recall 候选池大小。
+- `default_top_m` 已改名为 `searchTool_final_top_m`。这个名字直接说明它是 search tool 最终给 agent 看的文档数。
+- tool config 里的 `ranker.top_k` 已删除。tool config 不再写第二份 ranker top-K。
 
-tool config 里的 `default_top_m: 5` 控制最终进入 tool response 的文档数。当前代码里最终可见文档数是：
+Hydra ranker base 以前是这样：
+
+```yaml
+# CoAgenticRetriever/config/experimental/ranker_base/ranker_contrastive.yaml
+recall_retriever:
+  top_k: 50
+
+ranker:
+  top_k: 5
+```
+
+现在变成：
+
+```yaml
+# CoAgenticRetriever/config/experimental/ranker_base/ranker_contrastive.yaml
+recall_retriever:
+  recall_final_top_n: 50
+
+ranker:
+  top_k: 50
+```
+
+这里的两个 50 不是重复写同一个字段，而是两个连续阶段：
+
+- `recall_final_top_n=50`：先从 recall retriever 拿 50 篇候选。
+- `ranker.top_k=50`：ranker 对这 50 篇排序后，保留 50 篇作为 rank-final 结果，供 judge 和训练信号使用。
+
+#### 为什么之前 `ranker.top_k` 是 5
+
+之前默认值是 5，是因为旧实现把 Hydra `ranker.top_k` 用成了“训练侧 top5 trace 截断”：
+
+```python
+detail["rank_top5_docs"] = rank_top50[: int(_cfg_require(self.config, "ranker.top_k"))]
+```
+
+这和我们现在对齐的语义不一致。我们现在要的 `ranker.top_k` 不是“给 agent 看 5 篇”，也不是“训练日志里只保留 top5”，而是“ranker 排完 recall 候选后保留多少篇”。在 rank50 judge 设计下，它应该是 50。
+
+代码已经按这个语义改掉：
+
+```python
+rank_final_top_docs = rank_top50[: int(_cfg_require(self.config, "ranker.top_k"))]
+detail["rank_top50_docs"] = rank_final_top_docs
+detail["rank_top5_docs"] = rank_final_top_docs[:5]
+detail["rank_final_top_docs"] = rank_final_top_docs
+```
+
+所以现在：
+
+- `ranker.top_k=50` 控制 ranker 排序后保留 50 篇。
+- `rank_top50_docs` 仍然保留，兼容当前 rank50 judge/request builder。
+- `rank_top5_docs` 只作为兼容旧消费者的 top5 视图，固定取前 5 篇，不再由 `ranker.top_k` 决定。
+
+#### runtime tool config 如何知道这些值
+
+静态 tool config 删除 `default_top_n` 和 `ranker.top_k` 后，tool 运行时仍然需要知道 recall top-N 和 ranker final top-K。现在由 canonical launcher 在 compose 最终 Hydra config 后生成 runtime tool config。
+
+runtime tool config 会包含类似：
+
+```yaml
+recall_final_top_n: 50
+searchTool_final_top_m: 5
+ranker:
+  backend: ray_actor
+  required: true
+  actor_name: coagentic_shared_dense_ranker
+  actor_namespace: null
+  final_top_k: 50
+  max_query_length: 256
+  max_doc_length: 512
+```
+
+对应关系是：
+
+- `recall_final_top_n` 来自最终 Hydra `recall_retriever.recall_final_top_n`。
+- `ranker.final_top_k` 来自最终 Hydra `ranker.top_k`。
+- `searchTool_final_top_m` 来自静态 tool config。
+- `actor_name/actor_namespace/max_query_length/max_doc_length` 也由 launcher 从最终 Hydra 配置生成。
+
+审计文件也会记录：
 
 ```text
-agent_top_k = min(top_m, tool_ranker_top_k, len(ranked_docs))
+HYDRA_RECALL_FINAL_TOP_N=50
+HYDRA_RANKER_FINAL_TOP_K=50
+RUNTIME_TOOL_RECALL_FINAL_TOP_N=50
+RUNTIME_TOOL_RANKER_FINAL_TOP_K=50
+SEARCH_TOOL_FINAL_TOP_M=5
+RUNTIME_TOOL_SEARCH_TOOL_FINAL_TOP_M=5
+TOP_M=5
+```
+
+这样读者可以一眼看出：recall/ranker top 值来自 Hydra，agent-visible top-M 来自 tool config。
+
+#### 这次实际改了哪些训练脚本
+
+训练侧改动的边界是：当前 canonical 训练链路必须只认新事实源，不再从旧字段兜底。
+
+实际涉及这些文件：
+
+```text
+scripts/coagenticRetriever_v2/01_train_launcher.sh
+scripts/coagenticRetriever_v2/assets/trainer_launcher/compile_config.py
+scripts/coagenticRetriever_v2/assets/trainer_launcher/runtime_env.py
+scripts/coagenticRetriever_v2/assets/trainer_launcher/tool_config.py
+scripts/coagenticRetriever_v2/assets/trainer_launcher/audit_files.py
+scripts/coagenticRetriever_v2/assets/report_schema.py
+scripts/coagenticRetriever_v2/assets/00_run_agentic_iter_rag_verl.sh
+CoAgenticRetriever/scripts/train_coagentic_retriever_grpo.sh
+```
+
+具体行为是：
+
+- `01_train_launcher.sh` 仍然是 canonical 训练入口，本身不再拼 topK/topM 训练语义；它调用 compiler 生成最终 env、Hydra args 和 runtime tool config。
+- `compile_config.py` 会先 compose 最终 Hydra config，再读取 `recall_retriever.recall_final_top_n` 和 `ranker.top_k`，写入审计 env，并调用 runtime tool config generator。
+- `runtime_env.py` 只从静态 tool config 读取 `searchTool_final_top_m`，不再从 tool config 读取 recall top-N，也不再接受静态 tool config 缺 top-M 后悄悄用默认值。
+- `tool_config.py` 现在会拒绝训练侧旧字段：静态 `default_top_n/default_top_m`、静态 `ranker.top_k/final_top_k`，以及静态 ranker 里的 model/device/token length 等运行字段。静态 `ranker` 段只允许 `backend` 和 `required`。
+- `audit_files.py` 增加了 `HYDRA_RECALL_FINAL_TOP_N`、`HYDRA_RANKER_FINAL_TOP_K`、`RUNTIME_TOOL_RECALL_FINAL_TOP_N`、`RUNTIME_TOOL_RANKER_FINAL_TOP_K`、`SEARCH_TOOL_FINAL_TOP_M`、`RUNTIME_TOOL_SEARCH_TOOL_FINAL_TOP_M`，便于比较 Hydra、runtime tool config、静态 tool config 的最终值。
+- `01_train_launcher.sh` 的 dry-run 日志会直接打印 recall final top-N、ranker final top-K、searchTool final top-M；`report_schema.py` 也会在训练指标报告里单独生成 `Retrieval Cutoffs` 小节。这样读报告时不需要反推 `TOP_N/TOP_M` 到底是什么意思。
+- `assets/00_run_agentic_iter_rag_verl.sh` 是旧 asset runner，不是当前 canonical 主链路。它也被收紧了：只读新字段，缺 `recall_final_top_n/searchTool_final_top_m` 就失败，不再 fallback 到 `default_top_n/default_top_m` 或 `TOP_N=10`。
+- `CoAgenticRetriever/scripts/train_coagentic_retriever_grpo.sh` 已改成退役 stub。这个旧入口原来从静态 tool config 读 ranker model/device/top-k，不再符合当前事实源划分，所以不允许继续作为训练入口。
+
+#### Eval 链路当前状态
+
+v2 eval 已经迁到 `scripts/coagenticRetriever_v2/02_infer_launcher.sh`、`scripts/coagenticRetriever_v2/assets/eval_launcher/compile_config.py`、`scripts/coagenticRetriever_v2/evaluate_coagentic_vllm.py` 这条链路。它只从 eval runtime、eval budget、resource、task overlay 和明确支持的 override 取值；runtime tool config 由 compiler 生成。
+
+v2 目录里容易误读的 eval 入口、aligned evaluator 和 eval budget YAML 已移除，只保留一个 eval launcher 和一个 evaluator。推理报告、`.env`、`run_config.json` 和 dry-run 输出都使用 `EVAL_TASK_NAME`、`RECALL_FINAL_TOP_N`、`SEARCH_TOOL_FINAL_TOP_M`、`RANKER_FINAL_TOP_K`、`LLM_IO_MAX_RECORDS` 等规范字段。
+
+#### overlay 会不会失效
+
+目前分两种情况。
+
+第一种是正确的新 Hydra 字段：
+
+```yaml
+recall_retriever:
+  recall_final_top_n: 40
+
+ranker:
+  top_k: 40
+```
+
+这不会失效。canonical launcher 的顺序是：
+
+1. 先把 base、overlay、run mode override、runtime override、CLI override compose 成最终 Hydra config。
+2. 从最终 Hydra config 读取 `recall_retriever.recall_final_top_n` 和 `ranker.top_k`。
+3. 生成本次 run 的 runtime tool config。
+4. 再把 `actor_rollout_ref.rollout.multi_turn.tool_config_path` 指到这份 runtime tool config。
+
+runtime override 只写 service URL、device、tool_config_path 这类运行态字段，不写 `recall_final_top_n` 或 `ranker.top_k`。所以 overlay 里正确设置的新字段不会被 runtime override 覆盖。
+
+第二种是旧字段或写错层级：
+
+```yaml
+recall_retriever:
+  top_k: 40
+
+ranker:
+  final_top_k: 40
+
+default_top_n: 40
+default_top_m: 5
+searchTool_final_top_m: 5
+```
+
+这些不会再静默失效，而是直接失败：
+
+- `recall_retriever.top_k`：拒绝，要求改成 `recall_retriever.recall_final_top_n`。
+- `ranker.final_top_k`：拒绝，要求训练 Hydra 里写 `ranker.top_k`；`final_top_k` 只允许出现在 runtime tool config。
+- 顶层 `default_top_n/default_top_m/searchTool_final_top_m`：拒绝，因为它们不是 Hydra 训练 override。现在 `searchTool_final_top_m` 的事实源仍然是静态 tool config。
+
+因此当前实现不会导致“overlay 看起来生效、实际没生效”的 silent failure。更准确地说：正确 overlay 会生效，错误 overlay 会 fail-fast。
+
+#### agent top-M 不是 ranker top-K
+
+tool 真正返回给 agent 的文档数现在只看 `searchTool_final_top_m` 和实际 ranked docs 数量：
+
+```python
+agent_top_k = min(top_m, len(ranked_docs))
 final_docs = ranked_docs[:agent_top_k]
 ```
 
-当前配置下：
+当前 `searchTool_final_top_m=5`，所以 agent 仍然只看 5 篇。把 `ranker.top_k` 改成 50 不会让 agent 看 50 篇；它只是保证 ranker/judge/training 侧有 50 篇 rank-final 候选。
 
-- `top_m = 5`
-- tool `ranker.top_k = 50`
-- `ranked_docs` 通常最多 50 篇
+#### judge max-docs 仍然是单独语义
 
-所以 agent 实际看到的是 5 篇，不是 50 篇。这个 5 会影响 agent 后续回答时能引用多少上下文，也会影响 reward preflight 对“可见文档”的判断。
+async ranker training 的 LLM judge stage 仍然写：
 
-#### tool `ranker.top_k` 现在不是 rerank 池大小
-
-这是最容易误读的地方。
-
-tool config 里有：
-
-- `ranker.top_k: 50`
-
-看名字像“ranker 重排 top-K”，但当前 tool 代码会对 recall top-N 全量重排。local 路径显式传的是 `top_k=len(recall_docs)`，ray actor 路径也是围绕同一批 recall docs 做排序。tool `ranker.top_k` 最后只参与 agent 可见文档的 cap：
-
-```text
-min(default_top_m, ranker.top_k, 文档数)
+```yaml
+# CoAgenticRetriever/config/experimental/async_ranker_training_base/async_ranker_training.yaml
+stages:
+  - type: llm_as_judge
+    score_schema: ranked_ids_top50
+    max_docs_per_request: 50
 ```
 
-因此，当前 `ranker.top_k=50` 不代表“agent 看 50 篇”，也不代表“judge 看 50 篇”。它只是保证不会比 50 更多；真正让 agent 只看 5 篇的是 `default_top_m=5`。
+这表示每个 judge 请求评估 50 篇 ranked chunks。当前 async ranker training schema 里还有硬约束：`ranked_chunk_list` 必须正好有 50 篇。
 
-#### Hydra `ranker.top_k` 是训练侧 trace 的 top5 语义
-
-Hydra ranker base 里也有：
-
-- `ranker.top_k: 5`
-
-这和 tool config 的 `ranker.top_k: 50` 名字一样，但语义不同。训练侧在补 ranker trace 时会：
-
-1. 从 tool detail 里拿 recall docs。
-2. 按 `recall_retriever.top_k` 截到 50。
-3. 调训练侧 ranker 排序全部 50 篇。
-4. 写：
-   - `rank_top50_docs = rank_top50`
-   - `rank_top5_docs = rank_top50[:ranker.top_k]`
-
-所以 Hydra `ranker.top_k=5` 更接近“训练日志和 contrastive 样本里保留的 top5 视图”。它不应该被拿去解释 recall 候选池，也不应该被拿去解释 LLM judge 一次看多少篇。
-
-#### judge max-docs 不是 agent top-M
-
-async ranker training 的 LLM judge stage 里有：
-
-- `max_docs_per_request: 50`
-
-这表示每个 judge 请求评估 50 篇 ranked chunks。更关键的是，当前 async ranker training schema 里有硬约束：
+所以现在应该守住这组关系：
 
 ```text
-ranked_chunk_list must contain exactly 50 chunks
+recall_retriever.recall_final_top_n = 50
+ranker.top_k = 50
+judge max_docs_per_request = 50
+ranked_chunk_list length = 50
 ```
 
-也就是说，当前这条链路不是“最多 50 篇也行，少一点也行”。它实际上要求 rank50。prompt、parser、request validation、`rank_top50_docs` 命名都是按 rank50 设计的。
+如果只把其中一个改成 20 或 100，full 模式就可能出现配置说法和 judge/schema 约束不一致。
 
-所以如果有人把 recall top-N 从 50 改成 20，但不改 async judge 链路，full 模式会直接不满足 rank50 请求语义；如果有人把 judge `max_docs_per_request` 改成 20，但 schema 仍然要求 50，也会出现配置说法和代码约束不一致。
-
-#### positive_top_k 是标签规则，不是可见文档数
+#### positive_top_k 是标签规则
 
 async sample builder 里还有：
 
-- `strategy_kwargs.positive_top_k: 5`
+```yaml
+sample_builder:
+  strategy_kwargs:
+    signal_builder_type: llm_judge_topk
+    positive_top_k: 5
+```
 
-这个 5 的意思是：LLM judge 排名前 5 的 doc 被当作 positive，其余 judged docs 可以作为 negative。它不是 agent top-M，也不是 `rank_top5_docs` 的唯一来源。
+这个 5 的意思是：LLM judge 排名前 5 的 doc 被当作 positive，其余 judged docs 可以作为 negative。它不是 agent top-M，也不是 ranker final top-K。它和 `searchTool_final_top_m=5` 数值一样，但语义不同。
 
-当前它和 agent top-M 都是 5，只是数值碰巧一样。语义上它属于“训练标签规则”，不是“tool response 展示规则”。
+#### 后续真正要补的校验
 
-#### 当前应该守住的约束
+这项现在不再是“字段到处重复”的问题，已经收敛成“rank50 链路要一致”的问题。后续应补 full-mode 静态校验：
 
-如果继续保持 rank50 judge 设计，至少要守住这些关系：
-
-- `tool default_top_n` 应该是 50。
-- Hydra `recall_retriever.top_k` 应该是 50。
-- `rank_top50_docs` 应该真的有 50 篇。
-- judge `max_docs_per_request` 应该是 50，或者相关 schema/prompt/parser 一起改。
-- agent top-M 可以是 5，但不要把它误认为 judge 输入大小。
-- Hydra `ranker.top_k=5` 可以继续表达训练侧 top5 trace，但不要和 tool `ranker.top_k=50` 混用。
-- `positive_top_k=5` 是 judge 标签策略；改它会改变 ranker 训练正样本定义。
-
-#### 改这些数字时应该怎么改
-
-如果目标是“agent 多看几篇文档”，优先改：
-
-- tool `default_top_m`
-- reward/preflight 对可见文档数的限制
-- rollout token budget，确保更多 tool response 放得下
-
-不要只改 judge `max_docs_per_request`，因为 judge 看多少篇不决定 agent 看多少篇。
-
-如果目标是“judge 不再评估 50 篇，而是评估 20 篇”，需要成组修改：
-
-- stage `max_docs_per_request`
-- request schema 的 rank50 校验
-- prompt 里对输出数量的要求
-- parser/validator 对返回 doc_id 数量的要求
-- `rank_top50_docs` 这类字段名或兼容逻辑
-
-不要只改一个 YAML 字段。
-
-如果目标是“recall 候选池扩大到 100”，要先决定 judge 是否也升级到 rank100：
-
-- 如果 judge 仍是 rank50，就需要明确从 100 篇里选哪 50 篇给 judge。
-- 如果 judge 也变 rank100，就要同步改 schema、prompt、parser、日志字段名和显存/上下文预算。
-
-#### 建议的后续治理
-
-短期建议先增强审计，而不是马上改数字：
-
-- `.env` 或 final summary 里把 `RECALL_TOP_K/TOP_N/TOP_M`、Hydra `recall_retriever.top_k`、Hydra `ranker.top_k`、tool `ranker.top_k`、judge `max_docs_per_request`、`positive_top_k` 分开列。
-- 字段展示时不要只写 `top_k=5`，要写成 `agent_visible_top_m=5`、`judge_docs_per_request=50`、`label_positive_top_k=5` 这种带语义的名字。
-
-中期建议补 full-mode 静态校验：
-
-- rank50 judge 启用时，最终 `rank_top50_docs` 来源必须能提供 50 篇。
+- `recall_retriever.recall_final_top_n` 必须能提供至少 50 篇给 rank50 judge。
+- `ranker.top_k` 必须等于 rank50 judge 需要的文档数，当前就是 50。
 - `max_docs_per_request` 如果不是 50，要么拒绝启动，要么要求显式切换到新的非 rank50 schema。
-- `default_top_m <= default_top_n` 必须成立。
-- reward preflight 的 top-M 限制要和最终 agent-visible 文档数一致。
+- `searchTool_final_top_m <= recall_retriever.recall_final_top_n` 必须成立。
+- reward preflight 的 top-M 限制要和最终 `searchTool_final_top_m` 一致。
 
-## P2 隐患
+## 已收敛项
 
-### 9. format_penalty 在 reward 配置和 tool config 里重复
+### 9. format_penalty 重复问题已收敛
 
-这是本文另一个重点。它看起来只是一个同名数字，但真正的问题是：同名字段在两个地方出现，读者会自然以为它们都控制同一件事；而当前代码里，它们的运行语义并不等价。
+这一项在 canonical v2 训练链路里已经解决，不再作为当前 P2 风险跟踪。
 
-#### 先说结论
+#### 当前事实源
 
-当前最终 answer 格式惩罚的事实源是 Hydra：
+最终 answer 格式惩罚只看 Hydra：
 
-- `custom_reward_function.reward_kwargs.format_penalty`
-
-当前值是：
-
-- `-0.2`
-
-tool config 里也有：
-
-- `tools[0].config.format_penalty`
-
-当前值也是：
-
-- `-0.2`
-
-因为两个值现在相同，所以不会立刻暴露问题。但这不是一个好的长期状态：以后如果只改其中一个，训练实际行为和审计展示就可能分叉。
-
-#### Hydra 里的 format_penalty 控制最终 answer reward
-
-Hydra trainer config 里配置了自定义 reward：
-
-- 文件：`CoAgenticRetriever/rewards/search_qa_f1_with_format_penalty.py`
-- 函数：`search_qa_f1_penalty_compute_score`
-- 参数：`custom_reward_function.reward_kwargs.format_penalty`
-
-这个 reward 函数会检查最终 answer 格式，以及是否满足至少一次 search 等约束。当前逻辑大致是：
-
-```text
-如果 answer 格式正确，并且满足 search 约束：
-    score = F1 answer score
-否则：
-    score = format_penalty
+```yaml
+# CoAgenticRetriever/config/coagentic_retriever_trainer.yaml
+custom_reward_function:
+  reward_kwargs:
+    format_penalty: -0.2
 ```
 
-所以 Hydra 的 `format_penalty=-0.2` 是最终 answer reward 的实际惩罚值。它会影响训练优化目标。
-
-#### tool config 里的 format_penalty 当前不是最终 answer penalty
-
-tool config 也写了 `format_penalty: -0.2`。tool 类初始化时确实会读取它：
+这个值会传给：
 
 ```text
-self.format_penalty = float(_require_config(config, "format_penalty"))
+CoAgenticRetriever/rewards/search_qa_f1_with_format_penalty.py
+search_qa_f1_penalty_compute_score(..., format_penalty=-0.2)
 ```
 
-但当前 `CoAgenticRetrieverTool._compute_tool_reward()` 只根据 hit/NDCG 计算 tool reward，没有使用 `self.format_penalty`。也就是说，在当前代码路径里，tool config 的 `format_penalty` 主要有两个作用：
+reward 函数的语义仍然是：answer 格式正确且满足 search 约束时给 F1 分；否则给 `format_penalty`。所以 `custom_reward_function.reward_kwargs.format_penalty` 是最终 answer reward 的事实源。
 
-- 满足 tool config schema/初始化要求，因为 tool 类现在要求这个字段存在。
-- 被 launcher 读出来写进 env 审计里的 `FORMAT_PENALTY`。
+#### 静态 tool config 现在不再写 format_penalty
 
-它不是最终 answer reward 的事实源。
+当前静态 CoAgenticRetriever tool config 里没有 `format_penalty`：
 
-#### 为什么这会误导审计
+```yaml
+# CoAgenticRetriever/config/coagentic_retriever_tool_config.yaml
+searchTool_final_top_m: 5
+ranker_enabled: true
+ranker:
+  backend: ray_actor
+  required: true
+```
 
-假设以后有人只改了 Hydra：
+no-ranker 版本也是同样的事实源划分：
+
+```yaml
+# CoAgenticRetriever/config/coagentic_retriever_tool_config_no_ranker.yaml
+searchTool_final_top_m: 5
+ranker_enabled: false
+ranker:
+  backend: ray_actor
+  required: false
+```
+
+`CoAgenticRetrieverTool` 现在也不再读取 `format_penalty`。tool reward 仍然由 hit/NDCG 这类 tool-side 指标计算；最终 answer 格式惩罚由 Hydra reward 函数负责。
+
+#### canonical launcher 如何防止重复回来
+
+v2 canonical launcher 读静态 tool config 时会拒绝这些旧字段：
 
 ```text
-custom_reward_function.reward_kwargs.format_penalty = -0.5
-tools[0].config.format_penalty = -0.2
+config.default_top_n
+config.default_top_m
+config.format_penalty
+config.ranker.*  # backend/required 以外的 ranker 字段
 ```
 
-训练真正使用的是 `-0.5`，但 `.env` 里当前的 `FORMAT_PENALTY` 来自 tool config，就可能显示 `-0.2`。读日志的人会误以为格式错误只扣 `-0.2`。
+也就是说，如果有人把 `format_penalty` 又写回 `CoAgenticRetriever/config/coagentic_retriever_tool_config.yaml`，canonical 训练启动前会直接失败，不会再出现“Hydra 一个值、tool config 一个值”的双事实源。
 
-反过来，如果有人只改 tool config：
+#### 审计现在怎么写
 
-```text
-custom_reward_function.reward_kwargs.format_penalty = -0.2
-tools[0].config.format_penalty = -0.5
-```
-
-训练最终 answer reward 仍然按 `-0.2` 扣分，但审计 env 可能显示 `-0.5`。这会让实验复盘和指标解释都变得不可信。
-
-#### 为什么不能现在直接删 tool config 字段
-
-不能只从 YAML 里删掉 `tools[0].config.format_penalty`，原因很简单：tool 类当前用 `_require_config(config, "format_penalty")` 强制读取这个字段。直接删 YAML 会导致 tool 初始化失败。
-
-所以处理这个重复字段有两条安全路线。
-
-#### 路线 A：保留字段，但让 Hydra 生成它
-
-这是最稳的短期方案。
-
-做法是继续沿用“静态 tool config 只做模板、canonical launcher 生成 runtime tool config”的模式：静态 tool config 不再手写 `format_penalty`，canonical launcher 在生成 runtime tool config 时，从最终 Hydra 里读取：
-
-```text
-custom_reward_function.reward_kwargs.format_penalty
-```
-
-然后写进本次 run 的 runtime tool config。
-
-这样有几个好处：
-
-- tool 类仍然能读到 `format_penalty`，不会破坏初始化。
-- 静态 tool config 不再是第二事实源。
-- `.env` 可以同时写清楚：
-  - `REWARD_FORMAT_PENALTY=-0.2`
-  - `TOOL_CONFIG_FORMAT_PENALTY=-0.2`
-  - `FORMAT_PENALTY_SOURCE=hydra_reward_kwargs`
-- 如果将来 tool reward 真的也要用这个惩罚，两边仍然来自同一个 Hydra 值。
-
-这条路线的缺点是：tool config 里仍然会出现字段，只是它变成 launcher 生成结果，不再是人工维护的事实源。
-
-#### 路线 B：确认 tool 不再需要后，删除 tool 字段
-
-这是更干净但更需要确认的方案。
-
-需要先改代码：
-
-- `CoAgenticRetrieverTool` 不再 `_require_config(config, "format_penalty")`。
-- launcher 不再从 tool config 读 `format_penalty` 作为 `FORMAT_PENALTY`。
-- 推理脚本里如果只是打印 `STATIC_FORMAT_PENALTY`，也要同步删除或改名。
-- 审计文件只记录 Hydra reward kwargs 里的 `format_penalty`。
-
-这条路线的优点是事实源最清楚：格式惩罚就是 reward 配置。缺点是要确认没有旧工具、旧推理脚本或外部流程还依赖 tool config 的这个字段。
-
-#### 当前建议
-
-短期建议走路线 A：让 Hydra reward kwargs 成为唯一事实源，同时由 launcher 生成 runtime tool config 里的 `format_penalty`。这能最快消除“人工维护两份同名字段”的问题，又不会破坏 tool 初始化。
-
-中期再决定是否走路线 B：如果确认 tool reward 永远不需要单独的 format penalty，就把 tool schema 和静态模板里的字段彻底删掉。
-
-#### 审计上应该怎么写
-
-不要再只写一个模糊的：
-
-```text
-FORMAT_PENALTY=-0.2
-```
-
-更清楚的审计应该是：
+canonical `.env` 只记录 reward 侧事实源：
 
 ```text
 REWARD_FORMAT_PENALTY=-0.2
-TOOL_CONFIG_FORMAT_PENALTY=-0.2
-FORMAT_PENALTY_SOURCE=hydra_reward_kwargs
+REWARD_FORMAT_PENALTY_SOURCE=custom_reward_function.reward_kwargs.format_penalty
 ```
 
-这样读者一眼能看出：最终 answer reward 看 Hydra；tool config 里的值只是为了 runtime tool schema 保持一致。
+不再记录含义模糊的 `FORMAT_PENALTY`，也不再记录 `TOOL_CONFIG_FORMAT_PENALTY`。因为当前 tool config 已经不再维护这个字段。
+
+#### 非 canonical 入口边界
+
+本文不继续维护非 canonical 训练入口的配置语义。新训练任务应使用 `scripts/coagenticRetriever_v2/01_train_launcher.sh`，新评估任务应使用 `scripts/coagenticRetriever_v2/02_infer_launcher.sh`。
 
 ## 建议后续处理顺序
 
-1. 先处理 `format_penalty` 的事实源。
-   - 推荐短期做法：runtime tool config 的 `format_penalty` 由 Hydra reward kwargs 生成。
-   - 同时把审计字段拆成 reward/tool/source 三个名字，避免 `FORMAT_PENALTY` 继续含糊。
-2. 再处理 top 字段审计。
-   - 不急着改数值，先把每个 top 字段按语义输出清楚。
-   - full-mode 启动前补 rank50 judge 相关一致性校验。
-3. 最后处理 ranker token length。
-   - 校验训练侧 ranker 和 tool/shared ranker 的 query/doc token length 是否一致。
+1. 先补 top/rank50 的 full-mode 一致性校验。
+   - 字段删除、改名、日志/report 和 runtime 审计已经完成。
+   - 剩下要校验的是 recall final top-N、ranker final top-K、judge max-docs、ranked chunk 数量必须一起满足 rank50 语义。
+2. 保持 task 文档和任务入口只指向 v2 canonical launcher。
+   - 当前 canonical 事实源已经在 v2 launcher 中收敛。
+   - 非 canonical 入口不再作为新任务的配置事实源。
 
 ## 暂不处理事项
 

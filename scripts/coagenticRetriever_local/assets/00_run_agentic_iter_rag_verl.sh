@@ -130,8 +130,8 @@ def emit(name, value):
 
 emit("STATIC_TOOL_CLASS_NAME", tool.get("class_name", ""))
 emit("STATIC_RETRIEVAL_SERVICE_URL", config.get("retrieval_service_url", ""))
-emit("STATIC_DEFAULT_TOP_N", config.get("default_top_n", ""))
-emit("STATIC_DEFAULT_TOP_M", config.get("default_top_m", ""))
+emit("STATIC_RECALL_FINAL_TOP_N", config.get("recall_final_top_n") or config.get("default_top_n", ""))
+emit("STATIC_SEARCH_TOOL_FINAL_TOP_M", config.get("searchTool_final_top_m") or config.get("default_top_m", ""))
 emit("STATIC_FORMAT_PENALTY", config.get("format_penalty", ""))
 emit("STATIC_MAX_CONCURRENT_PER_WORKER", config.get("max_concurrent_per_worker", ""))
 emit("STATIC_RANKER_ENABLED", config.get("ranker_enabled", ""))
@@ -140,9 +140,13 @@ emit("STATIC_RANKER_ENABLED", config.get("ranker_enabled", ""))
 
   COAGENTIC_TOOL_CLASS_NAME="${STATIC_TOOL_CLASS_NAME}"
   RETRIEVAL_SERVICE_URL="${STATIC_RETRIEVAL_SERVICE_URL}"
-  TOP_N="${STATIC_DEFAULT_TOP_N}"
-  RECALL_TOP_K="${STATIC_DEFAULT_TOP_N}"
-  TOP_M="${STATIC_DEFAULT_TOP_M}"
+  if [[ -n "${STATIC_RECALL_FINAL_TOP_N}" ]]; then
+    TOP_N="${STATIC_RECALL_FINAL_TOP_N}"
+    RECALL_TOP_K="${STATIC_RECALL_FINAL_TOP_N}"
+  fi
+  if [[ -n "${STATIC_SEARCH_TOOL_FINAL_TOP_M}" ]]; then
+    TOP_M="${STATIC_SEARCH_TOOL_FINAL_TOP_M}"
+  fi
   FORMAT_PENALTY="${STATIC_FORMAT_PENALTY}"
   COAGENTIC_RANKER_ENABLED="${STATIC_RANKER_ENABLED}"
   if [[ -z "${COAGENTIC_RANKER_ENABLED}" ]]; then
@@ -155,6 +159,8 @@ emit("STATIC_RANKER_ENABLED", config.get("ranker_enabled", ""))
 }
 
 load_static_tool_config
+RECALL_FINAL_TOP_N="${RECALL_TOP_K}"
+SEARCH_TOOL_FINAL_TOP_M="${TOP_M}"
 
 if [[ "${COAGENTIC_RANKER_ENABLED}" != "false" && "${N_GPUS_PER_NODE}" -lt 2 ]]; then
   echo "ERROR: CoAgenticRetriever resource split needs at least 2 visible GPUs; got GPU_IDS=${GPU_IDS}" >&2
@@ -185,6 +191,8 @@ if [[ "${DRY_RUN:-0}" == "1" ]]; then
   echo "VAL_DATA=${VAL_DATA}"
   echo "OUT_DIR=${OUT_DIR}"
   echo "TOOL_CONFIG=${TOOL_CONFIG}"
+  echo "RECALL_FINAL_TOP_N=${RECALL_FINAL_TOP_N}"
+  echo "SEARCH_TOOL_FINAL_TOP_M=${SEARCH_TOOL_FINAL_TOP_M}"
   echo "RETRIEVAL_SERVICE_URL=${RETRIEVAL_SERVICE_URL}"
   echo "COAGENTIC_RANKER_ENABLED=${COAGENTIC_RANKER_ENABLED}"
   echo "ROLLOUT_TRACE_MODE=${ROLLOUT_TRACE_MODE}"

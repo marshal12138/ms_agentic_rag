@@ -1,34 +1,55 @@
-# CoSearch ablation parquet defaults used by canonical Qwen3-4B training.
+# CoSearch ablation 数据配置。
+#
+# 训练链路直接使用这里的 train_files/val_files 和 token budget。
+# eval compiler 也会读取本文件：如果 eval overlay 没有显式写 data.data_path，
+# 就会使用这里的第一个 val_files 作为默认评估集。
 
 defaults:
+  # 继承 VERL/项目里的基础 data 配置。
   - legacy_data
+  # 当前文件中的字段覆盖 legacy_data 默认值。
   - _self_
 
+# 训练 parquet 路径。
 train_files:
   - /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/data/coAgenticRetriever/albation_1/co_search_ablation.train.parquet
 
+# 验证/评估 parquet 路径。eval 默认数据路径会从这里派生。
 val_files:
   - /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/data/coAgenticRetriever/albation_1/co_search_ablation.eval.parquet
 
+# 训练最多读取多少条样本。
 train_max_samples: 5100
 
+# 验证最多读取多少条样本。eval 新链路不再用这个字段控制样本数；
+# eval 样本数由 eval_runtime.data.max_eval_num 或 CLI override 控制。
 val_max_samples: 8
 
+# 训练 batch size。
 train_batch_size: 64
 
+# 训练期间 validation batch size。
 val_batch_size: 8
 
+# prompt 最大 token 长度；eval budget 当前也保持同一数量级。
 max_prompt_length: 12000
 
+# response 最大 token 长度；eval budget 当前也保持同一数量级。
 max_response_length: 4096
 
+# 超长样本处理策略。error 表示超过长度直接报错，避免静默截断改变训练语义。
 truncation: error
 
+# 加载 tokenizer/model 相关资产时是否允许 remote code。
 trust_remote_code: true
 
+# 是否保留原始 chat 结构，供多轮 agent/tool 逻辑使用。
 return_raw_chat: true
 
+# dataloader worker 数量。0 表示主进程读取，减少多进程数据读取不确定性。
 dataloader_num_workers: 0
 
+# chat template 参数。
 apply_chat_template_kwargs:
+  # 关闭 thinking 模式，和当前 eval/no-ranker 验证链路保持一致。
   enable_thinking: false

@@ -39,6 +39,7 @@ if __package__ is None or __package__ == "":
 from trainer_launcher.audit_files import (
     build_run_files,
     build_runtime_env_for_bash,
+    populate_reward_audit,
     populate_ranker_training_sample_builder_audit,
     write_audit_env,
     write_canonical_files,
@@ -62,7 +63,7 @@ from trainer_launcher.runtime_env import (
 )
 from trainer_launcher.runtime_overrides import build_runtime_override_yaml
 from trainer_launcher.shell_quote import write_export_file
-from trainer_launcher.tool_config import write_runtime_tool_config_from_hydra_actor
+from trainer_launcher.tool_config import write_runtime_tool_config_from_hydra_ranker
 from trainer_launcher.yaml_utils import dump_mapping
 from trainer_launcher.validators import (
     check_required_paths,
@@ -287,16 +288,64 @@ def compile_config(ctx: CompilerContext, launcher_args: list[str], environ: Mapp
         write_canonical_files(compiled)
         final_config = compose_final_config(ctx.project_root, files.hydra_args_file)
 
+        forbidden_tool_overlay_keys = ["default_top_n", "default_top_m", "searchTool_final_top_m"]
+        present_tool_overlay_keys = [key for key in forbidden_tool_overlay_keys if key in final_config]
+        if present_tool_overlay_keys:
+            raise ValueError(
+                "Tool top fields are not Hydra training overrides: "
+                + ", ".join(present_tool_overlay_keys)
+                + ". Set searchTool_final_top_m in the static tool config, or migrate top-M into Hydra before using overlays."
+            )
+
         shared_ranker = final_config.get("ranker_training", {}).get("shared_inference_ranker", {})
         if not isinstance(shared_ranker, dict):
             raise TypeError("final Hydra ranker_training.shared_inference_ranker must be a mapping")
+        hydra_recall_retriever = final_config.get("recall_retriever", {})
+        if not isinstance(hydra_recall_retriever, dict):
+            raise TypeError("final Hydra recall_retriever must be a mapping")
+        hydra_ranker = final_config.get("ranker", {})
+        if not isinstance(hydra_ranker, dict):
+            raise TypeError("final Hydra ranker must be a mapping")
+        if "top_k" in hydra_recall_retriever:
+            raise ValueError(
+                "Deprecated training override recall_retriever.top_k is present in final Hydra config. "
+                "Use recall_retriever.recall_final_top_n for the recall candidate pool size."
+            )
+        if "final_top_k" in hydra_ranker:
+            raise ValueError(
+                "Deprecated training override ranker.final_top_k is present in final Hydra config. "
+                "Use ranker.top_k in the Hydra ranker base; runtime tool config will receive ranker.final_top_k."
+            )
+        recall_final_top_n = hydra_recall_retriever.get("recall_final_top_n")
+        if recall_final_top_n is None or recall_final_top_n == "":
+            raise ValueError("final Hydra recall_retriever.recall_final_top_n must be configured")
+        ranker_final_top_k = hydra_ranker.get("top_k")
+        if ranker_final_top_k is None or ranker_final_top_k == "":
+            raise ValueError("final Hydra ranker.top_k must be configured")
+        env["RECALL_TOP_K"] = str(recall_final_top_n)
+        env["TOP_N"] = env["RECALL_TOP_K"]
+        env["HYDRA_RECALL_FINAL_TOP_N"] = env["RECALL_TOP_K"]
+        env["HYDRA_RANKER_FINAL_TOP_K"] = str(ranker_final_top_k)
+        env["RUNTIME_TOOL_RECALL_FINAL_TOP_N"] = env["HYDRA_RECALL_FINAL_TOP_N"]
+        env["RUNTIME_TOOL_RANKER_FINAL_TOP_K"] = env["HYDRA_RANKER_FINAL_TOP_K"]
+        env["RUNTIME_TOOL_SEARCH_TOOL_FINAL_TOP_M"] = env["SEARCH_TOOL_FINAL_TOP_M"]
         env["SOURCE_TOOL_CONFIG"] = env["TOOL_CONFIG"]
         env["TOOL_CONFIG"] = str(files.runtime_tool_config_yaml)
-        write_runtime_tool_config_from_hydra_actor(
+        env["HYDRA_RANKER_CONFIG_SOURCE"] = env.get("RANKER_BASE_CONFIG", "")
+        env["HYDRA_RANKER_MODEL_PATH"] = str(hydra_ranker.get("model_path") or "")
+        env["HYDRA_RANKER_ENCODER_PATH"] = str(hydra_ranker.get("encoder_path") or "")
+        env["HYDRA_RANKER_DEVICE"] = str(hydra_ranker.get("device") or "")
+        env["HYDRA_RANKER_MAX_QUERY_LENGTH"] = str(hydra_ranker.get("max_query_length") or "")
+        env["HYDRA_RANKER_MAX_DOC_LENGTH"] = str(hydra_ranker.get("max_doc_length") or "")
+        env["RUNTIME_TOOL_RANKER_MAX_QUERY_LENGTH"] = env["HYDRA_RANKER_MAX_QUERY_LENGTH"]
+        env["RUNTIME_TOOL_RANKER_MAX_DOC_LENGTH"] = env["HYDRA_RANKER_MAX_DOC_LENGTH"]
+        write_runtime_tool_config_from_hydra_ranker(
             source_path=Path(env["SOURCE_TOOL_CONFIG"]),
             output_path=files.runtime_tool_config_yaml,
             actor_name=shared_ranker.get("actor_name"),
             actor_namespace=shared_ranker.get("actor_namespace"),
+            hydra_recall_retriever_config=hydra_recall_retriever,
+            hydra_ranker_config=hydra_ranker,
         )
         build_runtime_override_yaml(ctx, env, files.runtime_override_yaml)
         hydra_args, _, _ = build_hydra_args(
@@ -310,6 +359,7 @@ def compile_config(ctx: CompilerContext, launcher_args: list[str], environ: Mapp
         write_canonical_files(compiled)
         final_config = compose_final_config(ctx.project_root, files.hydra_args_file)
 
+        populate_reward_audit(env, final_config)
         populate_ranker_training_sample_builder_audit(env, final_config)
         write_final_config_files(compiled, final_config)
         env["NEEDS_LLM_JUDGE_SERVICE"] = infer_needs_llm_judge_service(final_config)

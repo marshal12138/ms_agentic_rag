@@ -538,6 +538,8 @@ class CoAgenticRetrieverAgentLoop(AgentLoopBase):
             tool_call_detail["rank_top50_docs"] = res["rank_top50_docs"]
         if "rank_top5_docs" in res:
             tool_call_detail["rank_top5_docs"] = res["rank_top5_docs"]
+        if "rank_final_top_docs" in res:
+            tool_call_detail["rank_final_top_docs"] = res["rank_final_top_docs"]
         agent_data.tool_call_details.append(tool_call_detail)
 
         return tool_execution_response, tool_reward, res
