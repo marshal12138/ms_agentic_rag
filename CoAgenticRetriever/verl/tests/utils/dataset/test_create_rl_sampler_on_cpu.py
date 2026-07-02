@@ -106,3 +106,13 @@ def test_create_custom_curriculum_samper_wrong_class():
     # MockIncorrectSampler is not an instance of AbstractCurriculumSampler, so raises
     with pytest.raises(AssertionError):
         create_rl_sampler(data_config, dataset)
+
+
+def test_create_sampler_without_sampler_field_in_struct_config():
+    data_config = OmegaConf.create({})
+    OmegaConf.set_struct(data_config, True)
+    dataset = MockChatDataset()
+
+    sampler = create_rl_sampler(data_config, dataset)
+
+    assert isinstance(sampler, RandomSampler)

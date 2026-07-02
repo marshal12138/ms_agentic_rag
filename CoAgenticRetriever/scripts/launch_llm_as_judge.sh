@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 ROOT="$(cd "${PROJECT_ROOT}/.." && pwd)"
-CONFIG_PATH="${PROJECT_ROOT}/async_labeling/configs/llm_judge_vllm_deepseek_flash_gpu06_07.yaml"
+CONFIG_PATH="${PROJECT_ROOT}/async_ranker_training/configs/llm_judge_vllm_deepseek_flash_gpu06_07.yaml"
 
 while [[ "$#" -gt 0 ]]; do
   case "$1" in

@@ -188,7 +188,7 @@ if [[ "${DRY_RUN:-0}" == "1" ]]; then
   echo "RETRIEVAL_SERVICE_URL=${RETRIEVAL_SERVICE_URL}"
   echo "COAGENTIC_RANKER_ENABLED=${COAGENTIC_RANKER_ENABLED}"
   echo "ROLLOUT_TRACE_MODE=${ROLLOUT_TRACE_MODE}"
-  echo "ASYNC_LABELING_YAML=${ASYNC_LABELING_YAML:-}"
+  echo "ASYNC_RANKER_TRAINING_YAML=${ASYNC_RANKER_TRAINING_YAML:-}"
   exit 0
 fi
 
@@ -241,7 +241,7 @@ cd "${PROJECT_ROOT}"
 hydra_collect_yaml_override_files hydra_yaml_files \
   "${HYDRA_OVERRIDE_YAMLS:-}" \
   "${RANKER_STRATEGY_YAML:-}" \
-  "${ASYNC_LABELING_YAML:-}"
+  "${ASYNC_RANKER_TRAINING_YAML:-}"
 hydra_yaml_overrides_to_array hydra_yaml_args "${PY}" "${hydra_yaml_files[@]}"
 if [[ "${#hydra_yaml_files[@]}" -gt 0 ]]; then
   echo "Hydra YAML override files: ${hydra_yaml_files[*]}"

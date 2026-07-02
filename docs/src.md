@@ -163,7 +163,7 @@ reports/eval/<TASK_NAME>.report.md
 ```bash
 WAIT_FOR_GPU_RELEASE=1 \
 WAIT_FOR_GPUS=0,1,2,3 \
-bash tasks/train_tasks/coAgenticRetriever/train_CAR_async_labeling_ds_flash_mix_signal_fix.sh
+bash tasks/train_tasks/coAgenticRetriever/train_CAR_async_ranker_training_ds_flash_mix_signal_fix.sh
 ```
 
 也可以直接作为命令使用：

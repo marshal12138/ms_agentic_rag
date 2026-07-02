@@ -255,7 +255,7 @@ Worked for 10m 21s
 - 训练入口链路：
   - `scripts/coagenticRetriever_local/assets/00_run_agentic_iter_rag_verl.sh`
   - `scripts/coagenticRetriever_local/01_train_qwen3_4b_ablation_1epoch_timing.sh`
-  - `tasks/train_tasks/train_CAR_async_labeling_ds_flash.sh`
+  - `tasks/train_tasks/train_CAR_async_ranker_training_ds_flash.sh`
 - eval 入口：
   - `scripts/coagenticRetriever_local/02_infer_qwen3_4b_ablation_val_only.sh`
 - legacy 训练脚本：
@@ -367,13 +367,13 @@ Worked for 10m 21s
 真实训练验证命令：
 
 ```bash
-TOTAL_STEPS=1 bash tasks/train_tasks/train_CAR_async_labeling_ds_flash.sh
+TOTAL_STEPS=1 bash tasks/train_tasks/train_CAR_async_ranker_training_ds_flash.sh
 ```
 
 本次 run：
 
-- run dir: `log/train_logs/coAgenticRetriever/260616-161547-CAR_async_labeling_ds_flash_v1`
-- checkpoint: `checkpoints/qwen3_4b_probe/coAgenticRetriever/260616-161547-CAR_async_labeling_ds_flash_v1/global_step_1`
+- run dir: `log/train_logs/coAgenticRetriever/260616-161547-CAR_async_ranker_training_ds_flash_v1`
+- checkpoint: `checkpoints/qwen3_4b_probe/coAgenticRetriever/260616-161547-CAR_async_ranker_training_ds_flash_v1/global_step_1`
 
 训练入口实际加载的静态 tool config：
 
@@ -398,9 +398,9 @@ retrieval preflight 结果：
 - actor update 完成：`micro_batch=32/32`
 - step 指标中 `ranker/trace_enriched_tool_calls=510`
 - step 指标中 `ranker/trace_ranked_docs=25500`，即 `510 * 50`，确认 ranker 排序后的 top50 序列被保留进入轨迹信号，不是只保留 top5。
-- `async_labeling/candidate_tool_calls=510`
-- `async_labeling/selected_tool_calls=10`
-- `async_labeling/invalid_requests=0`
+- `async_ranker_training/candidate_tool_calls=510`
+- `async_ranker_training/selected_tool_calls=10`
+- `async_ranker_training/invalid_requests=0`
 - `training/global_step=1`
 
 收尾验证：
@@ -408,7 +408,7 @@ retrieval preflight 结果：
 - 训练脚本返回码 0。
 - checkpoint conversion 完成。
 - actor HF safetensors validation 通过：
-  - `checkpoints/qwen3_4b_probe/coAgenticRetriever/260616-161547-CAR_async_labeling_ds_flash_v1/global_step_1/hf_safetensors/actor`
+  - `checkpoints/qwen3_4b_probe/coAgenticRetriever/260616-161547-CAR_async_ranker_training_ds_flash_v1/global_step_1/hf_safetensors/actor`
 - 训练结束后 `nvidia-smi` 显示 `No running processes found`，无残留 GPU 进程。
 
 ## 2026-06-16 16:35 补充：preflight fail-fast 修正
@@ -468,7 +468,7 @@ ERROR: --top-m exceeds current reward preflight limit of 5 visible documents; us
 
 并立即返回非零状态，不访问 retrieval 服务。
 
-- `DRY_RUN=1 TOTAL_STEPS=1 bash tasks/train_tasks/train_CAR_async_labeling_ds_flash.sh` 通过。
+- `DRY_RUN=1 TOTAL_STEPS=1 bash tasks/train_tasks/train_CAR_async_ranker_training_ds_flash.sh` 通过。
 - `DRY_RUN=1 bash scripts/coagenticRetriever_local/02_infer_qwen3_4b_ablation_val_only.sh` 通过。
 
 ## 2026-06-16 16:39 补充：RUN_MODE full / no-ranker 保留
@@ -497,8 +497,8 @@ ERROR: --top-m exceeds current reward preflight limit of 5 visible documents; us
 
 验证对象：
 
-- 最近完整训练日志：`log/train_logs/coAgenticRetriever/260616-161547-CAR_async_labeling_ds_flash_v1`
-- 更晚的 `260616-163504-CAR_async_labeling_ds_flash_v1` 只有 env 文件，无 rollout/metrics，未作为对照。
+- 最近完整训练日志：`log/train_logs/coAgenticRetriever/260616-161547-CAR_async_ranker_training_ds_flash_v1`
+- 更晚的 `260616-163504-CAR_async_ranker_training_ds_flash_v1` 只有 env 文件，无 rollout/metrics，未作为对照。
 - 验证时 `260616-161547` 对应的 `global_step_1` checkpoint 目录已不在当前 checkpoint tree 中，因此 eval probe 使用训练 env 记录的初始模型：
   - agent model: `/data01/ms_wksp/agent_up_to_date/models/llm/Qwen3-4B`
   - ranker/retriever model: `/data01/ms_wksp/agent_up_to_date/models/retriever/e5-base-v2`

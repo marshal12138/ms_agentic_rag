@@ -1,0 +1,185 @@
+# dense ranker 训练相关配置；这里主要声明异步 ranker training信号如何进入 ranker 更新。
+ranker_training:
+
+  # ranker 训练信号来源；async_ranker_training 表示使用异步 LLM judge 生成的标签。
+  signal_source: async_ranker_training
+
+  # 共享推理 ranker 配置；用于 rollout 后对 recall top50 文档进行当前 ranker 排序。
+  shared_inference_ranker:
+
+    # 是否启用共享推理 ranker actor。
+    enable: true
+
+    # ranker 训练权重同步到共享推理 actor 的 global step 间隔。
+    sync_interval: 2
+
+  # 异步 ranker training主配置；控制请求队列、LLM judge 调用、样本构造和日志。
+  async_ranker_training:
+
+    # 是否启用异步 ranker training模块。
+    enable: true
+
+    # 每条轨迹最多抽取的 sub-query/tool-call 数量。
+    max_sub_query: 10
+
+    # 允许异步 ranker training 信号相对当前 global step 滞后的最大步数。
+    max_glb_step_lag: 3
+
+    # 待标注请求队列容量。
+    request_queue_size: 2048
+
+    # 已完成标注结果缓存容量。
+    completed_buffer_size: 4096
+
+    # 每次 sample builder 至少聚合多少条已完成 judge request 再构造训练样本。
+    sample_builder_request_batch: 1
+
+    # 是否用后台线程持续消费异步 ranker training 信号并训练 ranker。
+    background_ranker_thread: true
+
+    # 每个 global step 允许执行的异步 ranker 更新次数。
+    ranker_updates_per_global_step: 5
+
+    # 队列满时的丢弃策略；drop_oldest 表示丢弃最旧请求。
+    drop_policy: drop_oldest
+
+    # 异步 ranker training worker 数量。
+    num_workers: 4
+
+    # 异步 ranker training请求的默认超时时间，单位秒。
+    request_timeout_seconds: 60
+
+    # 异步 ranker training请求失败后的默认重试次数。
+    max_retries: 2
+
+    # 从候选 tool-call 中选择 sub-query 的策略；random 表示随机抽样。
+    sub_query_selection_policy: random
+
+    # sub-query 随机选择使用的种子。
+    selection_seed: 42
+
+    # 标签策略名称；用于标识当前使用 rank50 LLM judge 标签。
+    label_policy: llm_judge_rank50
+
+    # 标签来源名称；这里表示标签来自 LLM judge。
+    label_source: llm_judge
+
+    # 分数版本；用于记录 judge rank50 转换为训练信号的打分方案。
+    score_version: rank50_linear_v1
+
+    # 轨迹选择器配置；决定哪些 rollout 轨迹会被送去异步 ranker training。
+    trajectory_selector:
+
+      # 选择器类型；select_all 表示保留所有满足条件的轨迹。
+      type: select_all
+
+      # 最低 final reward 门槛；0.0 表示不过滤非负样本。
+      min_final_reward: 0.0
+
+    # 异步 ranker training处理阶段列表；当前只有一个 LLM-as-judge 阶段。
+    stages:
+
+      # 阶段类型；llm_as_judge 会调用 OpenAI-compatible chat completions 服务。
+      - type: llm_as_judge
+
+        # LLM judge 服务 endpoint；训练代码会向这里发送 HTTP POST 请求。
+        endpoint: http://127.0.0.1:8067/v1/chat/completions
+
+        # 请求中使用的 served model 名称，需要与 judge vLLM 服务一致。
+        model: DeepSeek-V4-Flash
+
+        # judge 输出解析 schema；ranked_ids_top50 表示要求返回 top50 排名 ID。
+        score_schema: ranked_ids_top50
+
+        # 每次 judge 请求最多携带的候选文档数。
+        max_docs_per_request: 50
+
+        # judge 采样温度；0.0 表示尽量确定性输出。
+        temperature: 0.0
+
+        # judge 回复最大 token 数。
+        max_tokens: 1024
+
+        # 单次 LLM judge HTTP 请求超时时间，单位秒。
+        request_timeout_seconds: 600
+
+        # 单次 LLM judge HTTP 请求失败后的重试次数。
+        max_retries: 2
+
+        # LLM judge prompt 渲染配置。
+        prompt:
+
+          # prompt 模板文件路径；相对项目根目录解析。
+          path: CoAgenticRetriever/async_ranker_training/prompts/llm_judge_rank50_v1.md
+
+          # prompt 版本号；会进入请求/日志，便于追踪标签来源。
+          version: llm_judge_rank50_v1
+
+          # prompt 文件格式；表示 markdown 中包含 system/user 模板段。
+          format: markdown_system_user_template
+
+          # 每个文档 chunk 注入 prompt 时允许的最大字符数。
+          max_chunk_chars: 512
+
+          # 是否在 prompt 中包含文档标题。
+          include_title: true
+
+          # 是否在 prompt 中包含 recall/ranker 等已有分数。
+          include_scores: true
+
+          # 是否打乱候选 passage 顺序；false 表示保持 ranker 排序顺序。
+          shuffle_passages: false
+
+          # 输出模式；no_think 表示提示 judge 不输出思考过程。
+          output_mode: no_think
+
+    # 根据 LLM judge 信号构造 dense ranker 对比学习样本的配置。
+    sample_builder:
+
+      # 样本构造器类型；从 judge signal 中抽正例，并允许重复采样负例。
+      type: random_negative_repeat
+
+      # 每次 ranker 更新构造的 query group 数量。
+      num_groups_per_step: 32
+
+      # 每个正例对应的负例数量。
+      neg_per_pos: 15
+
+      # 是否允许重复采样负例，以便在候选不足时仍满足 batch 需求。
+      allow_repeat_negative_sampling: true
+
+      # 样本构造随机种子。
+      seed: 42
+
+      # 传给具体 signal builder 的额外策略参数。
+      strategy_kwargs:
+
+        # signal builder 类型；把 LLM judge top-k 排名转换为训练信号。
+        signal_builder_type: llm_judge_topk
+
+        # judge 排名前多少个文档作为正例候选。
+        positive_top_k: 5
+
+        # 输出给样本构造器的标签来源名。
+        label_source: llm_judge_top5
+
+    # 异步 ranker training日志配置。
+    logging:
+
+      # 是否启用异步 ranker training日志。
+      enable: true
+
+      # 日志目录；null 表示由 launcher 的 runtime override 注入。
+      log_dir: null
+
+      # 是否写出完整请求文本；false 可避免日志过大。
+      write_request_text: false
+
+      # 日志中保留的文本最大字符数。
+      max_text_chars: 512
+
+      # 异步 ranker training metrics 打印/写入间隔，单位秒。
+      metrics_interval_seconds: 30
+
+      # 每处理多少个样本写一次样本预览。
+      sample_preview_every_n: 50

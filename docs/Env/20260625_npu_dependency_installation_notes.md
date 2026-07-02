@@ -7,7 +7,7 @@
 入口训练脚本原本主要在 H20/CUDA 服务器上运行：
 
 ```bash
-/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/tasks/train_tasks/coAgenticRetriever/train_CAR_async_labeling_ds_flash_mix_signal_fix_v1.sh
+/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/tasks/train_tasks/coAgenticRetriever/train_CAR_async_ranker_training_ds_flash_mix_signal_fix_v1.sh
 ```
 
 当前机器是 Ascend NPU 环境，需要让同一套训练代码在 NPU 上至少能跑通 `RUN_MODE=no-ranker` 的 `TOTAL_STEPS=1` smoke 训练。
@@ -488,7 +488,7 @@ timeout 5400s env \
   RECALL_SERVICE_WAIT_SECONDS=900 \
   REPORT_INTERVAL_SECONDS=30 \
   NVIDIA_SMI_INTERVAL=30 \
-  bash /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/tasks/train_tasks/coAgenticRetriever/train_CAR_async_labeling_ds_flash_mix_signal_fix_v1.sh
+  bash /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/tasks/train_tasks/coAgenticRetriever/train_CAR_async_ranker_training_ds_flash_mix_signal_fix_v1.sh
 ```
 
 结果：
@@ -555,4 +555,4 @@ Failed to import Triton kernels. Error: No module named 'triton.language.target_
    - 4 卡 HCCL all_gather
    - `TOTAL_STEPS=1` smoke
 3. 如果升级 CANN、torch_npu、vllm-ascend 任一组件，应把 NNAL/ATB 版本一起重新匹配。
-4. 如果以后要恢复 async labeling 或 LLM judge NPU 服务，需要单独验证 DeepSeek judge 模型的量化和 vLLM Ascend 加载路径，不要把训练 no-ranker smoke 通过等同于 judge 服务完全可用。
+4. 如果以后要恢复 async ranker training 或 LLM judge NPU 服务，需要单独验证 DeepSeek judge 模型的量化和 vLLM Ascend 加载路径，不要把训练 no-ranker smoke 通过等同于 judge 服务完全可用。

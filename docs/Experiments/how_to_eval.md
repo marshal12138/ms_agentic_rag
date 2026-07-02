@@ -148,7 +148,7 @@ bash scripts/coagenticRetriever_local/02_infer_qwen3_4b_ablation_val_only.sh
 
 ### task 层评估入口
 
-当前 async-labeling 主评估任务入口：
+当前 async-ranker-training 主评估任务入口：
 
 ```text
 tasks/eval_tasks/coAgenticRetriever/eval_CAR_async_label_dpskv4f_v0622.sh

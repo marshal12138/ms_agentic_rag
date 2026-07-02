@@ -35,7 +35,7 @@ set -euo pipefail
 # RANK_GPU_ID=2 \
 # RECALL_GPU_ID=3 \
 # AGENT_MODEL="/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/checkpoints/qwen3_4b_probe/coAgenticRetriever/260625-211826-CAR_async_npu_smaller_bs_per_gpu/global_step_79" \
-# RANKER_MODEL="/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/checkpoints/qwen3_4b_probe/coAgenticRetriever/260623-025839-CAR_async_labeling_ds_flash_larger_ranker_tdata/global_step_79" \
+# RANKER_MODEL="/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/checkpoints/qwen3_4b_probe/coAgenticRetriever/260623-025839-CAR_async_ranker_training_ds_flash_larger_ranker_tdata/global_step_79" \
 # RANKER_BASE_MODEL=/data01/ms_wksp/agent_up_to_date/models/retriever/e5-base-v2 \
 # RUN_MODE=full \
 # bash scripts/coagenticRetriever_local/02_infer_qwen3_4b_ablation_val_only.sh
@@ -50,6 +50,6 @@ AGENT_GPU_IDS=0,1 \
 RANK_GPU_ID=2 \
 RECALL_GPU_ID=3 \
 AGENT_MODEL="/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/checkpoints/qwen3_4b_probe/coAgenticRetriever/260625-211826-CAR_async_npu_smaller_bs_per_gpu/global_step_79" \
-RANKER_MODEL="/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/checkpoints/qwen3_4b_probe/coAgenticRetriever/260623-025839-CAR_async_labeling_ds_flash_larger_ranker_tdata/global_step_79" \
+RANKER_MODEL="/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/checkpoints/qwen3_4b_probe/coAgenticRetriever/260623-025839-CAR_async_ranker_training_ds_flash_larger_ranker_tdata/global_step_79" \
 RUN_MODE=no-ranker \
 bash scripts/coagenticRetriever_local/02_infer_qwen3_4b_ablation_val_only.sh

@@ -7,15 +7,15 @@
 目标脚本：
 
 ```bash
-/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/tasks/train_tasks/coAgenticRetriever/train_CAR_async_labeling_ds_flash_mix_signal_fix.sh
+/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/tasks/train_tasks/coAgenticRetriever/train_CAR_async_ranker_training_ds_flash_mix_signal_fix.sh
 ```
 
 本计划只治理这个 canonical mix-signal 训练入口，不治理：
 
-- `train_CAR_async_labeling_ds_flash.sh`
-- `train_CAR_async_labeling_ds_flash_mix_signal.sh`
-- `train_CAR_async_labeling_ds_flash_mix_signal_fix_v1.sh`
-- `train_CAR_async_labeling_ds_flash_mix_signal_fix_exp02.sh`
+- `train_CAR_async_ranker_training_ds_flash.sh`
+- `train_CAR_async_ranker_training_ds_flash_mix_signal.sh`
+- `train_CAR_async_ranker_training_ds_flash_mix_signal_fix_v1.sh`
+- `train_CAR_async_ranker_training_ds_flash_mix_signal_fix_exp02.sh`
 - `train_CAR_naive_acce.sh`
 
 ## 1. 核心判断
@@ -47,14 +47,14 @@ defaults:
   - reward_model@reward_model: dp_reward_model
   - algorithm@algorithm.rollout_correction: rollout_correction
   - ranker_contrastive
-  - async_labeling
+  - async_ranker_training
   - _self_
 ```
 
 因此：
 
 - `actor/`、`data/`、`model/`、`rollout/`、`ref/` 等目录不是闲置 YAML，而是 Hydra 原生配置组。
-- 这些配置组大体来自 VERL 原生配置体系，CoAgenticRetriever 在其上增加了 `coagentic_retriever_trainer.yaml`、`ranker_contrastive.yaml`、`async_labeling.yaml`、tool config、agent loop config 等扩展。
+- 这些配置组大体来自 VERL 原生配置体系，CoAgenticRetriever 在其上增加了 `coagentic_retriever_trainer.yaml`、`ranker_contrastive.yaml`、`async_ranker_training.yaml`、tool config、agent loop config 等扩展。
 - 基础配置治理应该回到 Hydra 原生 config group，不应该用 tasks 下的一个大 YAML 替代这些组。
 
 本计划采用新的分工：
@@ -139,14 +139,14 @@ launcher:
 
 ```yaml
 ranker_training:
-  async_labeling:
+  async_ranker_training:
     sample_builder_request_batch: 3
 ```
 
 转换后成为：
 
 ```bash
-++ranker_training.async_labeling.sample_builder_request_batch=3
+++ranker_training.async_ranker_training.sample_builder_request_batch=3
 ```
 
 这适合管理“不完整、实验性、只覆盖少数字段”的 YAML。
@@ -183,8 +183,8 @@ ranker_training:
 | `CoAgenticRetriever/config/data/` | 可复用数据配置组，例如 co-search ablation 数据集。 | run-name、GPU、服务生命周期。 |
 | `CoAgenticRetriever/config/model/` | 可复用模型配置组，例如 Qwen3-4B。 | task 实验差异。 |
 | `CoAgenticRetriever/config/rollout/` | 可复用 rollout 配置组，例如 cosearch async 多轮检索预算。 | 单次运行资源占用。 |
-| `CoAgenticRetriever/async_labeling/configs/` | LLM judge 服务启动配置。 | 训练 task overlay。 |
-| `scripts/coagenticRetriever_v2/strategies_yaml/` | 多个脚本可复用的 partial overlay，例如 DeepSeek-Flash async labeling 策略覆盖。 | 完整基础配置体系。 |
+| `CoAgenticRetriever/async_ranker_training/configs/` | LLM judge 服务启动配置。 | 训练 task overlay。 |
+| `scripts/coagenticRetriever_v2/strategies_yaml/` | 多个脚本可复用的 partial overlay，例如 DeepSeek-Flash async ranker training 策略覆盖。 | 完整基础配置体系。 |
 | `tasks/train_tasks/coAgenticRetriever/configs/` | 单个 task 的 partial overlay，例如 mix-signal b3 实验差异和默认资源布局。 | 通用框架默认值、大而全 recipe。 |
 
 本次治理中：
@@ -278,7 +278,7 @@ rollout@actor_rollout_ref.rollout=cosearch_async_qwen3_4b
 
 | 参数 | 目标位置 |
 | --- | --- |
-| DeepSeek-Flash async labeling 策略覆盖 | `scripts/coagenticRetriever_v2/strategies_yaml/async_labeling_deepseek_flash_rank50_select_all.yaml` |
+| DeepSeek-Flash async ranker training 策略覆盖 | `scripts/coagenticRetriever_v2/strategies_yaml/async_ranker_training_deepseek_flash_rank50_select_all.yaml` |
 | `sample_builder_request_batch=3` | `tasks/train_tasks/coAgenticRetriever/configs/mix_signal_b3_overlay.yaml` |
 | task 默认 `resources` 布局 | `tasks/train_tasks/coAgenticRetriever/configs/mix_signal_b3_overlay.yaml` |
 | 临时训练 profile 覆盖 | task overlay；若复用稳定，再提升到 `CoAgenticRetriever/config/` config group。 |
@@ -392,28 +392,28 @@ val_files:
 
 - `data/model/rollout` 属于已有 Hydra config group，可以通过 group selection 原生切换。
 - 不需要把这些字段复制进 tasks 下的完整 recipe。
-- 如果 async labeling 后续也要彻底 config group 化，应先把当前顶层 `async_labeling.yaml` 重构为 group base，再调整 `coagentic_retriever_trainer.yaml` 的 defaults；这属于较大变更，本轮可以先用 overlay。
+- 如果 async ranker training 后续也要彻底 config group 化，应先把当前顶层 `async_ranker_training.yaml` 重构为 group base，再调整 `coagentic_retriever_trainer.yaml` 的 defaults；这属于较大变更，本轮可以先用 overlay。
 
 ### 7.2 Async labeling overlay
 
 建议路径：
 
 ```bash
-scripts/coagenticRetriever_v2/strategies_yaml/async_labeling_deepseek_flash_rank50_select_all.yaml
+scripts/coagenticRetriever_v2/strategies_yaml/async_ranker_training_deepseek_flash_rank50_select_all.yaml
 ```
 
-职责：描述可被多个 task 复用的 DeepSeek-Flash async labeling 策略覆盖。
+职责：描述可被多个 task 复用的 DeepSeek-Flash async ranker training 策略覆盖。
 
 内容来源：
 
-- `CoAgenticRetriever/config/async_labeling.yaml`
-- `scripts/coagenticRetriever_v2/strategies_yaml/async_labeling_deepseek_flash.yaml`
+- `CoAgenticRetriever/config/async_ranker_training.yaml`
+- `scripts/coagenticRetriever_v2/strategies_yaml/async_ranker_training_deepseek_flash.yaml`
 
 管理：
 
 - `ranker_training.signal_source`
 - `ranker_training.shared_inference_ranker`
-- `ranker_training.async_labeling.*`
+- `ranker_training.async_ranker_training.*`
 - judge stage endpoint/model/prompt/schema
 - async sample builder
 - async logging
@@ -422,7 +422,7 @@ scripts/coagenticRetriever_v2/strategies_yaml/async_labeling_deepseek_flash_rank
 
 - 不写 `defaults`。
 - 不放 `sample_builder_request_batch=3` 这种单个 task 的 mix-signal 身份。
-- 如果该策略长期稳定且被多个入口使用，再考虑升级为 `CoAgenticRetriever/config/async_labeling/` config group。
+- 如果该策略长期稳定且被多个入口使用，再考虑升级为 `CoAgenticRetriever/config/async_ranker_training/` config group。
 
 ### 7.3 Task overlay
 
@@ -432,13 +432,13 @@ scripts/coagenticRetriever_v2/strategies_yaml/async_labeling_deepseek_flash_rank
 tasks/train_tasks/coAgenticRetriever/configs/mix_signal_b3_overlay.yaml
 ```
 
-职责：只描述 canonical mix-signal b3 相比基础 async labeling 训练的实验差异。
+职责：只描述 canonical mix-signal b3 相比基础 async ranker training 训练的实验差异。
 
 应包含：
 
 ```yaml
 ranker_training:
-  async_labeling:
+  async_ranker_training:
     sample_builder_request_batch: 3
 
 resources:
@@ -466,7 +466,7 @@ tasks/train_tasks/coAgenticRetriever/configs/mix_signal_b5_overlay.yaml
 保留当前路径，本轮只要求 task 显式选择：
 
 ```bash
-CoAgenticRetriever/async_labeling/configs/llm_judge_vllm_deepseek_flash_gpu06_07.yaml
+CoAgenticRetriever/async_ranker_training/configs/llm_judge_vllm_deepseek_flash_gpu06_07.yaml
 ```
 
 职责：描述 judge vLLM 服务如何启动。
@@ -475,7 +475,7 @@ CoAgenticRetriever/async_labeling/configs/llm_judge_vllm_deepseek_flash_gpu06_07
 
 - `runtime.cuda_visible_devices` 是 YAML 默认值。
 - `LLM_JUDGE_GPU_IDS` env 必须能覆盖它。
-- `server.endpoint` 应与 async labeling overlay 中的 stage endpoint 一致；launcher dry-run 要校验二者一致。
+- `server.endpoint` 应与 async ranker training overlay 中的 stage endpoint 一致；launcher dry-run 要校验二者一致。
 
 ### 7.5 Runtime override YAML
 
@@ -509,14 +509,14 @@ set -euo pipefail
 ROOT="/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives"
 
 # 环境配置：任务身份、实际资源 override、服务生命周期、等待策略。
-export EXP_NAME="CAR_async_labeling_ds_flash_mix_signal_b3_v1_select_all"
+export EXP_NAME="CAR_async_ranker_training_ds_flash_mix_signal_b3_v1_select_all"
 export AGENT_GPU_IDS="0,1,2,3"
 export RANK_GPU_ID="4"
 export RECALL_GPU_ID="5"
 export LLM_JUDGE_GPU_IDS="6,7"
 export AUTO_START_LLM_JUDGE="1"
 export AUTO_STOP_LLM_JUDGE="1"
-export LLM_JUDGE_SERVICE_CONFIG="${ROOT}/CoAgenticRetriever/async_labeling/configs/llm_judge_vllm_deepseek_flash_gpu06_07.yaml"
+export LLM_JUDGE_SERVICE_CONFIG="${ROOT}/CoAgenticRetriever/async_ranker_training/configs/llm_judge_vllm_deepseek_flash_gpu06_07.yaml"
 export LLM_JUDGE_PREFLIGHT="1"
 export WAIT_FOR_GPUS="${AGENT_GPU_IDS},${RANK_GPU_ID},${RECALL_GPU_ID},${LLM_JUDGE_GPU_IDS}"
 export WAIT_FOR_GPU_RELEASE="1"
@@ -526,11 +526,11 @@ export WAIT_FOR_GPU_LABEL="mix-signal experiment GPU wait"
 source "${ROOT}/src/runtime/wait_for_gpus.sh"
 wait_for_gpus_if_enabled
 
-bash "${ROOT}/scripts/coagenticRetriever_v2/01_train_qwen3_4b_ablation_1epoch_timing.sh" \
+bash "${ROOT}/scripts/coagenticRetriever_v2/01_train_launcher.sh" \
   --DATA_CONFIG="co_search_ablation" \
   --MODEL_CONFIG="qwen3_4b" \
   --ROLLOUT_CONFIG="cosearch_async_qwen3_4b" \
-  --OVERLAY_YAML="${ROOT}/scripts/coagenticRetriever_v2/strategies_yaml/async_labeling_deepseek_flash_rank50_select_all.yaml" \
+  --OVERLAY_YAML="${ROOT}/scripts/coagenticRetriever_v2/strategies_yaml/async_ranker_training_deepseek_flash_rank50_select_all.yaml" \
   --OVERLAY_YAML="${ROOT}/tasks/train_tasks/coAgenticRetriever/configs/mix_signal_b3_overlay.yaml" \
   --LLM_JUDGE_SERVICE_CONFIG="${LLM_JUDGE_SERVICE_CONFIG}"
 ```
@@ -549,11 +549,11 @@ bash "${ROOT}/scripts/coagenticRetriever_v2/01_train_qwen3_4b_ablation_1epoch_ti
 目标接口：
 
 ```bash
-bash 01_train_qwen3_4b_ablation_1epoch_timing.sh \
+bash 01_train_launcher.sh \
   --DATA_CONFIG=co_search_ablation \
   --MODEL_CONFIG=qwen3_4b \
   --ROLLOUT_CONFIG=cosearch_async_qwen3_4b \
-  --OVERLAY_YAML=/path/to/async_labeling_deepseek_flash_rank50_select_all.yaml \
+  --OVERLAY_YAML=/path/to/async_ranker_training_deepseek_flash_rank50_select_all.yaml \
   --OVERLAY_YAML=/path/to/mix_signal_b3_overlay.yaml \
   --LLM_JUDGE_SERVICE_CONFIG=/path/to/llm_judge_vllm.yaml
 ```
@@ -577,7 +577,7 @@ bash 01_train_qwen3_4b_ablation_1epoch_timing.sh \
 - `--LLM_JUDGE_SERVICE_CONFIG=path`
   - 校验文件存在。
   - 用于启动 judge 服务。
-  - 校验 service endpoint 与 async labeling overlay 中的 stage endpoint 一致。
+  - 校验 service endpoint 与 async ranker training overlay 中的 stage endpoint 一致。
 
 launcher 还要：
 
@@ -588,7 +588,7 @@ launcher 还要：
 
 兼容策略：
 
-- v2 launcher 可以暂时保留读取旧环境变量 `HYDRA_OVERRIDE_YAMLS` / `RANKER_STRATEGY_YAML` / `ASYNC_LABELING_YAML` 的能力，避免影响其它脚本。
+- v2 launcher 可以暂时保留读取旧环境变量 `HYDRA_OVERRIDE_YAMLS` / `RANKER_STRATEGY_YAML` / `ASYNC_RANKER_TRAINING_YAML` 的能力，避免影响其它脚本。
 - canonical mix-signal task 不再使用这些旧入口。
 - canonical 路径中必须移除 `COAGENTIC_DEFAULT_EXTRA_ARGS`、`DEFAULT_COAGENTIC_EXTRA_ARGS`、task `COAGENTIC_EXTRA_ARGS`。
 
@@ -677,15 +677,15 @@ dry-run 和正式运行都应写出：
    - `CoAgenticRetriever/config/model/qwen3_4b.yaml`
    - `CoAgenticRetriever/config/rollout/cosearch_async_qwen3_4b.yaml`
 3. 新增或迁移 reusable overlay：
-   - `scripts/coagenticRetriever_v2/strategies_yaml/async_labeling_deepseek_flash_rank50_select_all.yaml`
+   - `scripts/coagenticRetriever_v2/strategies_yaml/async_ranker_training_deepseek_flash_rank50_select_all.yaml`
 4. 新增 task overlay：
    - `tasks/train_tasks/coAgenticRetriever/configs/mix_signal_b3_overlay.yaml`
 5. 修改 v2 launcher，支持 `--DATA_CONFIG` / `--MODEL_CONFIG` / `--ROLLOUT_CONFIG` / repeated `--OVERLAY_YAML` / `--LLM_JUDGE_SERVICE_CONFIG`。
 6. 修改 v2 launcher：读取 overlay `resources`，用 task env GPU 覆盖，生成 runtime env override YAML。
-7. 修改 launcher 的 async config 读取逻辑，使 judge preflight endpoint 来自 async labeling overlay，并校验 judge service endpoint 一致。
+7. 修改 launcher 的 async config 读取逻辑，使 judge preflight endpoint 来自 async ranker training overlay，并校验 judge service endpoint 一致。
 8. 修改 asset runner，移除 `COAGENTIC_DEFAULT_EXTRA_ARGS` 和 `COAGENTIC_EXTRA_ARGS` 插入路径。
 9. 将 canonical mix-signal 相关 hardcoded Hydra args 迁入 Hydra config group、overlay YAML 或 runtime override YAML。
-10. 重写 `train_CAR_async_labeling_ds_flash_mix_signal_fix.sh` 为目标形态。
+10. 重写 `train_CAR_async_ranker_training_ds_flash_mix_signal_fix.sh` 为目标形态。
 11. 增加 Hydra group、overlay YAML、runtime override YAML 和最终 dotlist 审计输出。
 12. 更新相关记录文档，标注 canonical 入口和旧入口边界。
 
@@ -694,8 +694,8 @@ dry-run 和正式运行都应写出：
 静态验证：
 
 ```bash
-bash -n tasks/train_tasks/coAgenticRetriever/train_CAR_async_labeling_ds_flash_mix_signal_fix.sh
-bash -n scripts/coagenticRetriever_v2/01_train_qwen3_4b_ablation_1epoch_timing.sh
+bash -n tasks/train_tasks/coAgenticRetriever/train_CAR_async_ranker_training_ds_flash_mix_signal_fix.sh
+bash -n scripts/coagenticRetriever_v2/01_train_launcher.sh
 bash -n scripts/coagenticRetriever_v2/assets/00_run_agentic_iter_rag_verl.sh
 ```
 
@@ -715,14 +715,14 @@ Overlay YAML 验证：
 ```bash
 /data04/envs/ms/ms_cosearch_official/bin/python \
   src/hydra_overrides/yaml_to_dotlist.py \
-  scripts/coagenticRetriever_v2/strategies_yaml/async_labeling_deepseek_flash_rank50_select_all.yaml \
+  scripts/coagenticRetriever_v2/strategies_yaml/async_ranker_training_deepseek_flash_rank50_select_all.yaml \
   tasks/train_tasks/coAgenticRetriever/configs/mix_signal_b3_overlay.yaml
 ```
 
 Dry-run 验证：
 
 ```bash
-DRY_RUN=1 bash tasks/train_tasks/coAgenticRetriever/train_CAR_async_labeling_ds_flash_mix_signal_fix.sh
+DRY_RUN=1 bash tasks/train_tasks/coAgenticRetriever/train_CAR_async_ranker_training_ds_flash_mix_signal_fix.sh
 ```
 
 验收条件：
@@ -732,6 +732,6 @@ DRY_RUN=1 bash tasks/train_tasks/coAgenticRetriever/train_CAR_async_labeling_ds_
 - `overlay_yamls.txt` 中 YAML 顺序和 task 脚本一致。
 - `runtime_env_overrides.yaml` 中包含 env override 后的 GPU/device。
 - `hydra_args.txt` 中包含 env override 后的 ranker/recall device。
-- `hydra_args.txt` 中包含 `ranker_training.async_labeling.sample_builder_request_batch=3`。
+- `hydra_args.txt` 中包含 `ranker_training.async_ranker_training.sample_builder_request_batch=3`。
 - task 脚本中没有 `COAGENTIC_EXTRA_ARGS`、`DEFAULT_COAGENTIC_EXTRA_ARGS`、`HYDRA_OVERRIDE_YAMLS`、`"$@"`。
 - canonical v2 路径中没有 `COAGENTIC_DEFAULT_EXTRA_ARGS`。

@@ -82,6 +82,8 @@ def get_custom_reward_fn(config: DictConfig) -> Optional[RawRewardFn]:
     file_path = reward_fn_config.get("path")
     if not file_path:
         return None
+    if not os.path.isabs(file_path):
+        file_path = os.path.abspath(file_path)
 
     function_name = reward_fn_config.get("name")
     assert function_name is not None
@@ -221,7 +223,10 @@ def compute_reward_async(data: DataProto, config=None, tokenizer=None, reward_fn
 
         warnings.warn("using config and tokenizer with compute_reward_async is deprecated", stacklevel=2)
         reward_fn = load_reward_manager(
-            config, tokenizer, num_examine=0, **config.reward_model.get("reward_kwargs", {})
+            config,
+            tokenizer,
+            num_examine=int(config.trainer.get("num_examine", 0)),
+            **config.reward_model.get("reward_kwargs", {}),
         )
 
     return compute_reward(data, reward_fn)

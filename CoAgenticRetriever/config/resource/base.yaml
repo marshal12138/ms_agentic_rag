@@ -1,0 +1,50 @@
+# Task resource environment defaults. Null means the selected resource config,
+# overlay YAML, or explicit environment variable must provide the effective value.
+
+# Experiment group name.
+GROUP_NAME: null
+
+# Agent rollout/update device IDs.
+AGENT_GPU_IDS: null
+
+# Dense ranker device ID.
+RANK_GPU_ID: null
+
+# Recall retriever service device ID.
+RECALL_GPU_ID: null
+
+# LLM judge service device IDs.
+LLM_JUDGE_GPU_IDS: null
+
+# Whether the launcher may start the recall retriever service.
+AUTO_START_RECALL_SERVICE: null
+
+# Whether the launcher stops its recall retriever service on exit.
+AUTO_STOP_RECALL_SERVICE: null
+
+# Seconds to wait for the recall retriever service.
+RECALL_SERVICE_WAIT_SECONDS: null
+
+# Whether the launcher may start the LLM judge service.
+AUTO_START_LLM_JUDGE: null
+
+# Whether the launcher stops its LLM judge service on exit.
+AUTO_STOP_LLM_JUDGE: null
+
+# Whether to preflight the LLM judge endpoint.
+LLM_JUDGE_PREFLIGHT: null
+
+# Seconds to wait for the LLM judge service.
+LLM_JUDGE_WAIT_SECONDS: null
+
+# Explicit device wait list. Null derives from the final device env values.
+WAIT_FOR_GPUS: null
+
+# Whether to wait for target devices before starting services or training.
+WAIT_FOR_GPU_RELEASE: null
+
+# Device wait polling interval in seconds.
+WAIT_FOR_GPU_INTERVAL_SECONDS: null
+
+# Label shown in device wait logs.
+WAIT_FOR_GPU_LABEL: null

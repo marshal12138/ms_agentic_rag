@@ -22,10 +22,10 @@ fresh trajectories
 
 设计目标：
 
-1. `async_labeling` 是可配置的 ranker 训练策略。
+1. `async_ranker_training` 是可配置的 ranker 训练策略。
 2. LLM judge 只产生排序/分数信号，不产生正负例标签。
 3. 正负例划分、hard/easy negative、重复采样和补齐逻辑全部属于 `sample_builder`。
-4. `async_labeling` 不阻塞 GRPO / agent LLM 主训练链路。
+4. `async_ranker_training` 不阻塞 GRPO / agent LLM 主训练链路。
 5. `sample_builder` 不等待 completed buffer；ranker async trainer 只在后台等待下一条 completed signal。
 6. ranker contrastive step 允许落后于 GRPO step，但必须通过限流、过期丢弃和指标监控控制滞后。
 
@@ -45,11 +45,11 @@ fresh trajectories
 GRPO / rollout 主链路
   -> rollout 产生 tool_call_details
   -> 提取 origin_query + sub_query + ranked_chunk_list
-  -> async_labeler.submit(...)
+  -> async_ranker_training_labeler.submit(...)
   -> 继续 agent GRPO/PPO update
   -> 不等待 judge，不等待 ranker sample
 
-async_labeling 链路
+async_ranker_training 链路
   -> request queue
   -> LLM-as-judge stage
   -> optional extra scoring stage
@@ -75,7 +75,7 @@ ranker contrastive 链路
 框架级默认配置建议新增：
 
 ```text
-CoAgenticRetriever/config/async_labeling.yaml
+CoAgenticRetriever/config/async_ranker_training.yaml
 ```
 
 主训练配置加载方式：
@@ -84,25 +84,25 @@ CoAgenticRetriever/config/async_labeling.yaml
 # CoAgenticRetriever/config/coagentic_retriever_trainer.yaml
 defaults:
   - ranker_contrastive
-  - async_labeling
+  - async_ranker_training
   - _self_
 ```
 
 本地 DeepSeek-Flash / GPU06-GPU07 覆盖配置建议放在：
 
 ```text
-scripts/coagenticRetriever_local/strategies_yaml/async_labeling_deepseek_flash.yaml
+scripts/coagenticRetriever_local/strategies_yaml/async_ranker_training_deepseek_flash.yaml
 ```
 
 配置分两层：
 
-- 训练侧 async labeling 配置：描述训练过程如何提交请求、限流、消费 completed buffer、调用哪个 judge endpoint、使用哪个 prompt 和 sample_builder。
+- 训练侧 async ranker training 配置：描述训练过程如何提交请求、限流、消费 completed buffer、调用哪个 judge endpoint、使用哪个 prompt 和 sample_builder。
 - 服务侧 LLM judge 启动配置：描述 vLLM 服务如何启动，包括模型地址、GPU、端口、`--max-model-len`、tensor parallel、KV cache dtype 等。
 
 服务侧启动配置建议放在：
 
 ```text
-CoAgenticRetriever/async_labeling/configs/llm_judge_vllm_deepseek_flash_gpu06_07.yaml
+CoAgenticRetriever/async_ranker_training/configs/llm_judge_vllm_deepseek_flash_gpu06_07.yaml
 ```
 
 `CoAgenticRetriever/scripts/launch_llm_as_judge.sh` 只读取该服务侧 YAML，也允许通过显式环境变量覆盖少量字段；训练侧 YAML 不直接保存 `model_path`、`--max-model-len` 等 vLLM 启动参数，只保存 endpoint 和 served model name。
@@ -111,7 +111,7 @@ CoAgenticRetriever/async_labeling/configs/llm_judge_vllm_deepseek_flash_gpu06_07
 
 ```yaml
 ranker_training:
-  async_labeling:
+  async_ranker_training:
     enable: true
 
     # 每个 global_step 最多提交多少个 sub_query/tool call。
@@ -140,7 +140,7 @@ ranker_training:
         request_timeout_seconds: 600
         max_retries: 2
         prompt:
-          path: CoAgenticRetriever/async_labeling/prompts/llm_judge_rank50_v1.md
+          path: CoAgenticRetriever/async_ranker_training/prompts/llm_judge_rank50_v1.md
           version: llm_judge_rank50_v1
           format: markdown_system_user_template
           max_chunk_chars: 512
@@ -154,7 +154,7 @@ ranker_training:
         weight: 0.3
 
     sample_builder:
-      type: random_negative_repeat_from_signal
+      type: random_negative_repeat
       num_groups_per_step: 32
       neg_per_pos: 15
       allow_repeat_negative_sampling: true
@@ -162,7 +162,7 @@ ranker_training:
 
     logging:
       enable: true
-      log_dir: null  # null 表示使用 <TRAIN_LOG_DIR>/async_labeling
+      log_dir: null  # null 表示使用 <TRAIN_LOG_DIR>/async_ranker_training
       write_request_text: false
       max_text_chars: 512
       metrics_interval_seconds: 30
@@ -175,7 +175,7 @@ ranker_training:
 
 含义：
 
-- 每个 `global_step` 进入 async labeler 的 sub-query / tool-call 数不能超过该值。
+- 每个 `global_step` 进入 async ranker training labeler 的 sub-query / tool-call 数不能超过该值。
 - 限制粒度是 tool call，不是 trajectory。
 - 即使 `trajectory_selector` 只选中 3 条轨迹，如果每条轨迹有 8 个 search 动作，也最多只提交 10 个请求。
 
@@ -186,7 +186,7 @@ rollout tool_call_details
   -> flatten 成 tool_call candidates
   -> 按 sub_query_selection_policy 排序
   -> 只取前 max_sub_query 个
-  -> submit 到 async_labeler
+  -> submit 到 async_ranker_training_labeler
 ```
 
 `high_value_first` 的具体排序规则仍待确认。
@@ -209,7 +209,7 @@ rollout tool_call_details
 
 ### 4.1 `AsyncLabelRequest`
 
-`async_labeler` 的输入不是 `ContrastiveSample`，也不是已经 label 好的 `LabeledRankingContext`，而是从 rollout `tool_call_details` 提取出的候选排序上下文。
+`async_ranker_training_labeler` 的输入不是 `ContrastiveSample`，也不是已经 label 好的 `LabeledRankingContext`，而是从 rollout `tool_call_details` 提取出的候选排序上下文。
 
 ```text
 AsyncLabelRequest:
@@ -346,7 +346,7 @@ max_tokens: 1024
 服务启动脚本建议：
 
 ```text
-CoAgenticRetriever/scripts/launch_llm_as_judge.sh --config CoAgenticRetriever/async_labeling/configs/llm_judge_vllm_deepseek_flash_gpu06_07.yaml
+CoAgenticRetriever/scripts/launch_llm_as_judge.sh --config CoAgenticRetriever/async_ranker_training/configs/llm_judge_vllm_deepseek_flash_gpu06_07.yaml
 ```
 
 服务侧配置文件示例：
@@ -379,7 +379,7 @@ runtime:
   disable_custom_all_reduce: true
 
 logs:
-  log_dir: log/train_logs/<GROUP_NAME>/<RUN_NAME>/async_labeling/judge_server
+  log_dir: log/train_logs/<GROUP_NAME>/<RUN_NAME>/async_ranker_training/judge_server
   log_file: vllm_gpu06_07_8067.log
   pid_file: vllm_gpu06_07_8067.pid
 ```
@@ -388,20 +388,20 @@ logs:
 
 - 读取服务侧 YAML，组装 `vllm serve` 命令。
 - 检查 `model.model_path`、`runtime.vllm`、端口可用性和 `/v1/models` readiness。
-- 将 vLLM stdout/stderr 写入当前 run 的 `async_labeling/judge_server/` 子目录。
+- 将 vLLM stdout/stderr 写入当前 run 的 `async_ranker_training/judge_server/` 子目录。
 - 失败时直接退出并返回非零 exit code，不静默 fallback 到其他模型或端口。
 
-可以参考 `pipelines/temp/deepseek_v4_flash_judge/00_start_vllm_gpu06_07.sh` 的启动参数和日志经验，但正式 async labeling 框架不能 import、source、subprocess 调用或依赖该 temp pipeline 的代码。
+可以参考 `pipelines/temp/deepseek_v4_flash_judge/00_start_vllm_gpu06_07.sh` 的启动参数和日志经验，但正式 async ranker training 框架不能 import、source、subprocess 调用或依赖该 temp pipeline 的代码。
 
 ### 6.2 Prompt
 
 默认 prompt 文件：
 
 ```text
-CoAgenticRetriever/async_labeling/prompts/llm_judge_rank50_v1.md
+CoAgenticRetriever/async_ranker_training/prompts/llm_judge_rank50_v1.md
 ```
 
-该默认文件内容来自 `docs/planning/260615_llm_judge_prompt.md`，但运行时不读取 planning 文档。正式代码默认读取 `CoAgenticRetriever/async_labeling/prompts/llm_judge_rank50_v1.md`。
+该默认文件内容来自 `docs/planning/260615_llm_judge_prompt.md`，但运行时不读取 planning 文档。正式代码默认读取 `CoAgenticRetriever/async_ranker_training/prompts/llm_judge_rank50_v1.md`。
 
 规则：
 
@@ -427,7 +427,7 @@ CoAgenticRetriever/async_labeling/prompts/llm_judge_rank50_v1.md
 后续稳定 prompt 均放在：
 
 ```text
-CoAgenticRetriever/async_labeling/prompts/
+CoAgenticRetriever/async_ranker_training/prompts/
 ```
 
 `docs/planning/` 中的 prompt 只作为讨论和演化记录。
@@ -528,7 +528,7 @@ judge 失败只计数后丢弃，不写入 completed signal queue，不阻塞 GR
 - judge client。
 - `ranked_ids` 解析和校验。
 - latency / token usage / failure 记录。
-- async labeling 观察日志。
+- async ranker training 观察日志。
 - smoke 检查脚本。
 
 ## 7. Sample Builder 策略框架
@@ -538,11 +538,11 @@ judge 失败只计数后丢弃，不写入 completed signal queue，不阻塞 GR
 建议目录：
 
 ```text
-CoAgenticRetriever/async_labeling/sample_builder/
+CoAgenticRetriever/async_ranker_training/sample_builder/
   __init__.py
   base.py
   config.py
-  random_negative_repeat_from_signal.py
+  random_negative_repeat.py
 ```
 
 后续新增策略：
@@ -575,9 +575,9 @@ output:
 
 ```yaml
 ranker_training:
-  async_labeling:
+  async_ranker_training:
     sample_builder:
-      type: random_negative_repeat_from_signal
+      type: random_negative_repeat
       num_groups_per_step: 32
       neg_per_pos: 15
       allow_repeat_negative_sampling: true
@@ -609,7 +609,7 @@ if 仍然不足:
 
 ### 7.1 默认策略
 
-默认策略：`random_negative_repeat_from_signal`。
+默认策略：`random_negative_repeat`。
 
 它应与当前 `ranker_strategies/sample_builder/random_negative_repeat.py` 保持一致的核心行为：
 
@@ -628,7 +628,7 @@ if 仍然不足:
 
 ```yaml
 ranker_training:
-  async_labeling:
+  async_ranker_training:
     sample_builder:
       type: graded_hard_easy
       num_groups_per_step: 64
@@ -645,7 +645,7 @@ ranker_training:
 
 ```text
 CoAgenticRetriever/
-  async_labeling/
+  async_ranker_training/
     __init__.py
     schemas.py
     config.py
@@ -672,7 +672,7 @@ CoAgenticRetriever/
       __init__.py
       base.py
       config.py
-      random_negative_repeat_from_signal.py
+      random_negative_repeat.py
 
     utils/
       __init__.py
@@ -685,15 +685,15 @@ CoAgenticRetriever/
 模块职责：
 
 - `schemas.py`：定义 `AsyncLabelRequest`、`CandidateChunk`、`JudgeChunkScore`、`CandidateSignalData`、`AsyncLabelFailure` 等轻量 schema。
-- `config.py`：读取和规范化 `ranker_training.async_labeling` 配置。
+- `config.py`：读取和规范化 `ranker_training.async_ranker_training` 配置。
 - `request_builder.py`：从 rollout `tool_call_details` 构造 `AsyncLabelRequest`，应用 `max_sub_query` 和 selection policy。
 - `labeler.py`：对 trainer 暴露 `AsyncLabeler.submit()`、`get_metrics()`、`close()`。
 - `worker.py`：后台 worker loop，负责取请求、调用 stages、写 completed buffer 和观察日志。
 - `buffer.py`：维护 destructive completed queue 和 append-only audit store。
 - `stages/`：维护 LLM judge 和后续 scorer stage。
 - `sample_builder/`：维护从 `CandidateSignalData` 到 `ContrastiveSample` 的策略。
-- `logging.py`：维护 async labeling 观察日志。
-- `metrics.py`：聚合 async labeler 和 sample builder 指标。
+- `logging.py`：维护 async ranker training 观察日志。
+- `metrics.py`：聚合 async ranker training labeler 和 sample builder 指标。
 
 ## 9. Trainer 集成
 
@@ -718,7 +718,7 @@ init_workers()
 each global step:
   -> rollout
   -> _enrich_tool_calls_with_ranker
-  -> async_labeler.submit(main_batch.tool_call_details, global_step)
+  -> async_ranker_training_labeler.submit(main_batch.tool_call_details, global_step)
   -> process_main_agent_ppo_step.remote(...)
   -> 不在主循环内等待 ranker samples
   -> ray.get(main_futures)
@@ -763,25 +763,25 @@ tasks/train_tasks/train_CAR_naive_acce.sh
   -> CoAgenticRetriever/main_coagentic_retriever.py
 ```
 
-新框架不要另起一套完全不同的训练入口，而是在现有入口上增加 async labeling 的可选配置。目标是让用户仍然通过 `tasks/train_tasks/*.sh` 启动实验，只多设置少量环境变量和 YAML 路径。
+新框架不要另起一套完全不同的训练入口，而是在现有入口上增加 async ranker training 的可选配置。目标是让用户仍然通过 `tasks/train_tasks/*.sh` 启动实验，只多设置少量环境变量和 YAML 路径。
 
 建议新增 task 脚本：
 
 ```text
-tasks/train_tasks/train_CAR_async_labeling_ds_flash.sh
+tasks/train_tasks/train_CAR_async_ranker_training_ds_flash.sh
 ```
 
 该脚本只负责实验级配置：
 
 ```bash
-export EXP_NAME="CAR_async_labeling_ds_flash_v1"
+export EXP_NAME="CAR_async_ranker_training_ds_flash_v1"
 
-export ENABLE_ASYNC_LABELING=1
-export ASYNC_LABELING_YAML="/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/scripts/coagenticRetriever_local/strategies_yaml/async_labeling_deepseek_flash.yaml"
+export ENABLE_ASYNC_RANKER_TRAINING=1
+export ASYNC_RANKER_TRAINING_YAML="/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/scripts/coagenticRetriever_local/strategies_yaml/async_ranker_training_deepseek_flash.yaml"
 
 export AUTO_START_LLM_JUDGE=1
 export AUTO_STOP_LLM_JUDGE=0
-export LLM_JUDGE_SERVICE_CONFIG="/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/CoAgenticRetriever/async_labeling/configs/llm_judge_vllm_deepseek_flash_gpu06_07.yaml"
+export LLM_JUDGE_SERVICE_CONFIG="/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/CoAgenticRetriever/async_ranker_training/configs/llm_judge_vllm_deepseek_flash_gpu06_07.yaml"
 export LLM_JUDGE_ENDPOINT="http://127.0.0.1:8067/v1/chat/completions"
 
 export AGENT_GPU_IDS="0,1,2,3"
@@ -798,14 +798,14 @@ bash /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/scripts/coagenticRetr
 `scripts/coagenticRetriever_local/01_train_qwen3_4b_ablation_1epoch_timing.sh` 建议新增：
 
 ```bash
-ENABLE_ASYNC_LABELING="${ENABLE_ASYNC_LABELING:-0}"
-ASYNC_LABELING_YAML="${ASYNC_LABELING_YAML:-}"
+ENABLE_ASYNC_RANKER_TRAINING="${ENABLE_ASYNC_RANKER_TRAINING:-0}"
+ASYNC_RANKER_TRAINING_YAML="${ASYNC_RANKER_TRAINING_YAML:-}"
 AUTO_START_LLM_JUDGE="${AUTO_START_LLM_JUDGE:-0}"
 AUTO_STOP_LLM_JUDGE="${AUTO_STOP_LLM_JUDGE:-0}"
 LLM_JUDGE_SERVICE_CONFIG="${LLM_JUDGE_SERVICE_CONFIG:-}"
 LLM_JUDGE_ENDPOINT="${LLM_JUDGE_ENDPOINT:-http://127.0.0.1:8067/v1/chat/completions}"
 LLM_JUDGE_PREFLIGHT="${LLM_JUDGE_PREFLIGHT:-1}"
-ASYNC_LABELING_LOG_DIR="${ASYNC_LABELING_LOG_DIR:-${LOG_DIR}/async_labeling}"
+ASYNC_RANKER_TRAINING_LOG_DIR="${ASYNC_RANKER_TRAINING_LOG_DIR:-${LOG_DIR}/async_ranker_training}"
 ```
 
 这些变量写入 `${LOG_DIR}/${RUN_NAME}.env`，便于复盘。
@@ -820,19 +820,19 @@ RANKER_STRATEGY_YAML
 COAGENTIC_EXTRA_ARGS
 ```
 
-async labeling 应复用同一套机制。launcher 收集 YAML 时追加 `ASYNC_LABELING_YAML`：
+async ranker training 应复用同一套机制。launcher 收集 YAML 时追加 `ASYNC_RANKER_TRAINING_YAML`：
 
 ```bash
 hydra_collect_yaml_override_files hydra_yaml_files \
   "${HYDRA_OVERRIDE_YAMLS:-}" \
   "${RANKER_STRATEGY_YAML:-}" \
-  "${ASYNC_LABELING_YAML:-}"
+  "${ASYNC_RANKER_TRAINING_YAML:-}"
 ```
 
-这样 async labeling 主配置可以放在：
+这样 async ranker training 主配置可以放在：
 
 ```text
-scripts/coagenticRetriever_local/strategies_yaml/async_labeling_deepseek_flash.yaml
+scripts/coagenticRetriever_local/strategies_yaml/async_ranker_training_deepseek_flash.yaml
 ```
 
 而不是把复杂配置塞进 `COAGENTIC_EXTRA_ARGS`。`COAGENTIC_EXTRA_ARGS` 仍保留给临时、小范围的 dotlist override。
@@ -849,9 +849,9 @@ check_llm_judge_service()
 
 规则：
 
-- `ENABLE_ASYNC_LABELING=1` 且 `AUTO_START_LLM_JUDGE=1` 时，训练 launcher 调用 `CoAgenticRetriever/scripts/launch_llm_as_judge.sh --config "${LLM_JUDGE_SERVICE_CONFIG}"`。
+- `ENABLE_ASYNC_RANKER_TRAINING=1` 且 `AUTO_START_LLM_JUDGE=1` 时，训练 launcher 调用 `CoAgenticRetriever/scripts/launch_llm_as_judge.sh --config "${LLM_JUDGE_SERVICE_CONFIG}"`。
 - `LLM_JUDGE_PREFLIGHT=1` 时，在训练前请求 `/v1/models` 或最小 chat completion smoke。
-- judge 服务日志写入 `${LOG_DIR}/async_labeling/judge_server/`。
+- judge 服务日志写入 `${LOG_DIR}/async_ranker_training/judge_server/`。
 - 如果服务不可用，直接报错退出，不 fallback 到同步 pseudo label。
 - `AUTO_STOP_LLM_JUDGE=0` 为默认值，因为 judge 服务可能被多个实验复用；只有明确开启时训练结束才停止该服务。
 
@@ -903,16 +903,16 @@ judge server log path
 trainer.ranker_update_mode=contrastive
 ```
 
-async labeling 作为 ranker contrastive 的 signal source：
+async ranker training 作为 ranker contrastive 的 signal source：
 
 ```yaml
 ranker_training:
-  signal_source: async_labeling
-  async_labeling:
+  signal_source: async_ranker_training
+  async_ranker_training:
     enable: true
 ```
 
-`ENABLE_ASYNC_LABELING=0` 时旧任务完全不受影响，仍走当前 `signal_builder` / pseudo-rank 构造逻辑。
+`ENABLE_ASYNC_RANKER_TRAINING=0` 时旧任务完全不受影响，仍走当前 `signal_builder` / pseudo-rank 构造逻辑。
 
 ## 11. 与当前代码框架的区别
 
@@ -933,13 +933,13 @@ process_ranker_contrastive_step:
 新框架：
 
 ```text
-async_labeling/
+async_ranker_training/
   request_builder
   async worker
   scoring stages
   completed signal queue
-  random_negative_repeat_from_signal sample builder
-  async labeling observation logs
+  random_negative_repeat sample builder
+  async ranker training observation logs
 
 RankerAsyncTrainer:
   等待 completed signal
@@ -952,29 +952,29 @@ RankerAsyncTrainer:
 - 当前 `sample_builder` 消费 `LabeledRankingContext`；新框架的 async sample builder 消费 `CandidateSignalData`。
 - 当前 ranker update 在主 trainer loop 中执行；新框架中 ranker update 作为后台 actor 运行。
 - 当前 replay buffer 存放 `ContrastiveSample`；新框架新增 completed signal queue，存放 `CandidateSignalData`，消费后再构造 sample。
-- 新框架的 async labeling 观察日志依附现有 train run 目录，但不接入正式 report schema。
+- 新框架的 async ranker training 观察日志依附现有 train run 目录，但不接入正式 report schema。
 
 ## 11. 观察日志
 
-新增日志只服务 async labeling 策略调试。它复用现有训练日志系统创建的 run 目录，在 run 目录下新增 `async_labeling/` 子目录；但不接入 `src/logs/report_system` 的 report schema，不生成正式 train report。
+新增日志只服务 async ranker training 策略调试。它复用现有训练日志系统创建的 run 目录，在 run 目录下新增 `async_ranker_training/` 子目录；但不接入 `src/logs/report_system` 的 report schema，不生成正式 train report。
 
 默认目录：
 
 ```text
-log/train_logs/<GROUP_NAME>/<RUN_NAME>/async_labeling/
+log/train_logs/<GROUP_NAME>/<RUN_NAME>/async_ranker_training/
 ```
 
 示例：
 
 ```text
-log/train_logs/coAgenticRetriever/260613-004352-CAR_mem_speed_no_think_v1/async_labeling/
+log/train_logs/coAgenticRetriever/260613-004352-CAR_mem_speed_no_think_v1/async_ranker_training/
 ```
 
 建议产物：
 
 ```text
-log/train_logs/<GROUP_NAME>/<RUN_NAME>/async_labeling/
-  async_labeling.env.json
+log/train_logs/<GROUP_NAME>/<RUN_NAME>/async_ranker_training/
+  async_ranker_training.env.json
   requests.jsonl
   completed_signals.jsonl
   failures.jsonl
@@ -985,12 +985,12 @@ log/train_logs/<GROUP_NAME>/<RUN_NAME>/async_labeling/
 
 文件职责：
 
-- `async_labeling.env.json`：记录配置、judge endpoint、prompt version、score version、`max_sub_query`、`max_glb_step_lag`。
+- `async_ranker_training.env.json`：记录配置、judge endpoint、prompt version、score version、`max_sub_query`、`max_glb_step_lag`。
 - `requests.jsonl`：append-only 请求日志，记录 `AsyncLabelRequest` 轻量版。
 - `completed_signals.jsonl`：append-only 成功信号日志，记录 `CandidateSignalData` 或轻量版。
 - `failures.jsonl`：失败日志，记录 request id、失败类型、错误信息、latency、created global step。
 - `queue_events.jsonl`：记录 enqueue、drop_by_lag、drop_by_queue_full、pop_latest 等队列事件。
-- `metrics.jsonl`：周期性写入 async labeler 和 sample builder 指标快照。
+- `metrics.jsonl`：周期性写入 async ranker training labeler 和 sample builder 指标快照。
 - `samples_preview.jsonl`：低频采样写入由 signal 构造出的 contrastive sample 预览。
 
 写入原则：
@@ -1006,19 +1006,19 @@ log/train_logs/<GROUP_NAME>/<RUN_NAME>/async_labeling/
 建议新增指标：
 
 ```text
-ranker/async_labeler_submitted
-ranker/async_labeler_skipped_by_max_sub_query
-ranker/async_labeler_dropped_by_lag
-ranker/async_labeler_queue_size
-ranker/async_labeler_completed_buffer_size
-ranker/async_labeler_completed
-ranker/async_labeler_failed
-ranker/async_labeler_parse_failed
-ranker/async_labeler_avg_lag_steps
-ranker/async_labeler_max_lag_steps
-ranker/async_labeler_avg_latency_ms
-ranker/async_labeler_signals_consumed
-ranker/async_labeler_wait_seconds
+async_ranker_training/labeler_submitted_count
+async_ranker_training/selected_tool_calls
+async_ranker_training/labeler_expired_count
+async_ranker_training/labeler_request_queue_size
+async_ranker_training/labeler_completed_buffer_size
+async_ranker_training/labeler_completed_count
+async_ranker_training/labeler_failed_count
+async_ranker_training/labeler_failed_count
+async_ranker_training/labeler_avg_lag_steps
+async_ranker_training/labeler_max_lag_steps
+async_ranker_training/labeler_avg_latency_ms
+ranker/async_consumed_signals
+ranker/async_wait_seconds
 ranker/async_sample_builder_consumed_signals
 ranker/async_sample_builder_candidate_groups
 ranker/async_sample_builder_output_groups
@@ -1031,7 +1031,7 @@ ranker/agent_step_lag
 
 ## 13. 滞后风险与缓解
 
-如果 async labeling 变慢，可能出现 agent LLM 连续更新多次，而 ranker contrastive step 长时间没有更新。这是异步设计允许出现的情况，但有负面影响：
+如果 async ranker training 变慢，可能出现 agent LLM 连续更新多次，而 ranker contrastive step 长时间没有更新。这是异步设计允许出现的情况，但有负面影响：
 
 - ranker 滞后于 agent query 分布。
 - tool 质量改善延迟。
@@ -1050,32 +1050,32 @@ ranker/agent_step_lag
 
 第一版按最小闭环实现：
 
-1. 新增 `CoAgenticRetriever/config/async_labeling.yaml`。
-2. 新增 `CoAgenticRetriever/async_labeling/configs/llm_judge_vllm_deepseek_flash_gpu06_07.yaml`，保存模型地址、GPU、端口、`max_model_len` 等 vLLM 服务启动参数。
+1. 新增 `CoAgenticRetriever/config/async_ranker_training.yaml`。
+2. 新增 `CoAgenticRetriever/async_ranker_training/configs/llm_judge_vllm_deepseek_flash_gpu06_07.yaml`，保存模型地址、GPU、端口、`max_model_len` 等 vLLM 服务启动参数。
 3. 补齐 `CoAgenticRetriever/scripts/launch_llm_as_judge.sh`，通过 `--config` 读取服务侧 YAML 启动 judge 服务。
 4. 新增 `AsyncLabelRequest` 和 `CandidateSignalData` schema。
-5. 新增 async labeler request queue、completed signal queue 和 audit store。
+5. 新增 async ranker training labeler request queue、completed signal queue 和 audit store。
 6. 新增 LLM-as-judge scorer stage，调用 GPU06/GPU07 上的 DeepSeek-Flash endpoint，对每个 request 的 50 个 chunk 返回 `ranked_ids`。
 7. 新增 `max_sub_query=10` 和 `max_glb_step_lag=3` 的限流/过期逻辑。
 8. 新增从 `tool_call_details` 构造 label request 的 request builder。
-9. 新增 `random_negative_repeat_from_signal` sample builder。
+9. 新增 `random_negative_repeat` sample builder。
 10. 将 ranker contrastive update 拆成后台 Ray actor 或等价异步 trainer。
 11. 保留现有 pseudo-rank fallback。
 12. `extra_scorer` 第一版只预留接口，不实现额外评分。
 13. ranker checkpoint 保存频率跟随 agent global step。
 14. judge 失败时只计数后丢弃。
-15. 新增 async labeling 观察日志子目录，默认写入 `log/train_logs/<GROUP_NAME>/<RUN_NAME>/async_labeling/`。
-16. DeepSeek-Flash judge 实现只参考 `pipelines/temp/deepseek_v4_flash_judge/`，正式代码必须在 `async_labeling/` 中重新实现，不能调用 temp pipeline 代码。
+15. 新增 async ranker training 观察日志子目录，默认写入 `log/train_logs/<GROUP_NAME>/<RUN_NAME>/async_ranker_training/`。
+16. DeepSeek-Flash judge 实现只参考 `pipelines/temp/deepseek_v4_flash_judge/`，正式代码必须在 `async_ranker_training/` 中重新实现，不能调用 temp pipeline 代码。
 
 第一版验证目标：
 
 - GPU06/GPU07 的 DeepSeek-Flash judge 服务能稳定处理请求。
-- async labeler 能将 rollout tool calls 转成 `CandidateSignalData`。
+- async ranker training labeler 能将 rollout tool calls 转成 `CandidateSignalData`。
 - completed queue 能以 destructive pop 方式在有 signal 时立即提供最新 completed signal。
 - sample builder 能稳定输出 `num_groups_per_step` 组 `ContrastiveSample`。
 - ranker async trainer 能等待 signal 并更新 ranker。
 - GRPO step 和 ranker contrastive step 可以解耦运行。
-- async labeling 观察日志能够支持排查请求、失败、队列积压和样本构造质量。
+- async ranker training 观察日志能够支持排查请求、失败、队列积压和样本构造质量。
 
 ## 15. 待继续确认的问题
 

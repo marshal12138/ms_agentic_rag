@@ -488,18 +488,18 @@ fresh trajectories
 
 ### 总体原则
 
-异步标注不应阻塞 GRPO / agent LLM 主训练链路。
+异步 ranker training不应阻塞 GRPO / agent LLM 主训练链路。
 
 推荐将系统拆成三条链路：
 
 ```text
 GRPO / rollout 主链路
   -> 产生 origin_query + sub_query + ranked_chunk_list
-  -> async_labeler.submit(...)
+  -> async_ranker_training_labeler.submit(...)
   -> 继续 agent GRPO/PPO update
   -> 不等待 judge，不等待 ranker sample
 
-async_labeling 链路
+async_ranker_training 链路
   -> request queue
   -> LLM-as-judge stage
   -> 后续可插拔 extra scoring stage
@@ -514,36 +514,36 @@ ranker contrastive 链路
 
 关键约束：
 
-- `async_labeler.submit()` 必须非阻塞。
+- `async_ranker_training_labeler.submit()` 必须非阻塞。
 - `sample_builder` 可以等待 buffer 中有足够数据。
 - `sample_builder` 的等待只能阻塞 ranker contrastive 链路，不能阻塞 GRPO 主链路。
 - ranker contrastive step 应从主训练循环中拆出，变成 Ray actor、后台进程或等价的异步 trainer。
 - 如果只是 `ranker_step.remote()` 后立即 `ray.get()`，仍然会阻塞主链路，不符合目标。
 
-### async_labeling 作为可配置策略
+### async_ranker_training 作为可配置策略
 
-`async_labeling` 应作为 ranker 训练下的一种可配置策略。基础版本先使用 LLM-as-judge 直接给分；后续还会在它之后紧接一次新的评分，因此设计上应使用 pipeline/stage，而不是写死单一 judge。
+`async_ranker_training` 应作为 ranker 训练下的一种可配置策略。基础版本先使用 LLM-as-judge 直接给分；后续还会在它之后紧接一次新的评分，因此设计上应使用 pipeline/stage，而不是写死单一 judge。
 
 建议配置放在：
 
 ```text
-CoAgenticRetriever/config/async_labeling.yaml
+CoAgenticRetriever/config/async_ranker_training.yaml
 ```
 
 本地 DeepSeek-Flash / GPU06-GPU07 相关覆盖配置可放在：
 
 ```text
-scripts/coagenticRetriever_local/strategies_yaml/async_labeling_deepseek_flash.yaml
+scripts/coagenticRetriever_local/strategies_yaml/async_ranker_training_deepseek_flash.yaml
 ```
 
 建议配置形态：
 
 ```yaml
 ranker_training:
-  async_labeling:
+  async_ranker_training:
     enable: true
 
-    # 每个 global_step 最多提交多少个 sub_query/tool call 到 async_labeler。
+    # 每个 global_step 最多提交多少个 sub_query/tool call 到 async_ranker_training_labeler。
     max_sub_query: 10
 
     # 请求允许滞后的最大 global step 数。
@@ -576,7 +576,7 @@ ranker_training:
 
 `max_sub_query` 的含义：
 
-- 每个 `global_step` 进入 async labeler 的 sub-query / tool-call 数不能超过该值。
+- 每个 `global_step` 进入 async ranker training labeler 的 sub-query / tool-call 数不能超过该值。
 - 限制粒度是 tool call，不是 trajectory。
 - 即使 `trajectory_selector` 只选中 3 条轨迹，如果每条轨迹有 8 次 search，也最多只提交 10 个 sub-query，避免一次 step 产生 24 个 judge 请求。
 
@@ -586,9 +586,9 @@ ranker_training:
 - 如果超过该值，说明请求已经过期，直接跳过，不再消耗 LLM judge 资源。
 - 该检查应发生两次：worker 取出 request 时检查一次，judge 返回准备写入 completed buffer 前再检查一次。
 
-### async_labeler 输入输出
+### async_ranker_training_labeler 输入输出
 
-`async_labeler` 的输入是从 rollout `tool_call_details` 中提取出的候选排序上下文，而不是 `ContrastiveSample`。
+`async_ranker_training_labeler` 的输入是从 rollout `tool_call_details` 中提取出的候选排序上下文，而不是 `ContrastiveSample`。
 
 建议输入结构：
 
@@ -627,7 +627,7 @@ AsyncLabelRequest:
 
 `ranked_chunk_list` 建议优先来自当前 ranker 的 `rank_top50_docs`，没有时 fallback 到 `recall_top50_docs`。
 
-`async_labeler` 的输出是 `CandidateSignalData`。这是 completed candidate signal buffer 里的单位元素。
+`async_ranker_training_labeler` 的输出是 `CandidateSignalData`。这是 completed candidate signal buffer 里的单位元素。
 
 建议输出结构：
 
@@ -735,7 +735,7 @@ signal_audit_store        # JSONL/SQLite 落盘记录，永久保留，用于复
 ```text
 main trainer loop:
   main_batch = rollout()
-  async_labeler.submit(main_batch.tool_call_details, global_step=...)
+  async_ranker_training_labeler.submit(main_batch.tool_call_details, global_step=...)
   launch/continue main_agent_grpo_update()
   do not wait for ranker samples
 
@@ -756,7 +756,7 @@ RankerAsyncTrainer:
 
 ### 滞后风险和负面影响
 
-如果 async labeling 变慢，可能出现 agent LLM 连续更新多次，而 ranker contrastive step 长时间没有更新。这是异步设计允许出现的情况，但有以下负面影响：
+如果 async ranker training 变慢，可能出现 agent LLM 连续更新多次，而 ranker contrastive step 长时间没有更新。这是异步设计允许出现的情况，但有以下负面影响：
 
 - ranker 滞后于 agent query 分布。agent 已经学出新的 search 行为，但 ranker 仍在旧分布上训练。
 - tool 质量改善延迟。ranker 不更新时，agent 继续看到旧 ranker 给出的 top5。
@@ -768,25 +768,25 @@ RankerAsyncTrainer:
 - 使用 `max_glb_step_lag=3` 丢弃过期请求和过期结果。
 - 使用 `max_sub_query=10` 控制每个 global step 的请求量。
 - 只消费最新 signals，过旧 signals 从 active queue 丢弃。
-- 记录 `ranker/agent_step_lag`、`ranker/update_per_agent_step`、`async_labeler/dropped_by_lag` 等指标。
+- 记录 `ranker/agent_step_lag`、`ranker/update_per_agent_step`、`async_ranker_training/labeler_expired_count` 等指标。
 - 当 judge 队列积压时，按 high-value policy 选择 tool call，而不是无差别提交所有 sub-query。
 
 ### 建议新增指标
 
 ```text
-ranker/async_labeler_submitted
-ranker/async_labeler_skipped_by_max_sub_query
-ranker/async_labeler_dropped_by_lag
-ranker/async_labeler_queue_size
-ranker/async_labeler_completed_buffer_size
-ranker/async_labeler_completed
-ranker/async_labeler_failed
-ranker/async_labeler_parse_failed
-ranker/async_labeler_avg_lag_steps
-ranker/async_labeler_max_lag_steps
-ranker/async_labeler_avg_latency_ms
-ranker/async_labeler_signals_consumed
-ranker/async_labeler_wait_seconds
+async_ranker_training/labeler_submitted_count
+async_ranker_training/selected_tool_calls
+async_ranker_training/labeler_expired_count
+async_ranker_training/labeler_request_queue_size
+async_ranker_training/labeler_completed_buffer_size
+async_ranker_training/labeler_completed_count
+async_ranker_training/labeler_failed_count
+async_ranker_training/labeler_failed_count
+async_ranker_training/labeler_avg_lag_steps
+async_ranker_training/labeler_max_lag_steps
+async_ranker_training/labeler_avg_latency_ms
+ranker/async_consumed_signals
+ranker/async_wait_seconds
 ranker/update_per_agent_step
 ```
 
@@ -804,6 +804,6 @@ ranker/update_per_agent_step
 第一版目标是验证：
 
 1. GPU06/GPU07 的 DeepSeek-Flash judge 服务能稳定处理请求。
-2. async_labeler 能将 rollout tool calls 转成 `CandidateSignalData`。
+2. async_ranker_training_labeler 能将 rollout tool calls 转成 `CandidateSignalData`。
 3. ranker async trainer 能从 completed queue 中 pop 最新 N 组 signal 并更新 ranker。
 4. GRPO step 和 ranker contrastive step 可以解耦运行。

@@ -160,7 +160,7 @@ class CoAgenticRetrieverAgentLoop(AgentLoopBase):
         print(f"[COAGENTIC RETRIEVER AGENT] Tool instances: {cls.tools}\n")
 
         cls.apply_chat_template_kwargs = config.data.get("apply_chat_template_kwargs", {})
-        cls.inject_tool_schema = config_get_bool(config, "coagentic_retriever.agent.inject_tool_schema", True)
+        cls.inject_tool_schema = config_get_bool(config, "actor_rollout_ref.rollout.agent.inject_tool_schema", True)
         cls.prompt_length = config.actor_rollout_ref.rollout.prompt_length
         cls.response_length = config.actor_rollout_ref.rollout.response_length
         cls.system_prompt = tokenizer.apply_chat_template(

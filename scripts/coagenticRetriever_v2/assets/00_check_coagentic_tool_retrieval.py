@@ -1,14 +1,30 @@
 #!/usr/bin/env python3
-"""Validate that the CoAgenticRetriever recall endpoint is reachable and sane."""
+"""Compatibility wrapper for CoAgenticRetriever recall semantic preflight.
+
+历史上 launcher 和部分手工检查命令直接调用这个脚本。现在真正的实现已经下沉到：
+
+`scripts/coagenticRetriever_v2/assets/trainer_launcher/recall_preflight.py`
+
+保留这个 wrapper 的目的只是维持旧入口可用，避免其它脚本立即跟随迁移。新代码应优先
+调用 `trainer_launcher/recall_preflight.py semantic`。
+"""
 
 from __future__ import annotations
 
 import argparse
-import json
-import urllib.request
+import sys
+from pathlib import Path
+
+if __package__ is None or __package__ == "":
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from trainer_launcher.recall_preflight import RecallPreflightConfig, run_semantic_preflight
+from trainer_launcher.recall_preflight import _print_semantic_success as print_semantic_success
 
 
-def main() -> None:
+def main() -> int:
+    """兼容旧 CLI 参数，并委托给新的 recall_preflight semantic 实现。"""
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--project-root", default="CoAgenticRetriever")
     parser.add_argument("--url", default="http://127.0.0.1:8010/retrieve")
@@ -19,61 +35,23 @@ def main() -> None:
     parser.add_argument("--timeout", type=float, default=120.0)
     args = parser.parse_args()
 
-    if args.top_m < 1:
-        raise SystemExit(f"ERROR: --top-m must be a positive integer; got {args.top_m}")
-    if args.top_n < 1:
-        raise SystemExit(f"ERROR: --top-n must be a positive integer; got {args.top_n}")
-    if args.top_m > args.top_n:
-        raise SystemExit(f"ERROR: --top-m {args.top_m} exceeds --top-n {args.top_n}")
-    if args.top_m > 5:
-        raise SystemExit(
-            "ERROR: --top-m exceeds current reward preflight limit of 5 visible documents; "
-            "use agent-visible TOP_M here, not ranker.top_k/RANK_TOP_K."
+    try:
+        result = run_semantic_preflight(
+            RecallPreflightConfig(
+                url=args.url,
+                query=args.query,
+                top_n=args.top_n,
+                top_m=args.top_m,
+                expect_contains=args.expect_contains,
+                timeout=args.timeout,
+            )
         )
-
-    payload = json.dumps(
-        {
-            "queries": [args.query],
-            "topk": args.top_n,
-            "return_scores": True,
-        }
-    ).encode("utf-8")
-    request = urllib.request.Request(
-        args.url,
-        data=payload,
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    with urllib.request.urlopen(request, timeout=args.timeout) as response:
-        data = json.loads(response.read().decode("utf-8"))
-    raw_candidates = (data.get("result") or [[]])[0]
-    documents = []
-    for idx, item in enumerate(raw_candidates, start=1):
-        doc = item.get("document", item) if isinstance(item, dict) else {}
-        score = item.get("score", doc.get("score", 0.0)) if isinstance(item, dict) else 0.0
-        documents.append(
-            {
-                "rank": idx,
-                "id": str(doc.get("id", "")),
-                "title": str(doc.get("title", "")),
-                "contents": str(doc.get("contents") or doc.get("text") or doc.get("passage") or ""),
-                "score": float(score or 0.0),
-            }
-        )
-    text = "\n".join(f"{doc['title']}\n{doc['contents']}" for doc in documents[: args.top_m])
-    if args.expect_contains and args.expect_contains.lower() not in text.lower():
-        raise SystemExit(f"ERROR: expected substring not found in recall top-{args.top_m}: {args.expect_contains}")
-    if len(documents) != args.top_n:
-        raise SystemExit(f"ERROR: expected {args.top_n} recall docs, got {len(documents)}")
-
-    print("CoAgentic retrieval verification passed.")
-    print(f"  url:      {args.url}")
-    print(f"  query:    {args.query}")
-    print(f"  top_n:    {args.top_n}")
-    print(f"  top_m:    {args.top_m}")
-    print("  metrics:  " + json.dumps({"num_recall_docs": len(documents)}, ensure_ascii=False, sort_keys=True))
-    print("  preview:  " + (text.splitlines()[0] if text.splitlines() else "")[:160])
+    except Exception as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    print_semantic_success(result)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

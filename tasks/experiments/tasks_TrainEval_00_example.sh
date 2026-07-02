@@ -26,10 +26,10 @@ TASK_SEQUENCE_RELEASE_GPUS="${TASK_SEQUENCE_RELEASE_GPUS:-1}"
 TASK_SEQUENCE_RELEASE_CURRENT_USER_ONLY="${TASK_SEQUENCE_RELEASE_CURRENT_USER_ONLY:-1}"
 TASK_SEQUENCE_RELEASE_GRACE_SECONDS="${TASK_SEQUENCE_RELEASE_GRACE_SECONDS:-20}"
 
-TRAIN_SCRIPT="${TRAIN_SCRIPT:-${ROOT}/tasks/train_tasks/coAgenticRetriever/train_CAR_async_labeling_ds_flash_mix_signal_fix.sh}"
+TRAIN_SCRIPT="${TRAIN_SCRIPT:-${ROOT}/tasks/train_tasks/coAgenticRetriever/train_CAR_async_ranker_training_ds_flash_mix_signal_fix.sh}"
 EVAL_SCRIPT="${EVAL_SCRIPT:-${ROOT}/tasks/eval_tasks/coAgenticRetriever/eval_CAR_async_label_dpskv4f_v0622.sh}"
 
-# 训练默认占用全套 async-labeling 资源：
+# 训练默认占用全套 async-ranker-training 资源：
 # agent: 0,1,2,3；ranker: 4；retriever: 5；judge: 6,7。
 TRAIN_GPUS="${TRAIN_GPUS:-0,1,2,3,4,5,6,7}"
 
@@ -37,7 +37,7 @@ TRAIN_GPUS="${TRAIN_GPUS:-0,1,2,3,4,5,6,7}"
 EVAL_GPUS="${EVAL_GPUS:-0,1,2,3}"
 
 # 第 1 步：训练。
-task_sequence_run "train-async-labeling" "${TRAIN_GPUS}" \
+task_sequence_run "train-async-ranker-training" "${TRAIN_GPUS}" \
   env \
     WAIT_FOR_GPU_RELEASE=0 \
     RELEASE_GPUS_ON_EXIT="${RELEASE_GPUS_ON_EXIT:-1}" \
@@ -48,7 +48,7 @@ task_sequence_run "train-async-labeling" "${TRAIN_GPUS}" \
 task_sequence_release_gpus "release-after-train" "${TRAIN_GPUS}"
 
 # 第 3 步：评估。
-task_sequence_run "eval-async-labeling" "${EVAL_GPUS}" \
+task_sequence_run "eval-async-ranker-training" "${EVAL_GPUS}" \
   env \
     WAIT_FOR_GPU_RELEASE=0 \
     bash "${EVAL_SCRIPT}"

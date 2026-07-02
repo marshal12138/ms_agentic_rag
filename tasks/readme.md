@@ -101,7 +101,7 @@ log/task_sequences/<stamp>-<TASK_SEQUENCE_NAME>/
 1. 运行训练任务：
 
 ```text
-tasks/train_tasks/coAgenticRetriever/train_CAR_async_labeling_ds_flash_mix_signal_fix.sh
+tasks/train_tasks/coAgenticRetriever/train_CAR_async_ranker_training_ds_flash_mix_signal_fix.sh
 ```
 
 2. 训练结束后兜底释放训练 GPU。

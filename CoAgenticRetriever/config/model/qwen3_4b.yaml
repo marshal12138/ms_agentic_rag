@@ -1,0 +1,43 @@
+# Qwen3-4B model defaults for canonical CoSearch-aligned training.
+
+_target_: verl.workers.config.HFModelConfig
+
+path: /data01/ms_wksp/agent_up_to_date/models/llm/Qwen3-4B
+
+hf_config_path: null
+
+tokenizer_path: null
+
+use_shm: false
+
+trust_remote_code: true
+
+custom_chat_template: null
+
+external_lib: null
+
+override_config:
+  attn_implementation: flash_attention_2
+
+enable_gradient_checkpointing: true
+
+enable_activation_offload: false
+
+use_remove_padding: true
+
+lora_rank: 0
+
+lora_alpha: 16
+
+target_modules: all-linear
+
+exclude_modules: null
+
+lora_adapter_path: null
+
+use_liger: false
+
+use_fused_kernels: false
+
+fused_kernel_options:
+  impl_backend: torch

@@ -58,6 +58,10 @@ def _progress_interval(env_name: str, default: int) -> int:
         return default
 
 
+def _prometheus_enabled(rollout_config: DictConfig) -> bool:
+    return bool(OmegaConf.select(rollout_config, "prometheus.enable", default=False))
+
+
 def _wait_with_progress(futures, *, label: str, total_items: int, step: int, rollout_n: int = 1):
     """Wait for Ray futures and print coarse batch progress as workers finish."""
     pending = list(futures)
@@ -880,7 +884,7 @@ class AgentLoopManager:
         print(f"AgentLoopManager: Main agent servers initialized at {self.server_addresses}")
 
         # Update Prometheus configuration with server addresses
-        if rollout_config.prometheus.enable:
+        if _prometheus_enabled(rollout_config):
             if rollout_config.disable_log_stats:
                 raise ValueError("PROMETHEUS needs disable_log_stats==False, but it is currently True.")
             update_prometheus_config(rollout_config.prometheus, self.server_addresses)
@@ -1462,7 +1466,7 @@ class SearchR1DualAgentLoopManager(AgentLoopManager):
         print(f"[SearchR1DualAgent] Reranker servers initialized at {self.reranker_server_addresses}")
         
         # Update Prometheus for reranker if enabled
-        if rollout_config.prometheus.enable:
+        if _prometheus_enabled(rollout_config):
             if rollout_config.disable_log_stats:
                 raise ValueError("PROMETHEUS needs disable_log_stats==False for reranker.")
             update_prometheus_config(rollout_config.prometheus, self.reranker_server_addresses)
@@ -2089,4 +2093,3 @@ class SearchR1RerankerRewardAgentLoopWorkerBase(SearchR1RerankerAgentLoopWorkerB
         
         # Call parent (SearchR1RerankerAgentLoopWorkerBase)
         super().__init__(config, server_handles, reranker_server_handles, reward_router_address)
-

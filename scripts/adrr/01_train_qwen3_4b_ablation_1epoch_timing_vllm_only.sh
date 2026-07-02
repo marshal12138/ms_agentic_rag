@@ -120,15 +120,15 @@ AUTO_STOP_RECALL_SERVICE="${AUTO_STOP_RECALL_SERVICE:-1}"
 RECALL_SERVICE_WAIT_SECONDS="${RECALL_SERVICE_WAIT_SECONDS:-240}"
 RETRIEVAL_PREFLIGHT_QUERY="${RETRIEVAL_PREFLIGHT_QUERY:-who got the first nobel prize in physics?}"
 RETRIEVAL_PREFLIGHT_EXPECT="${RETRIEVAL_PREFLIGHT_EXPECT:-}"
-ENABLE_ASYNC_LABELING="${ENABLE_ASYNC_LABELING:-0}"
-ASYNC_LABELING_YAML="${ASYNC_LABELING_YAML:-}"
+ENABLE_ASYNC_RANKER_TRAINING="${ENABLE_ASYNC_RANKER_TRAINING:-0}"
+ASYNC_RANKER_TRAINING_YAML="${ASYNC_RANKER_TRAINING_YAML:-}"
 AUTO_START_LLM_JUDGE="${AUTO_START_LLM_JUDGE:-0}"
 AUTO_STOP_LLM_JUDGE="${AUTO_STOP_LLM_JUDGE:-0}"
-LLM_JUDGE_SERVICE_CONFIG="${LLM_JUDGE_SERVICE_CONFIG:-${PROJECT_ROOT}/async_labeling/configs/llm_judge_vllm_deepseek_flash_gpu06_07.yaml}"
+LLM_JUDGE_SERVICE_CONFIG="${LLM_JUDGE_SERVICE_CONFIG:-${PROJECT_ROOT}/async_ranker_training/configs/llm_judge_vllm_deepseek_flash_gpu06_07.yaml}"
 LLM_JUDGE_ENDPOINT="${LLM_JUDGE_ENDPOINT:-http://127.0.0.1:8067/v1/chat/completions}"
 LLM_JUDGE_PREFLIGHT="${LLM_JUDGE_PREFLIGHT:-1}"
 LLM_JUDGE_WAIT_SECONDS="${LLM_JUDGE_WAIT_SECONDS:-600}"
-ASYNC_LABELING_LOG_DIR="${ASYNC_LABELING_LOG_DIR:-${LOG_DIR}/async_labeling}"
+ASYNC_RANKER_TRAINING_LOG_DIR="${ASYNC_RANKER_TRAINING_LOG_DIR:-${LOG_DIR}/async_ranker_training}"
 
 RANKER_CONTRASTIVE_BATCH_SIZE="${RANKER_CONTRASTIVE_BATCH_SIZE:-}"
 RANKER_GRADIENT_ACCUMULATION_STEPS="${RANKER_GRADIENT_ACCUMULATION_STEPS:-}"
@@ -307,24 +307,24 @@ cleanup_llm_judge_service() {
   fi
 }
 
-validate_async_labeling_config() {
-  if ! is_truthy "${ENABLE_ASYNC_LABELING}"; then
+validate_async_ranker_training_config() {
+  if ! is_truthy "${ENABLE_ASYNC_RANKER_TRAINING}"; then
     return 0
   fi
-  if [[ -z "${ASYNC_LABELING_YAML}" ]]; then
-    echo "ERROR: ENABLE_ASYNC_LABELING=1 requires ASYNC_LABELING_YAML." >&2
+  if [[ -z "${ASYNC_RANKER_TRAINING_YAML}" ]]; then
+    echo "ERROR: ENABLE_ASYNC_RANKER_TRAINING=1 requires ASYNC_RANKER_TRAINING_YAML." >&2
     exit 2
   fi
-  if [[ ! -f "${ASYNC_LABELING_YAML}" ]]; then
-    echo "ERROR: async labeling YAML not found: ${ASYNC_LABELING_YAML}" >&2
+  if [[ ! -f "${ASYNC_RANKER_TRAINING_YAML}" ]]; then
+    echo "ERROR: async ranker training YAML not found: ${ASYNC_RANKER_TRAINING_YAML}" >&2
     exit 2
   fi
   if [[ ! -f "${LLM_JUDGE_SERVICE_CONFIG}" ]]; then
     echo "ERROR: LLM judge service config not found: ${LLM_JUDGE_SERVICE_CONFIG}" >&2
     exit 2
   fi
-  hydra_yaml_overrides_to_array async_labeling_dryrun_args "${PY}" "${ASYNC_LABELING_YAML}" >/dev/null
-  "${PY}" - "${ASYNC_LABELING_YAML}" "${PROJECT_ROOT}" <<'PY'
+  hydra_yaml_overrides_to_array async_ranker_training_dryrun_args "${PY}" "${ASYNC_RANKER_TRAINING_YAML}" >/dev/null
+  "${PY}" - "${ASYNC_RANKER_TRAINING_YAML}" "${PROJECT_ROOT}" <<'PY'
 import sys
 from pathlib import Path
 
@@ -332,10 +332,10 @@ from omegaconf import OmegaConf
 
 project_root = Path(sys.argv[2])
 sys.path.insert(0, str(project_root))
-from async_labeling.config import validate_prompt_path
+from async_ranker_training.config import validate_prompt_path
 
 cfg = OmegaConf.load(sys.argv[1])
-stages = OmegaConf.select(cfg, "ranker_training.async_labeling.stages") or []
+stages = OmegaConf.select(cfg, "ranker_training.async_ranker_training.stages") or []
 for stage in stages:
     if stage.get("type") != "llm_as_judge":
         continue
@@ -344,16 +344,16 @@ for stage in stages:
         raise SystemExit("ERROR: llm_as_judge stage is missing prompt.path")
     validate_prompt_path(str(prompt_path), project_root=project_root)
 PY
-  LLM_JUDGE_LOG_DIR="${ASYNC_LABELING_LOG_DIR}/judge_server" \
+  LLM_JUDGE_LOG_DIR="${ASYNC_RANKER_TRAINING_LOG_DIR}/judge_server" \
     bash "${PROJECT_ROOT}/scripts/launch_llm_as_judge.sh" --config "${LLM_JUDGE_SERVICE_CONFIG}" --dry-run >/dev/null
-  mkdir -p "${ASYNC_LABELING_LOG_DIR}" "${ASYNC_LABELING_LOG_DIR}/judge_server"
+  mkdir -p "${ASYNC_RANKER_TRAINING_LOG_DIR}" "${ASYNC_RANKER_TRAINING_LOG_DIR}/judge_server"
 }
 
 ensure_llm_judge_service() {
-  if ! is_truthy "${ENABLE_ASYNC_LABELING}"; then
+  if ! is_truthy "${ENABLE_ASYNC_RANKER_TRAINING}"; then
     return 0
   fi
-  validate_async_labeling_config
+  validate_async_ranker_training_config
   if is_truthy "${LLM_JUDGE_PREFLIGHT}" && check_llm_judge_service; then
     echo "LLM judge service already available: ${LLM_JUDGE_ENDPOINT}"
     return 0
@@ -371,9 +371,9 @@ ensure_llm_judge_service() {
   echo "Starting LLM judge service"
   echo "  config=${LLM_JUDGE_SERVICE_CONFIG}"
   echo "  endpoint=${LLM_JUDGE_ENDPOINT}"
-  LLM_JUDGE_LOG_DIR="${ASYNC_LABELING_LOG_DIR}/judge_server" \
+  LLM_JUDGE_LOG_DIR="${ASYNC_RANKER_TRAINING_LOG_DIR}/judge_server" \
     bash "${PROJECT_ROOT}/scripts/launch_llm_as_judge.sh" --config "${LLM_JUDGE_SERVICE_CONFIG}"
-  local judge_pid_file="${ASYNC_LABELING_LOG_DIR}/judge_server/vllm_gpu06_07_8067.pid"
+  local judge_pid_file="${ASYNC_RANKER_TRAINING_LOG_DIR}/judge_server/vllm_gpu06_07_8067.pid"
   if [[ -f "${judge_pid_file}" ]]; then
     LLM_JUDGE_PID="$(cat "${judge_pid_file}")"
   fi
@@ -515,15 +515,15 @@ RANKER_MAX_QUERY_LENGTH=${RANKER_MAX_QUERY_LENGTH}
 RANKER_MAX_DOC_LENGTH=${RANKER_MAX_DOC_LENGTH}
 HYDRA_OVERRIDE_YAMLS=${HYDRA_OVERRIDE_YAMLS:-}
 RANKER_STRATEGY_YAML=${RANKER_STRATEGY_YAML:-}
-ENABLE_ASYNC_LABELING=${ENABLE_ASYNC_LABELING}
-ASYNC_LABELING_YAML=${ASYNC_LABELING_YAML}
+ENABLE_ASYNC_RANKER_TRAINING=${ENABLE_ASYNC_RANKER_TRAINING}
+ASYNC_RANKER_TRAINING_YAML=${ASYNC_RANKER_TRAINING_YAML}
 AUTO_START_LLM_JUDGE=${AUTO_START_LLM_JUDGE}
 AUTO_STOP_LLM_JUDGE=${AUTO_STOP_LLM_JUDGE}
 LLM_JUDGE_SERVICE_CONFIG=${LLM_JUDGE_SERVICE_CONFIG}
 LLM_JUDGE_ENDPOINT=${LLM_JUDGE_ENDPOINT}
 LLM_JUDGE_PREFLIGHT=${LLM_JUDGE_PREFLIGHT}
 LLM_JUDGE_WAIT_SECONDS=${LLM_JUDGE_WAIT_SECONDS}
-ASYNC_LABELING_LOG_DIR=${ASYNC_LABELING_LOG_DIR}
+ASYNC_RANKER_TRAINING_LOG_DIR=${ASYNC_RANKER_TRAINING_LOG_DIR}
 RECALL_GPU_ID=${RECALL_GPU_ID}
 RANK_GPU_ID=${RANK_GPU_ID}
 RANKER_VISIBLE_DEVICE_INDEX=${RANKER_VISIBLE_DEVICE_INDEX}
@@ -560,7 +560,7 @@ check_paths() {
 
 write_env
 check_paths
-validate_async_labeling_config
+validate_async_ranker_training_config
 
 if [[ "${DRY_RUN:-0}" == "1" ]]; then
   echo "DRY_RUN=1; configuration written to ${LOG_DIR}/${RUN_NAME}.env"
@@ -571,9 +571,9 @@ if [[ "${DRY_RUN:-0}" == "1" ]]; then
   echo "report prefix: ${REPORT_PREFIX}"
   echo "rollout trace mode: ${ROLLOUT_TRACE_MODE}"
   echo "checkpoint dir is reserved for actual model checkpoint writes: ${OUT_DIR}"
-  if is_truthy "${ENABLE_ASYNC_LABELING}"; then
-    echo "async labeling yaml: ${ASYNC_LABELING_YAML}"
-    echo "async labeling log dir: ${ASYNC_LABELING_LOG_DIR}"
+  if is_truthy "${ENABLE_ASYNC_RANKER_TRAINING}"; then
+    echo "async ranker training yaml: ${ASYNC_RANKER_TRAINING_YAML}"
+    echo "async ranker training log dir: ${ASYNC_RANKER_TRAINING_LOG_DIR}"
     echo "llm judge service config: ${LLM_JUDGE_SERVICE_CONFIG}"
     echo "llm judge endpoint: ${LLM_JUDGE_ENDPOINT}"
   fi
@@ -681,10 +681,10 @@ export RETRIEVAL_PREFLIGHT_QUERY
 export RETRIEVAL_PREFLIGHT_EXPECT
 export TOP_N
 export TOP_M
-export ENABLE_ASYNC_LABELING
-export ASYNC_LABELING_YAML
+export ENABLE_ASYNC_RANKER_TRAINING
+export ASYNC_RANKER_TRAINING_YAML
 export LLM_JUDGE_ENDPOINT
-export ASYNC_LABELING_LOG_DIR
+export ASYNC_RANKER_TRAINING_LOG_DIR
 export SAVE_TOP_N_DOCUMENTS=true
 export COAGENTIC_RETRIEVER_LLM_IO_JSONL="${COAGENTIC_RETRIEVER_LLM_IO_JSONL:-${LOG_DIR}/${RUN_NAME}.llm_io.jsonl}"
 export COAGENTIC_RETRIEVER_LLM_IO_MAX_RECORDS="${COAGENTIC_RETRIEVER_LLM_IO_MAX_RECORDS:-20}"

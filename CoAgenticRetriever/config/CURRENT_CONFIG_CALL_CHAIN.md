@@ -50,8 +50,8 @@ coagentic_retriever_trainer.yaml
 ├── critic@critic: dp_critic
 ├── reward_model@reward_model: dp_reward_model
 ├── algorithm@algorithm.rollout_correction: rollout_correction
-├── ranker_contrastive
-├── async_labeling
+├── experimental/ranker_base@_global_: ranker_contrastive
+├── experimental/async_ranker_training_base@_global_: async_ranker_training
 └── _self_
 ```
 
@@ -67,8 +67,8 @@ CoAgenticRetriever/config/coagentic_retriever_trainer.yaml
 ├── CoAgenticRetriever/config/critic/dp_critic.yaml
 ├── CoAgenticRetriever/config/reward_model/dp_reward_model.yaml
 ├── CoAgenticRetriever/config/algorithm/rollout_correction.yaml
-├── CoAgenticRetriever/config/ranker_contrastive.yaml
-└── CoAgenticRetriever/config/async_labeling.yaml
+├── CoAgenticRetriever/config/experimental/ranker_base/ranker_contrastive.yaml
+└── CoAgenticRetriever/config/experimental/async_ranker_training_base/async_ranker_training.yaml
 ```
 
 ## 3. 嵌套 Defaults
@@ -226,13 +226,13 @@ algorithm@algorithm.rollout_correction: rollout_correction
   -> CoAgenticRetriever/config/algorithm/rollout_correction.yaml
   -> 最终挂载位置：algorithm.rollout_correction
 
-ranker_contrastive
-  -> CoAgenticRetriever/config/ranker_contrastive.yaml
+experimental/ranker_base@_global_: ranker_contrastive
+  -> CoAgenticRetriever/config/experimental/ranker_base/ranker_contrastive.yaml
   -> 最终挂载位置：trainer / recall_retriever / ranker / ranker_training
 
-async_labeling
-  -> CoAgenticRetriever/config/async_labeling.yaml
-  -> 最终挂载位置：ranker_training.signal_source / ranker_training.shared_inference_ranker / ranker_training.async_labeling
+experimental/async_ranker_training_base@_global_: async_ranker_training
+  -> CoAgenticRetriever/config/experimental/async_ranker_training_base/async_ranker_training.yaml
+  -> 最终挂载位置：ranker_training.signal_source / ranker_training.shared_inference_ranker / ranker_training.async_ranker_training
 ```
 
 ## 5. 运行时引用的 Config
@@ -278,8 +278,8 @@ Hydra defaults 自动组合：
   critic/dp_critic.yaml
   reward_model/dp_reward_model.yaml
   algorithm/rollout_correction.yaml
-  ranker_contrastive.yaml
-  async_labeling.yaml
+  experimental/ranker_base/ranker_contrastive.yaml
+  experimental/async_ranker_training_base/async_ranker_training.yaml
 
 字段路径指向后运行时加载：
   coagentic_retriever_tool_config.yaml
@@ -308,8 +308,8 @@ main_coagentic_retriever.py
     ├── reward_model@reward_model: reward_model/dp_reward_model.yaml
     │   └── reward_model/reward_model.yaml
     ├── algorithm@algorithm.rollout_correction: algorithm/rollout_correction.yaml
-    ├── ranker_contrastive.yaml
-    ├── async_labeling.yaml
+    ├── experimental/ranker_base/ranker_contrastive.yaml
+    ├── experimental/async_ranker_training_base/async_ranker_training.yaml
     └── _self_
 
 运行时路径引用，不是 Hydra defaults：

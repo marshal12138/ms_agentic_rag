@@ -6,13 +6,13 @@
 
 当前已接入统一命名和防覆盖规则的训练入口主要包括：
 
-- `tasks/train_tasks/coAgenticRetriever/train_CAR_async_labeling_ds_flash_mix_signal_fix.sh`
+- `tasks/train_tasks/coAgenticRetriever/train_CAR_async_ranker_training_ds_flash_mix_signal_fix.sh`
 - `scripts/coagenticRetriever_local/01_train_qwen3_4b_ablation_1epoch_timing.sh`
 - `scripts/cosearch_local/09_train_qwen3_4b_dense_5step_probe.sh`
 - `scripts/cosearch_local/09b_train_qwen3_4b_smallbatch_4retrievers_timing copy.sh`
 - `scripts/cosearch_local/10_train_qwen3_4b_64batch_8retrievers.sh`
 
-其中 `tasks/train_tasks/...` 是任务入口层，负责固定本次实验所需的 GPU、budget YAML、async-labeling YAML、tool schema 开关等任务参数；底层仍会调用 `scripts/coagenticRetriever_local/01_train_qwen3_4b_ablation_1epoch_timing.sh`。
+其中 `tasks/train_tasks/...` 是任务入口层，负责固定本次实验所需的 GPU、budget YAML、async-ranker-training YAML、tool schema 开关等任务参数；底层仍会调用 `scripts/coagenticRetriever_local/01_train_qwen3_4b_ablation_1epoch_timing.sh`。
 
 这些脚本都遵循同一套命名思路：
 
@@ -158,15 +158,15 @@ EXP_NAME=coagentic_ranker_neg15_top5 \
 bash scripts/coagenticRetriever_local/01_train_qwen3_4b_ablation_1epoch_timing.sh
 ```
 
-### `tasks/train_tasks/coAgenticRetriever/train_CAR_async_labeling_ds_flash_mix_signal_fix.sh`
+### `tasks/train_tasks/coAgenticRetriever/train_CAR_async_ranker_training_ds_flash_mix_signal_fix.sh`
 
-这是当前 CoAgenticRetriever async-labeling 训练任务入口。它在 task 层固定了常用实验参数：
+这是当前 CoAgenticRetriever async-ranker-training 训练任务入口。它在 task 层固定了常用实验参数：
 
 - agent GPU：默认 `AGENT_GPU_IDS=0,1,2,3`
 - dense ranker GPU：默认 `RANK_GPU_ID=4`
 - recall retriever GPU：默认 `RECALL_GPU_ID=5`
 - LLM judge GPU：默认 `LLM_JUDGE_GPU_IDS=6,7`
-- async-labeling 配置：默认 `scripts/coagenticRetriever_local/strategies_yaml/async_labeling_deepseek_flash.yaml`
+- async-ranker-training 配置：默认 `scripts/coagenticRetriever_local/strategies_yaml/async_ranker_training_deepseek_flash.yaml`
 - rollout budget YAML：默认 `scripts/coagenticRetriever_local/strategies_yaml/rollout_cosearch_aligned_budget.yaml`
 - tool schema 注入：默认 `INJECT_TOOL_SCHEMA=false`
 
@@ -174,14 +174,14 @@ bash scripts/coagenticRetriever_local/01_train_qwen3_4b_ablation_1epoch_timing.s
 
 ```bash
 cd /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives
-bash tasks/train_tasks/coAgenticRetriever/train_CAR_async_labeling_ds_flash_mix_signal_fix.sh
+bash tasks/train_tasks/coAgenticRetriever/train_CAR_async_ranker_training_ds_flash_mix_signal_fix.sh
 ```
 
 用于 smoke 时可以覆盖步数：
 
 ```bash
 TOTAL_STEPS=2 \
-bash tasks/train_tasks/coAgenticRetriever/train_CAR_async_labeling_ds_flash_mix_signal_fix.sh
+bash tasks/train_tasks/coAgenticRetriever/train_CAR_async_ranker_training_ds_flash_mix_signal_fix.sh
 ```
 
 如果该训练任务由 `tasks/experiments/*.sh` 编排脚本调用，推荐在编排命令里设置：
@@ -307,7 +307,7 @@ tasks/experiments/tasks_TrainEval_00_example.sh
 该示例会：
 
 1. 等待训练所需 GPU。
-2. 运行 `tasks/train_tasks/coAgenticRetriever/train_CAR_async_labeling_ds_flash_mix_signal_fix.sh`。
+2. 运行 `tasks/train_tasks/coAgenticRetriever/train_CAR_async_ranker_training_ds_flash_mix_signal_fix.sh`。
 3. 训练后执行一次 GPU 释放兜底。
 4. 等待评估所需 GPU。
 5. 运行 `tasks/eval_tasks/coAgenticRetriever/eval_CAR_async_label_dpskv4f_v0622.sh`。

@@ -1,0 +1,31 @@
+service:
+  name: llm_judge_glm_4_7_flash_gpu06_07
+  backend: vllm
+
+model:
+  model_path: /data01/ms_wksp/agent_up_to_date/models/llm/GLM-4.7-Flash
+  served_model_name: GLM-4.7-Flash
+  trust_remote_code: true
+
+server:
+  host: 0.0.0.0
+  port: 8067
+  endpoint: http://127.0.0.1:8067/v1/chat/completions
+
+runtime:
+  python: /data05/conda/envs/ms/deepseek_v4/bin/python
+  vllm: /data05/conda/envs/ms/deepseek_v4/bin/vllm
+  env_site_packages: /data05/conda/envs/ms/deepseek_v4/lib/python3.11/site-packages
+  cuda_visible_devices: "6,7"
+  tensor_parallel_size: 2
+  gpu_memory_utilization: 0.95
+  max_model_len: 32000
+  kv_cache_dtype: fp4
+  linear_backend: auto
+  moe_backend: auto
+  disable_custom_all_reduce: true
+
+logs:
+  log_dir: null
+  log_file: vllm_glm_4_7_flash_gpu06_07_8067.log
+  pid_file: vllm_glm_4_7_flash_gpu06_07_8067.pid

@@ -1,0 +1,191 @@
+# Qwen3-4B 在 CoSearch 对齐训练中的异步 rollout 默认配置。
+
+defaults:
+  - rollout
+  - _self_
+
+# Hydra 实例化 rollout 配置时使用的目标配置类。
+_target_: verl.workers.config.RolloutConfig
+
+# 使用 vLLM 作为 rollout 推理后端。
+name: vllm
+
+# 使用异步 rollout 模式，配合 AgentLoop 和工具调用并发采样。
+mode: async
+
+# 训练 rollout 的采样温度，1.0 表示保留正常随机采样。
+temperature: 1.0
+
+# top-k 采样参数，vLLM 中 -1 表示不启用 top-k 截断。
+top_k: -1
+
+# top-p 采样参数，1 表示不启用 nucleus 截断。
+top_p: 1
+
+# rollout prompt 最大 token 长度，跟随 data 侧事实源。
+prompt_length: ${data.max_prompt_length}
+
+# rollout response 最大生成 token 长度，跟随 data 侧事实源。
+response_length: ${data.max_response_length}
+
+# vLLM 推理使用的张量数据类型。
+dtype: bfloat16
+
+# vLLM KV cache 可使用的 GPU 显存比例。
+gpu_memory_utilization: 0.55
+
+# 是否忽略 EOS 继续生成，false 表示遇到 EOS 后停止。
+ignore_eos: false
+
+# 是否强制 eager 模式，true 可降低 CUDA graph 相关不确定性。
+enforce_eager: true
+
+# CUDA graph 捕获 batch size 列表，null 表示不单独指定。
+cudagraph_capture_sizes: null
+
+# rollout 后是否释放推理引擎缓存。
+free_cache_engine: true
+
+# rollout 推理的 tensor parallel 大小。
+tensor_model_parallel_size: 1
+
+# rollout 推理的数据并行大小。
+data_parallel_size: 1
+
+# rollout 推理的 expert parallel 大小。
+expert_parallel_size: 1
+
+# rollout 推理的 pipeline parallel 大小。
+pipeline_model_parallel_size: 1
+
+# vLLM 单个 batch 允许的最大 token 数。
+max_num_batched_tokens: 16096
+
+# vLLM 模型上下文最大长度。
+max_model_len: 16096
+
+# vLLM 同时处理的最大序列数。
+max_num_seqs: 16
+
+# 是否启用 chunked prefill，以改善长上下文吞吐。
+enable_chunked_prefill: true
+
+# 是否启用 prefix cache，复用重复前缀的 KV cache。
+enable_prefix_caching: true
+
+# rollout worker 加载模型权重的格式，dummy 表示由训练权重同步提供。
+load_format: dummy
+
+# 旧版全局 log-prob micro batch 配置，null 表示不用旧字段。
+log_prob_micro_batch_size: null
+
+# 每张 GPU 计算 log-prob 的 micro batch size。
+log_prob_micro_batch_size_per_gpu: 8
+
+# log-prob 是否启用动态 batch，默认跟随 actor 配置。
+log_prob_use_dynamic_bsz: ${oc.select:actor_rollout_ref.actor.use_dynamic_bsz,false}
+
+# 每张 GPU 计算 log-prob 时允许的最大 token 数。
+log_prob_max_token_len_per_gpu: ${oc.select:actor_rollout_ref.actor.ppo_max_token_len_per_gpu,16384}
+
+# 是否关闭 rollout 统计日志，true 表示减少后端统计输出。
+disable_log_stats: true
+
+# 训练 rollout 是否采样生成，true 表示使用采样而非贪心。
+do_sample: true
+
+# 每个 prompt 的采样条数，用于 GRPO 多样本 rollout。
+n: 8
+
+# 过采样早停比例，0 表示不启用过采样早停。
+over_sample_rate: 0
+
+# SGLang 多阶段唤醒开关，当前使用 vLLM 因此关闭。
+multi_stage_wake_up: false
+
+# 推理引擎的额外后端参数。
+engine_kwargs:
+  # vLLM 后端的额外参数，当前不额外覆盖。
+  vllm: {}
+  # SGLang 后端的额外参数，当前不额外覆盖。
+  sglang: {}
+
+# 验证阶段的采样参数。
+val_kwargs:
+  # Hydra 实例化验证采样配置时使用的目标配置类。
+  _target_: verl.workers.config.SamplingConfig
+  # 验证阶段 top-k，-1 表示不启用 top-k 截断。
+  top_k: -1
+  # 验证阶段 top-p，1.0 表示不启用 nucleus 截断。
+  top_p: 1.0
+  # 验证阶段温度，0 表示确定性生成。
+  temperature: 0
+  # 验证阶段每个 prompt 的生成条数。
+  n: 1
+  # 验证阶段不采样，使用确定性解码。
+  do_sample: false
+
+# 多轮工具交互相关配置。
+multi_turn:
+  # Hydra 实例化多轮配置时使用的目标配置类。
+  _target_: verl.workers.config.MultiTurnConfig
+  # 启用多轮工具交互。
+  enable: true
+  # 单个 rollout 中 assistant 最多响应轮数。
+  max_assistant_turns: 6
+  # 搜索工具配置文件路径。
+  tool_config_path: /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/CoAgenticRetriever/config/coagentic_retriever_tool_config.yaml
+  # 单个 rollout 中 user/tool 侧最多轮数。
+  max_user_turns: 6
+  # 单轮中最多并行工具调用数。
+  max_parallel_calls: 2
+  # 工具响应注入上下文时允许的最大 token 长度，默认跟随 response token budget。
+  max_tool_response_length: ${data.max_response_length}
+  # 工具响应过长时从左侧截断。
+  tool_response_truncate_side: left
+  # 交互配置路径，null 表示不使用额外交互配置。
+  interaction_config_path: null
+  # 是否使用推理端 chat template，false 表示保持训练记录的 token 形式。
+  use_inference_chat_template: false
+  # 多轮 tokenization 一致性检查模式，strict 表示严格检查。
+  tokenization_sanity_check_mode: strict
+  # 多轮工具调用格式，search_r1 对齐 CoSearch/Search-R1 风格。
+  format: search_r1
+  # 每次交互重复 rollout 数，null 表示不额外重复。
+  num_repeat_rollouts: null
+
+# 是否在 rollout 中计算并记录 log-prob，当前关闭。
+calculate_log_probs: false
+
+# AgentLoop worker 相关配置。
+agent:
+  # Hydra 实例化 AgentLoop 配置时使用的目标配置类。
+  _target_: verl.workers.config.AgentLoopConfig
+  # AgentLoop worker 数量。
+  num_workers: 4
+  # 默认使用的 agent loop 名称。
+  default_agent_loop: coagentic_retriever_agent
+  # agent loop 初始化配置文件路径。
+  agent_loop_config_path: /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/CoAgenticRetriever/config/coagentic_retriever_agent_loop_config.yaml
+  # 是否向 Qwen chat template 注入 tool schema；true 表示保留标准工具调用格式。
+  inject_tool_schema: true
+  # 自定义异步服务配置。
+  custom_async_server:
+    # Hydra 实例化自定义异步服务配置时使用的目标配置类。
+    _target_: verl.workers.config.CustomAsyncServerConfig
+    # 自定义异步服务实现文件路径，null 表示不使用。
+    path: null
+    # 自定义异步服务类名，null 表示不使用。
+    name: null
+
+# rollout 权重同步时单次传输 bucket 大小，单位 MB。
+update_weights_bucket_megabytes: 512
+
+# rollout trace 相关配置。
+trace:
+  # Hydra 实例化 trace 配置时使用的目标配置类。
+  _target_: verl.workers.config.TraceConfig
+  # trace 后端，null 表示不启用外部 trace 后端。
+  backend: null
+  # trace 中是否把 token id 转成文本。
+  token2text: false

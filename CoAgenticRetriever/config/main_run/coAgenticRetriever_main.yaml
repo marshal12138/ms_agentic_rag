@@ -1,0 +1,37 @@
+# CoAgenticRetriever launcher 级运行 manifest。
+# 这个文件提供默认运行基线。task 脚本仍然可以保留显式 launcher 参数来提升可读性；
+# task 显式参数会覆盖这里的默认值。
+
+trainer_main_hydra_config: coagentic_retriever_trainer
+
+# launcher 级训练形态。
+#
+# 支持值：
+#   full:
+#     标准 CoAgenticRetriever 训练形态。ranker 训练、共享 ranker 推理、
+#     async ranker training 的具体行为由 ranker/async 相关 base 与 overlay 决定。
+#   no-ranker:
+#     recall-only 训练形态。launcher compiler 会注入具体 Hydra override，
+#     禁用 ranker 训练、共享 ranker 推理和 async ranker training，并默认切到
+#     no-ranker tool config。
+run_mode: full
+
+trainer_config_groups:
+  data: co_search_ablation
+  model: qwen3_4b
+  rollout: cosearch_async_qwen3_4b
+  ranker_base: ranker_contrastive
+  async_ranker_training_base: async_ranker_training
+
+resource_config: local_8gpu_0_7
+
+service_configs:
+  llm_judge_service_config: CoAgenticRetriever/async_ranker_training/configs/llm_judge_vllm_deepseek_flash_gpu06_07.yaml
+
+runtime_configs:
+  tool_config: CoAgenticRetriever/config/coagentic_retriever_tool_config.yaml
+
+overlay_yamls:
+  - scripts/coagenticRetriever_v2/strategies_yaml/async_ranker_training_deepseek_flash_rank50_select_all.yaml
+  - tasks/train_tasks/coAgenticRetriever/configs/mix_signal_b3_overlay.yaml
+  - tasks/train_tasks/coAgenticRetriever/configs/train_args_overlay.yaml

@@ -5,7 +5,7 @@
 入口脚本：
 
 ```bash
-/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/tasks/train_tasks/coAgenticRetriever/train_CAR_async_labeling_ds_flash_mix_signal_fix_v1.sh
+/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/tasks/train_tasks/coAgenticRetriever/train_CAR_async_ranker_training_ds_flash_mix_signal_fix_v1.sh
 ```
 
 最终验证模式：
@@ -29,14 +29,14 @@ TOTAL_STEPS=1
 
 - 不直接重写训练主逻辑。
 - 不为了 NPU 支持移除 CUDA 运行能力。
-- 不强行让 no-ranker 以外的 async-labeling/judge 路径假装已验证。
+- 不强行让 no-ranker 以外的 async-ranker-training/judge 路径假装已验证。
 
 ## 总体调用链
 
 入口 task 脚本调用链大致为：
 
 ```text
-tasks/train_tasks/coAgenticRetriever/train_CAR_async_labeling_ds_flash_mix_signal_fix_v1.sh
+tasks/train_tasks/coAgenticRetriever/train_CAR_async_ranker_training_ds_flash_mix_signal_fix_v1.sh
   -> src/runtime/wait_for_gpus.sh
   -> scripts/coagenticRetriever_local/01_train_qwen3_4b_ablation_1epoch_timing.sh
      -> scripts/coagenticRetriever_local/00_start_dense_retriever_server.sh
@@ -637,7 +637,7 @@ RUN_MODE=no-ranker
 该模式下：
 
 ```bash
-ENABLE_ASYNC_LABELING=0
+ENABLE_ASYNC_RANKER_TRAINING=0
 AUTO_START_LLM_JUDGE=0
 AUTO_STOP_LLM_JUDGE=0
 LLM_JUDGE_PREFLIGHT=0
@@ -653,10 +653,10 @@ CoAgenticRetriever/config/coagentic_retriever_tool_config_no_ranker.yaml
 
 - `ranker_enabled: false`
 - 不启动 LLM judge
-- 不启动 async labeling
+- 不启动 async ranker training
 - 保留 recall retriever 服务和 search tool
 
-最终 smoke 验证的是 no-ranker 训练主链路，不代表 async-labeling + LLM judge 全链路也已完成 NPU 验证。
+最终 smoke 验证的是 no-ranker 训练主链路，不代表 async-ranker-training + LLM judge 全链路也已完成 NPU 验证。
 
 ## 逐层暴露的问题和处理
 
@@ -773,7 +773,7 @@ bash -n \
   src/runtime/wait_for_gpus.sh \
   src/env_manage/compatible_accelerator.sh \
   scripts/coagenticRetriever_local/assets/00_run_agentic_iter_rag_verl.sh \
-  tasks/train_tasks/coAgenticRetriever/train_CAR_async_labeling_ds_flash_mix_signal_fix_v1.sh
+  tasks/train_tasks/coAgenticRetriever/train_CAR_async_ranker_training_ds_flash_mix_signal_fix_v1.sh
 ```
 
 结果：通过。
@@ -787,7 +787,7 @@ env \
   COSEARCH_ACCELERATOR=npu \
   RUN_MODE=no-ranker \
   DRY_RUN=1 \
-  bash tasks/train_tasks/coAgenticRetriever/train_CAR_async_labeling_ds_flash_mix_signal_fix_v1.sh
+  bash tasks/train_tasks/coAgenticRetriever/train_CAR_async_ranker_training_ds_flash_mix_signal_fix_v1.sh
 ```
 
 结果：配置解析和日志路径生成成功。
@@ -808,7 +808,7 @@ timeout 5400s env \
   RECALL_SERVICE_WAIT_SECONDS=900 \
   REPORT_INTERVAL_SECONDS=30 \
   NVIDIA_SMI_INTERVAL=30 \
-  bash /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/tasks/train_tasks/coAgenticRetriever/train_CAR_async_labeling_ds_flash_mix_signal_fix_v1.sh
+  bash /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/tasks/train_tasks/coAgenticRetriever/train_CAR_async_ranker_training_ds_flash_mix_signal_fix_v1.sh
 ```
 
 日志目录：
@@ -887,7 +887,7 @@ Error: No module named 'triton.language.target_info'
 1. 升级到 vLLM Ascend 官方已修复版本。
 2. 在环境构建脚本中显式 patch 该文件，并记录 patch 校验。
 
-### async labeling / LLM judge 未在本轮完成全链路验证
+### async ranker training / LLM judge 未在本轮完成全链路验证
 
 当前训练 smoke 使用：
 
@@ -898,7 +898,7 @@ RUN_MODE=no-ranker
 这会关闭：
 
 ```text
-ENABLE_ASYNC_LABELING
+ENABLE_ASYNC_RANKER_TRAINING
 AUTO_START_LLM_JUDGE
 LLM_JUDGE_PREFLIGHT
 ```
@@ -909,7 +909,7 @@ LLM_JUDGE_PREFLIGHT
 - FP4/FP8 量化配置
 - vLLM Ascend serving 参数
 - judge endpoint preflight
-- async labeling buffer 和 sample builder
+- async ranker training buffer 和 sample builder
 
 ### `nccl_timeout=1800` 不是性能优化
 
@@ -931,4 +931,4 @@ LLM_JUDGE_PREFLIGHT
    - ATB register
    - 4 卡 HCCL all_gather
    - `TOTAL_STEPS=1 RUN_MODE=no-ranker` 训练 smoke
-5. 如果要启用 ranker 或 async-labeling，应新增独立 smoke，不要直接复用 no-ranker 结论。
+5. 如果要启用 ranker 或 async-ranker-training，应新增独立 smoke，不要直接复用 no-ranker 结论。

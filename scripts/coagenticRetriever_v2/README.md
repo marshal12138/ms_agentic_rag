@@ -6,7 +6,7 @@ This directory contains local entries for the retriever contrastive framework.
 
 ```text
 00_start_dense_retriever_server.sh
-01_train_qwen3_4b_ablation_1epoch_timing.sh
+01_train_launcher.sh
 02_infer_qwen3_4b_ablation_val_only.sh
 assets/
 ```
@@ -50,7 +50,7 @@ This physical GPU mapping is represented in two places: YAML defaults under
 in the local scheduling scripts. The `CoAgenticRetriever` core Python code only
 consumes configured device strings and does not hard-code GPU IDs.
 
-In `01_train_qwen3_4b_ablation_1epoch_timing.sh`, `AGENT_GPU_IDS` is the
+In `01_train_launcher.sh`, `AGENT_GPU_IDS` is the
 explicit agent-LLM physical GPU list. `GPU_IDS` is the full-mode process
 visible GPU list and defaults to `${AGENT_GPU_IDS},${RANK_GPU_ID}`.
 
@@ -64,7 +64,7 @@ EXP_NAME=qwen3_4b_probe_rule_v1 \
 TOTAL_STEPS=2 \
 RETRIEVER_CONTRASTIVE_BATCH_SIZE=4 \
 RETRIEVER_NEG_PER_POS=3 \
-bash scripts/coagenticRetriever_local/01_train_qwen3_4b_ablation_1epoch_timing.sh
+bash scripts/coagenticRetriever_v2/01_train_launcher.sh
 ```
 
 Outputs:
@@ -99,7 +99,7 @@ RUN_MODE=ranker-only \
 TOTAL_STEPS=2 \
 RETRIEVER_CONTRASTIVE_BATCH_SIZE=4 \
 RETRIEVER_NEG_PER_POS=3 \
-bash scripts/coagenticRetriever_local/01_train_qwen3_4b_ablation_1epoch_timing.sh
+bash scripts/coagenticRetriever_v2/01_train_launcher.sh
 ```
 
 ## Dense Reranker Only Inference

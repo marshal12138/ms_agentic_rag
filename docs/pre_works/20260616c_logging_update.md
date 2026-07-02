@@ -1,5 +1,5 @@
 ## user:
-目前日志中的/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/log/train_logs/coAgenticRetriever/260616-161547-CAR_async_labeling_ds_flash_v1/rollout_data/main_agent/1.jsonl只存了agent 轨迹，没有observation的完整内容，是否可以打印出完整内容？如果已经实现了，那么通过哪个参数可以控制？它应该是类似于eval脚本中的KEEP_TRACE=full/partial配置字段；如果没有实现，给出你的实现计划
+目前日志中的/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/log/train_logs/coAgenticRetriever/260616-161547-CAR_async_ranker_training_ds_flash_v1/rollout_data/main_agent/1.jsonl只存了agent 轨迹，没有observation的完整内容，是否可以打印出完整内容？如果已经实现了，那么通过哪个参数可以控制？它应该是类似于eval脚本中的KEEP_TRACE=full/partial配置字段；如果没有实现，给出你的实现计划
 ## assistant:
 目前没有实现类似 eval `KEEP_TRACE=full/partial` 的训练侧开关。
 

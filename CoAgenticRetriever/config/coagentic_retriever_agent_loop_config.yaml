@@ -1,6 +1,11 @@
-# CoAgenticRetriever Agent Loop Configuration
+# CoAgenticRetriever Agent Loop 配置文件。
+# 这个文件会被 actor_rollout_ref.rollout.agent.agent_loop_config_path 指向并加载。
+# 加载后，每个条目会注册为一个可用的 agent loop，供 default_agent_loop 按 name 选择。
 
+# AgentLoop 配置列表；当前只注册一个 CoAgenticRetriever 专用的搜索 agent。
 - name: coagentic_retriever_agent
+  # 实际实例化的 Python 类；该类实现多轮生成、解析 search tool call、执行检索工具并回填 observation。
   _target_: verl.experimental.agent_loop.coagentic_retriever_agent_loop.CoAgenticRetrieverAgentLoop
 
+  # 是否跟踪完整 message 序列；false 表示不启用通用消息追踪，训练所需的 tool_call_details 由该 AgentLoop 自己写入 extra_fields。
   track_messages: false

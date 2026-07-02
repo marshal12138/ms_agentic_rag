@@ -34,11 +34,11 @@ from ranker_strategies.config import (
 )
 from ranker_strategies.trajectory_selector import build_fresh_trajectories_from_dataproto
 from verl.workers.ranker.e5_ranker_worker import LocalRankerContrastiveWorker, SharedE5RankerActor
-from async_ranker_strategies.config import build_async_trajectory_selector
-from async_labeling.config import load_async_labeling_config
-from async_labeling.labeler import AsyncLabeler
-from async_labeling.ranker_async_trainer import RankerAsyncTrainer
-from async_labeling.request_builder import build_requests_from_contexts
+from async_ranker_training.strategies.config import build_async_trajectory_selector
+from async_ranker_training.config import load_async_ranker_training_config
+from async_ranker_training.labeler import AsyncLabeler
+from async_ranker_training.ranker_async_trainer import RankerAsyncTrainer
+from async_ranker_training.request_builder import build_requests_from_contexts
 
 
 def _cfg_get(config, path: str, default=None):
@@ -184,26 +184,26 @@ class CoAgenticRankerContrastiveRayTrainer(CoAgenticRetrieverRayTrainer):
         self.ranker_inference_last_sync_step = -1
         if self._shared_inference_ranker_enabled():
             self._init_shared_inference_ranker()
-        self.async_labeling_config = load_async_labeling_config(self.config)
+        self.async_ranker_training_config = load_async_ranker_training_config(self.config)
         self.async_trajectory_selector = None
-        self.async_labeler = None
+        self.async_ranker_labeler = None
         self.ranker_async_trainer = None
-        if self._async_labeling_enabled():
+        if self._async_ranker_training_enabled():
             self.async_trajectory_selector = build_async_trajectory_selector(
-                self.async_labeling_config.trajectory_selector,
+                self.async_ranker_training_config.trajectory_selector,
                 trainer_config=self.config,
             )
-            log_dir = self._async_labeling_log_dir()
-            self.async_labeler = AsyncLabeler(
-                self.async_labeling_config,
+            log_dir = self._async_ranker_training_log_dir()
+            self.async_ranker_labeler = AsyncLabeler(
+                self.async_ranker_training_config,
                 project_root=os.getcwd(),
                 log_dir=log_dir,
             )
-            self.async_labeler.start()
+            self.async_ranker_labeler.start()
             self.ranker_async_trainer = RankerAsyncTrainer(
                 config=self.config,
-                async_config=self.async_labeling_config,
-                async_labeler=self.async_labeler,
+                async_config=self.async_ranker_training_config,
+                async_ranker_labeler=self.async_ranker_labeler,
                 ranker_wg=self.ranker_wg,
                 replay_buffer=self.ranker_replay_buffer,
                 collator=self.ranker_collator,
@@ -211,7 +211,7 @@ class CoAgenticRankerContrastiveRayTrainer(CoAgenticRetrieverRayTrainer):
                 ranker_lock=self.ranker_lock,
                 after_update_callback=self._maybe_sync_shared_inference_ranker,
             )
-            if bool(_cfg_require(self.config, "ranker_training.async_labeling.background_ranker_thread")):
+            if bool(_cfg_require(self.config, "ranker_training.async_ranker_training.background_ranker_thread")):
                 self.ranker_async_trainer.start()
 
     def _shared_inference_ranker_enabled(self) -> bool:
@@ -287,24 +287,24 @@ class CoAgenticRankerContrastiveRayTrainer(CoAgenticRetrieverRayTrainer):
         )
         return sync_metrics
 
-    def _async_labeling_enabled(self) -> bool:
-        return bool(_cfg_require(self.config, "ranker_training.async_labeling.enable")) and (
-            _cfg_require(self.config, "ranker_training.signal_source") == "async_labeling"
+    def _async_ranker_training_enabled(self) -> bool:
+        return bool(_cfg_require(self.config, "ranker_training.async_ranker_training.enable")) and (
+            _cfg_require(self.config, "ranker_training.signal_source") == "async_ranker_training"
         )
 
     def _background_ranker_thread_enabled(self) -> bool:
-        if not self._async_labeling_enabled():
+        if not self._async_ranker_training_enabled():
             return False
-        return bool(_cfg_require(self.config, "ranker_training.async_labeling.background_ranker_thread"))
+        return bool(_cfg_require(self.config, "ranker_training.async_ranker_training.background_ranker_thread"))
 
     def _async_ranker_updates_per_global_step(self) -> int:
-        value = int(_cfg_require(self.config, "ranker_training.async_labeling.ranker_updates_per_global_step"))
+        value = int(_cfg_require(self.config, "ranker_training.async_ranker_training.ranker_updates_per_global_step"))
         if value <= 0:
-            raise ValueError("ranker_training.async_labeling.ranker_updates_per_global_step must be >= 1")
+            raise ValueError("ranker_training.async_ranker_training.ranker_updates_per_global_step must be >= 1")
         return value
 
-    def _async_labeling_log_dir(self) -> str:
-        configured = _cfg_require_present(self.config, "ranker_training.async_labeling.logging.log_dir")
+    def _async_ranker_training_log_dir(self) -> str:
+        configured = _cfg_require_present(self.config, "ranker_training.async_ranker_training.logging.log_dir")
         if configured:
             return str(configured)
         rollout_dir = str(self.config.trainer.get("rollout_data_dir", ""))
@@ -312,7 +312,7 @@ class CoAgenticRankerContrastiveRayTrainer(CoAgenticRetrieverRayTrainer):
             run_dir = os.path.dirname(rollout_dir)
         else:
             run_dir = str(self.config.trainer.default_local_dir)
-        return os.path.join(run_dir, "async_labeling")
+        return os.path.join(run_dir, "async_ranker_training")
 
     def _save_checkpoint(self):
         super()._save_checkpoint()
@@ -379,12 +379,12 @@ class CoAgenticRankerContrastiveRayTrainer(CoAgenticRetrieverRayTrainer):
             "ranked_docs": ranked_docs_count,
         }
 
-    def _submit_async_labeling_requests(self, main_batch) -> dict:
-        if getattr(self, "async_labeler", None) is None:
+    def _submit_async_ranker_training_requests(self, main_batch) -> dict:
+        if getattr(self, "async_ranker_labeler", None) is None:
             return {}
-        self.async_labeler.update_global_step(self.global_steps)
+        self.async_ranker_labeler.update_global_step(self.global_steps)
         prompt_version = ""
-        stages = _cfg_require(self.config, "ranker_training.async_labeling.stages") or []
+        stages = _cfg_require(self.config, "ranker_training.async_ranker_training.stages") or []
         for stage in stages:
             if isinstance(stage, dict) and stage.get("type") == "llm_as_judge":
                 prompt_version = str((stage.get("prompt") or {}).get("version") or "")
@@ -398,22 +398,22 @@ class CoAgenticRankerContrastiveRayTrainer(CoAgenticRetrieverRayTrainer):
         requests, build_metrics = build_requests_from_contexts(
             selected_contexts,
             global_step=self.global_steps,
-            max_sub_query=int(_cfg_require(self.config, "ranker_training.async_labeling.max_sub_query")),
+            max_sub_query=int(_cfg_require(self.config, "ranker_training.async_ranker_training.max_sub_query")),
             prompt_version=prompt_version,
             sub_query_selection_policy=str(
-                _cfg_require(self.config, "ranker_training.async_labeling.sub_query_selection_policy")
+                _cfg_require(self.config, "ranker_training.async_ranker_training.sub_query_selection_policy")
             ),
-            selection_seed=int(_cfg_require(self.config, "ranker_training.async_labeling.selection_seed")),
-            label_policy=str(_cfg_require(self.config, "ranker_training.async_labeling.label_policy")),
+            selection_seed=int(_cfg_require(self.config, "ranker_training.async_ranker_training.selection_seed")),
+            label_policy=str(_cfg_require(self.config, "ranker_training.async_ranker_training.label_policy")),
         )
-        accepted = self.async_labeler.submit(requests)
+        accepted = self.async_ranker_labeler.submit(requests)
         return {
-            "async_labeling/candidate_tool_calls": candidate_tool_calls,
-            "async_labeling/selector_contexts": build_metrics.get("candidate_tool_calls", 0),
-            "async_labeling/selected_tool_calls": build_metrics.get("selected_tool_calls", 0),
-            "async_labeling/invalid_requests": build_metrics.get("invalid_requests", 0),
-            "async_labeling/built_requests": len(requests),
-            "async_labeling/accepted_requests": accepted,
+            "async_ranker_training/candidate_tool_calls": candidate_tool_calls,
+            "async_ranker_training/selector_contexts": build_metrics.get("candidate_tool_calls", 0),
+            "async_ranker_training/selected_tool_calls": build_metrics.get("selected_tool_calls", 0),
+            "async_ranker_training/invalid_requests": build_metrics.get("invalid_requests", 0),
+            "async_ranker_training/built_requests": len(requests),
+            "async_ranker_training/accepted_requests": accepted,
         }
 
     def _async_ranker_metrics(self) -> dict:
@@ -474,8 +474,8 @@ class CoAgenticRankerContrastiveRayTrainer(CoAgenticRetrieverRayTrainer):
     def _close_async_components(self):
         if getattr(self, "ranker_async_trainer", None) is not None:
             self.ranker_async_trainer.stop()
-        if getattr(self, "async_labeler", None) is not None:
-            self.async_labeler.close()
+        if getattr(self, "async_ranker_labeler", None) is not None:
+            self.async_ranker_labeler.close()
 
     def fit(self):
         from verl.utils.tracking import Tracking
@@ -563,8 +563,8 @@ class CoAgenticRankerContrastiveRayTrainer(CoAgenticRetrieverRayTrainer):
                                         "ranker/trace_ranked_docs": ranker_trace.get("ranked_docs", 0),
                                     }
                                 )
-                            if self._async_labeling_enabled():
-                                metrics.update(self._submit_async_labeling_requests(main_batch))
+                            if self._async_ranker_training_enabled():
+                                metrics.update(self._submit_async_ranker_training_requests(main_batch))
 
                     if "response_mask" not in main_batch.batch.keys():
                         main_batch.batch["response_mask"] = compute_response_mask(main_batch)
@@ -587,7 +587,7 @@ class CoAgenticRankerContrastiveRayTrainer(CoAgenticRetrieverRayTrainer):
                         ref_in_actor=self.ref_in_actor,
                     )
 
-                    if ranker_train_enabled and not self._async_labeling_enabled():
+                    if ranker_train_enabled and not self._async_ranker_training_enabled():
                         with marked_timer("ranker_contrastive_total", timing_raw, color="blue"):
                             fresh_trajectories = build_fresh_trajectories_from_dataproto(main_batch, self.global_steps)
                             steps_per_global = int(_cfg_require(self.config, "trainer.ranker_steps_per_global_step"))

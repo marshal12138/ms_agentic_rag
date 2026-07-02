@@ -1,0 +1,39 @@
+# dense ranker 训练相关覆盖；这里只放本 task 特有的实验差异。
+ranker_training:
+
+  # 异步 ranker training相关覆盖。
+  async_ranker_training:
+
+    # 本实验的关键变量：累计 3 条已完成 LLM judge signal 后再进入 sample builder。
+    sample_builder_request_batch: 3
+
+# actor/rollout/ref 模块相关覆盖。
+actor_rollout_ref:
+
+  # 训练 actor 模型的 FSDP 配置覆盖。
+  actor:
+
+    # actor 的 FSDP 细项配置。
+    fsdp_config:
+
+      # 是否把 actor 参数 offload 到 CPU；false 表示参数常驻 GPU。
+      param_offload: false
+
+      # 是否把 actor optimizer state offload 到 CPU；false 表示 optimizer state 常驻 GPU。
+      optimizer_offload: false
+
+  # reference model 的 FSDP 配置覆盖。
+  ref:
+
+    # reference model 的 FSDP 细项配置。
+    fsdp_config:
+
+      # 是否把 reference model 参数 offload 到 CPU；false 表示参数常驻 GPU。
+      param_offload: false
+
+  rollout:
+    multi_turn:
+      max_parallel_calls: 1
+    agent:
+      # 是否向 Qwen chat template 注入 tool schema；false 用于保持 CoSearch-aligned 训练格式。
+      inject_tool_schema: false

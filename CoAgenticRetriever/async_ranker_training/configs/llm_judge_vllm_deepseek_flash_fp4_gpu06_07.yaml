@@ -1,0 +1,55 @@
+service:
+  name: llm_judge_deepseek_flash_fp4_gpu06_07
+  backend: vllm
+
+model:
+  # This must be a real FP4-converted checkpoint directory. Do not point this
+  # to the existing DeepSeek-V4-Flash FP8/mixed checkpoint.
+  model_path: /data01/ms_wksp/agent_up_to_date/models/llm/DeepSeek-V4-Flash-FP4
+  # Keep the served name unchanged so the current async_ranker_training YAML can keep
+  # sending model=DeepSeek-V4-Flash without a client-side change.
+  served_model_name: DeepSeek-V4-Flash
+  trust_remote_code: true
+  converted_from: /data01/ms_wksp/agent_up_to_date/models/llm/DeepSeek-V4-Flash
+
+server:
+  host: 0.0.0.0
+  port: 8067
+  endpoint: http://127.0.0.1:8067/v1/chat/completions
+
+runtime:
+  python: /data04/envs/ms/deepseek_v4/bin/python
+  vllm: /data04/envs/ms/deepseek_v4/bin/vllm
+  env_site_packages: /data04/envs/ms/deepseek_v4/lib/python3.11/site-packages
+  cuda_visible_devices: "6,7"
+  tensor_parallel_size: 2
+  gpu_memory_utilization: 0.95
+  max_model_len: 32000
+  # Activations/non-quantized residual tensors still need a real compute dtype.
+  # vLLM's MXFP4 path supports bfloat16 activations.
+  dtype: bfloat16
+  # Weight quantization target for the converted checkpoint. The current
+  # launch_llm_as_judge.sh does not consume this field yet; it is here so the
+  # config records the intended deployment mode and can be wired to
+  # `vllm serve --quantization ...` if the runtime supports it.
+  quantization: mxfp4
+  # Keep KV cache in FP8; vLLM does not provide a practical FP4 KV cache mode in
+  # this deployment path.
+  kv_cache_dtype: fp8
+  linear_backend: auto
+  moe_backend: auto
+  disable_custom_all_reduce: true
+
+conversion:
+  required: true
+  target: fp4
+  note: >
+    Create the model_path checkpoint with a supported FP4 quantization/export
+    tool before using this config. Editing the original config.json from fp8 to
+    fp4 is not sufficient because safetensors weight tensors and scale tensors
+    must be converted together.
+
+logs:
+  log_dir: null
+  log_file: vllm_fp4_gpu06_07_8067.log
+  pid_file: vllm_fp4_gpu06_07_8067.pid

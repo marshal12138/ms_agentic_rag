@@ -1,0 +1,75 @@
+# 当前 task 的训练语义和实验参数 override。
+#
+# launcher 级训练形态。
+#
+# 支持值：
+#   full:
+#     标准 CoAgenticRetriever 训练形态。ranker 训练、共享 ranker 推理、
+#     async ranker training 的具体行为由 ranker/async 相关 base 与 overlay 决定。
+#   no-ranker:
+#     recall-only 训练形态。launcher compiler 会注入具体 Hydra override，
+#     禁用 ranker 训练、共享 ranker 推理和 async ranker training，并默认切到
+#     no-ranker tool config。
+run_mode: full
+
+trainer:
+
+  # Experiment tracking project for this canonical task.
+  project_name: coagentic_retriever
+
+  # Logger backends for this task.
+  logger: ["console", "file"]
+
+  # Number of training epochs.
+  total_epochs: 1
+
+  # null means no explicit max-step limit; training is bounded by epochs/data.
+  total_training_steps: null
+
+  # Checkpoint save interval in global steps.
+  save_freq: 10
+
+  # Resume behavior for this task.
+  resume_mode: disable
+
+  # Maximum number of actor checkpoints to keep.
+  max_actor_ckpt_to_keep: 1
+
+  # Skip validation before the first training step.
+  val_before_train: false
+
+algorithm:
+
+  # Advantage estimator used by this canonical task.
+  adv_estimator: grpo
+
+critic:
+
+  # GRPO does not use a critic worker.
+  enable: false
+
+actor_rollout_ref:
+
+  actor:
+
+    # PPO mini batch size for actor updates.
+    ppo_mini_batch_size: 64
+
+    # Per-GPU micro batch size for actor forward/backward.
+    ppo_micro_batch_size_per_gpu: 4
+
+    # GRPO uses KL loss on actor updates.
+    use_kl_loss: true
+
+  ref:
+
+    # Per-GPU micro batch size for reference log-prob computation.
+    log_prob_micro_batch_size_per_gpu: 8
+
+reward_model:
+
+  # Use multiturn reward manager for agentic rollout traces.
+  reward_manager: multiturn
+
+  # Use the reward loop path for multiturn rewards.
+  use_reward_loop: true

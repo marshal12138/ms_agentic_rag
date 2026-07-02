@@ -294,10 +294,16 @@ class TaskRunner:
 
         # Load the reward manager for training and validation.
         reward_fn = load_reward_manager(
-            config, tokenizer, num_examine=0, **config.reward_model.get("reward_kwargs", {})
+            config,
+            tokenizer,
+            num_examine=int(config.trainer.get("num_examine", 0)),
+            **config.reward_model.get("reward_kwargs", {}),
         )
         val_reward_fn = load_reward_manager(
-            config, tokenizer, num_examine=1, **config.reward_model.get("reward_kwargs", {})
+            config,
+            tokenizer,
+            num_examine=int(config.trainer.get("val_num_examine", 1)),
+            **config.reward_model.get("reward_kwargs", {}),
         )
 
         resource_pool_manager = self.init_resource_pool_mgr(config)
@@ -411,10 +417,11 @@ def create_rl_sampler(data_config, dataset):
     # torch.utils.data.RandomSampler could not recover properly
     from torchdata.stateful_dataloader.sampler import RandomSampler
 
-    if data_config.sampler is not None and data_config.sampler.get("class_path", None) is not None:
+    sampler_config = data_config.get("sampler", None)
+    if sampler_config is not None and sampler_config.get("class_path", None) is not None:
         curriculum_class = load_extern_type(
-            data_config.sampler.class_path,
-            data_config.sampler.class_name,
+            sampler_config.class_path,
+            sampler_config.class_name,
         )
         sampler = curriculum_class(
             data_source=dataset,
@@ -429,7 +436,7 @@ def create_rl_sampler(data_config, dataset):
 
     # Use a sampler to facilitate checkpoint resumption.
     # If shuffling is enabled in the data configuration, create a random sampler.
-    elif data_config.shuffle:
+    elif data_config.get("shuffle", True):
         train_dataloader_generator = torch.Generator()
         seed = data_config.get("seed")
         if seed is not None:

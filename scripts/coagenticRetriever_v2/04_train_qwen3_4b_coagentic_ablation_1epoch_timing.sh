@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Same training entry as 01_train_qwen3_4b_ablation_1epoch_timing.sh, but
+# Same training entry as 01_train_launcher.sh, but
 # points at the Qwen3-style CoAgenticRetriever ablation train/eval parquet.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -12,4 +12,4 @@ ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 : "${GROUP_NAME:=coAgenticRetriever}"
 
 export TRAIN_DATA VAL_DATA GROUP_NAME
-exec bash "${SCRIPT_DIR}/01_train_qwen3_4b_ablation_1epoch_timing.sh" "$@"
+exec bash "${SCRIPT_DIR}/01_train_launcher.sh" "$@"

@@ -31,8 +31,8 @@ bash scripts/coagenticRetriever_local/02_infer_qwen3_4b_ablation_val_only.sh
 # AGENT_GPU_IDS=0,1 \
 # RANK_GPU_ID=2 \
 # RECALL_GPU_ID=3 \
-# AGENT_MODEL=/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/checkpoints/qwen3_4b_probe/coAgenticRetriever/260617-112520-CAR_async_labeling_ds_flash_mix_signal_b3_v1/global_step_79 \
-# RANKER_MODEL=/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/checkpoints/qwen3_4b_probe/coAgenticRetriever/260617-112520-CAR_async_labeling_ds_flash_mix_signal_b3_v1/global_step_79 \
+# AGENT_MODEL=/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/checkpoints/qwen3_4b_probe/coAgenticRetriever/260617-112520-CAR_async_ranker_training_ds_flash_mix_signal_b3_v1/global_step_79 \
+# RANKER_MODEL=/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/checkpoints/qwen3_4b_probe/coAgenticRetriever/260617-112520-CAR_async_ranker_training_ds_flash_mix_signal_b3_v1/global_step_79 \
 # RUN_MODE=full \
 # bash scripts/coagenticRetriever_local/02_infer_qwen3_4b_ablation_val_only.sh
 
@@ -43,8 +43,8 @@ bash scripts/coagenticRetriever_local/02_infer_qwen3_4b_ablation_val_only.sh
 # AGENT_GPU_IDS=0,1 \
 # RANK_GPU_ID=2 \
 # RECALL_GPU_ID=3 \
-# AGENT_MODEL=/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/checkpoints/qwen3_4b_probe/coAgenticRetriever/260617-112520-CAR_async_labeling_ds_flash_mix_signal_b3_v1/global_step_79 \
-# RANKER_MODEL=/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/checkpoints/qwen3_4b_probe/coAgenticRetriever/260617-112520-CAR_async_labeling_ds_flash_mix_signal_b3_v1/global_step_79 \
+# AGENT_MODEL=/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/checkpoints/qwen3_4b_probe/coAgenticRetriever/260617-112520-CAR_async_ranker_training_ds_flash_mix_signal_b3_v1/global_step_79 \
+# RANKER_MODEL=/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/checkpoints/qwen3_4b_probe/coAgenticRetriever/260617-112520-CAR_async_ranker_training_ds_flash_mix_signal_b3_v1/global_step_79 \
 # RUN_MODE=no-ranker \
 # bash scripts/coagenticRetriever_local/02_infer_qwen3_4b_ablation_val_only.sh
 

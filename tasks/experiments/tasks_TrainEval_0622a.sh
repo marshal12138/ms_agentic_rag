@@ -70,9 +70,9 @@ task_sequence_run "eval-trained-agent-llm-judge-ranker" "${EVAL_TRAINED_AGENT_JU
 task_sequence_release_gpus "release-after-all-evals" "0,1,2,3,4,5,6,7"
 
 # 第 8 步：训练新策略。
-task_sequence_run "train-async_labeling_ds_flash_mix_signal-with-larger-ranker-train-data" "0,1,2,3,4,5,6,7" \
+task_sequence_run "train-async_ranker_training_ds_flash_mix_signal-with-larger-ranker-train-data" "0,1,2,3,4,5,6,7" \
   env WAIT_FOR_GPU_RELEASE=0 \
-  bash /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/tasks/train_tasks/coAgenticRetriever/train_CAR_async_labeling_ds_flash_mix_signal_fix_exp02.sh
+  bash /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/tasks/train_tasks/coAgenticRetriever/train_CAR_async_ranker_training_ds_flash_mix_signal_fix_exp02.sh
 
 # 第 9 步：释放全部 GPU。
 task_sequence_release_gpus "release-after-all-evals" "0,1,2,3,4,5,6,7"

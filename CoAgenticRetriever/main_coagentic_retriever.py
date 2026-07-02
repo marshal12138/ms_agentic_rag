@@ -93,10 +93,16 @@ class CoAgenticRankerTaskRunner(CoAgenticRetrieverTaskRunnerBase):
             val_reward_fn = None
         else:
             reward_fn = load_reward_manager(
-                config, tokenizer, num_examine=0, **config.reward_model.get("reward_kwargs", {})
+                config,
+                tokenizer,
+                num_examine=int(config.trainer.get("num_examine", 0)),
+                **config.reward_model.get("reward_kwargs", {}),
             )
             val_reward_fn = load_reward_manager(
-                config, tokenizer, num_examine=1, **config.reward_model.get("reward_kwargs", {})
+                config,
+                tokenizer,
+                num_examine=int(config.trainer.get("val_num_examine", 1)),
+                **config.reward_model.get("reward_kwargs", {}),
             )
 
         resource_pool_manager = self.init_resource_pool_mgr(config)

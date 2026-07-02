@@ -93,18 +93,18 @@
 其中 `tasks/train_tasks/` 的定位是训练实验配方层，而不是训练框架实现层。每个 train task 脚本应尽量回答“这次实验和其它实验相比改了什么”，例如：
 
 - 实验名和 run identity：`EXP_NAME`、`RUN_STAMP`。
-- 实验假设和 ablation 差异：是否启用 async labeling、使用哪个 judge、每次 ranker update 消费多少条 signal。
+- 实验假设和 ablation 差异：是否启用 async ranker training、使用哪个 judge、每次 ranker update 消费多少条 signal。
 - 资源默认值：agent/ranker/recall/judge 使用的 GPU、batch、并发、显存比例。
-- 策略配置入口：`ASYNC_LABELING_YAML`、`RANKER_STRATEGY_YAML`、`HYDRA_OVERRIDE_YAMLS`。
+- 策略配置入口：`ASYNC_RANKER_TRAINING_YAML`、`RANKER_STRATEGY_YAML`、`HYDRA_OVERRIDE_YAMLS`。
 - 少量实验特有覆盖：追加到 `COAGENTIC_EXTRA_ARGS` 的 Hydra dotlist 参数。
 
 `tasks/train_tasks/` 调用 `scripts/coagenticRetriever_local/` 下的训练入口是刻意的分层：
 
 - `tasks/train_tasks/` 负责声明“做什么实验”。
 - `scripts/coagenticRetriever_local/` 负责把实验安全、完整、可复现地跑起来。
-- `scripts/coagenticRetriever_local/strategies_yaml/` 负责保存可组合的策略配置，例如 async labeling、ranker sampling、judge prompt 和 sample builder 设置。
+- `scripts/coagenticRetriever_local/strategies_yaml/` 负责保存可组合的策略配置，例如 async ranker training、ranker sampling、judge prompt 和 sample builder 设置。
 
-以 CoAgenticRetriever 当前训练链路为例，`tasks/train_tasks/train_CAR_async_labeling_ds_flash_mix_signal.sh` 只声明该实验启用 DeepSeek-V4-Flash async labeling，并把 `ranker_training.async_labeling.sample_builder_request_batch` 覆盖为 3；真正的 recall service、LLM judge preflight、Hydra 覆盖顺序、训练日志、checkpoint 目录和 report 生成，仍由 `scripts/coagenticRetriever_local/01_train_qwen3_4b_ablation_1epoch_timing.sh` 及其 assets 统一处理。
+以 CoAgenticRetriever 当前训练链路为例，`tasks/train_tasks/train_CAR_async_ranker_training_ds_flash_mix_signal.sh` 只声明该实验启用 DeepSeek-V4-Flash async ranker training，并把 `ranker_training.async_ranker_training.sample_builder_request_batch` 覆盖为 3；真正的 recall service、LLM judge preflight、Hydra 覆盖顺序、训练日志、checkpoint 目录和 report 生成，仍由 `scripts/coagenticRetriever_local/01_train_qwen3_4b_ablation_1epoch_timing.sh` 及其 assets 统一处理。
 
 维护原则：
 
@@ -123,7 +123,7 @@
 
 当前示例：
 
-- `tasks/experiments/tasks_TrainEval_00_example.sh`：演示一次 CoAgenticRetriever async-labeling train + eval 串行编排。
+- `tasks/experiments/tasks_TrainEval_00_example.sh`：演示一次 CoAgenticRetriever async-ranker-training train + eval 串行编排。
 
 示例 dry-run：
 

@@ -1,0 +1,105 @@
+ranker_training:
+
+  signal_source: async_ranker_training
+
+  # rollout/search tool 使用的共享 dense ranker 推理副本。
+  # 训练进程会创建名为 actor_name 的 Ray named actor；AgentLoopWorker 只通过该 actor 做 dense rerank，
+  # 不再每个 worker 单独加载一份 E5。
+  # sync_interval 按 dense ranker 的 local update step 计数：
+  # 每完成 N 次 ranker optimizer.step()，就把训练 ranker 参数同步到共享推理 ranker。
+  # 注意：它不是主训练 global_step，也不是 async judge request 的 created_global_step。
+  shared_inference_ranker:
+    # 是否启用共享推理 ranker；true 时 rollout/tool 侧依赖该 Ray actor。
+    enable: true
+    # 每 N 个 ranker local update step 同步一次训练 ranker 参数到推理 ranker。
+    sync_interval: 2
+
+  async_ranker_training:
+
+    enable: true
+
+    max_sub_query: 10
+
+    max_glb_step_lag: 3
+
+    request_queue_size: 2048
+
+    completed_buffer_size: 4096
+
+    sample_builder_request_batch: 1
+
+    # 是否让 dense ranker 在后台线程中独立消费已完成的 async judge signals 并执行 optimizer.step()。
+    # true 时主训练 global_step 只负责提交 async ranker training 请求和采集 metrics，不再每个 global step
+    # 主动调用一次 ranker update，因此 ranker local update step 不再被 global step 的调用次数限制。
+    background_ranker_thread: true
+
+    # background_ranker_thread=false 时，每个主训练 global step 最多主动尝试多少次
+    # ranker async update。background_ranker_thread=true 时由后台线程持续训练，本参数不参与调度。
+    ranker_updates_per_global_step: 5
+
+    drop_policy: drop_oldest
+
+    num_workers: 4
+
+    request_timeout_seconds: 60
+
+    max_retries: 2
+
+    # 候选请求数超过 max_sub_query 时，从所有候选 CandidateSignalData 请求中随机抽取。
+    # 这里只随机选择 sub_query 请求；每个请求内部仍使用 ranker 排序后的 top50 doc 原始顺序。
+    sub_query_selection_policy: random
+
+    # 随机选择 sub_query 的种子；实现会结合 global_step 做确定性随机，方便复现实验。
+    selection_seed: 42
+
+    # 写入 AsyncLabelRequest 的标签策略名称；必须显式配置，避免 Python 代码侧兜底。
+    label_policy: llm_judge_rank50
+
+    # 写入 CandidateSignalData 的标签来源名称。
+    label_source: llm_judge
+
+    # 写入 CandidateSignalData 的打分版本号。
+    score_version: rank50_linear_v1
+
+    trajectory_selector:
+      type: select_all
+      min_final_reward: 0.0
+
+    stages:
+      - type: llm_as_judge
+        endpoint: http://127.0.0.1:8067/v1/chat/completions
+        model: DeepSeek-V4-Flash
+        score_schema: ranked_ids_top50
+        max_docs_per_request: 50
+        temperature: 0.0
+        max_tokens: 1024
+        request_timeout_seconds: 600
+        max_retries: 2
+        prompt:
+          path: CoAgenticRetriever/async_ranker_training/prompts/llm_judge_rank50_v1.md
+          version: llm_judge_rank50_v1
+          format: markdown_system_user_template
+          max_chunk_chars: 512
+          include_title: true
+          include_scores: true
+          shuffle_passages: false
+          output_mode: no_think
+
+    sample_builder:
+      type: random_negative_repeat
+      num_groups_per_step: 96
+      neg_per_pos: 15
+      allow_repeat_negative_sampling: true
+      seed: 42
+      strategy_kwargs:
+        signal_builder_type: llm_judge_topk
+        positive_top_k: 5
+        label_source: llm_judge_top5
+
+    logging:
+      enable: true
+      log_dir: null
+      write_request_text: false
+      max_text_chars: 512
+      metrics_interval_seconds: 30
+      sample_preview_every_n: 50

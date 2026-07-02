@@ -3,7 +3,7 @@ set -euo pipefail
 
 cd /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives
 
-# AGENT_CKPT="/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/checkpoints/qwen3_4b_probe/coAgenticRetriever/260619-153011-CAR_async_labeling_ds_flash_mix_signal_b3_v1_select_all/global_step_79"
+# AGENT_CKPT="/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/checkpoints/qwen3_4b_probe/coAgenticRetriever/260619-153011-CAR_async_ranker_training_ds_flash_mix_signal_b3_v1_select_all/global_step_79"
 AGENT_CKPT="/data01/ms_wksp/agent_up_to_date/models/llm/Qwen3-4B"
 DATA_PATH="/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/data/coAgenticRetriever/albation_1/co_search_ablation.eval.parquet"
 

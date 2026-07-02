@@ -1,0 +1,49 @@
+# Default local 8-device layout for CoAgenticRetriever async ranker training tasks.
+
+# Experiment group name.
+GROUP_NAME: "coAgenticRetriever"
+
+# Agent rollout/update device IDs.
+AGENT_GPU_IDS: "0,1,2,3"
+
+# Dense ranker device ID.
+RANK_GPU_ID: "4"
+
+# Recall retriever service device ID.
+RECALL_GPU_ID: "5"
+
+# LLM judge service device IDs.
+LLM_JUDGE_GPU_IDS: "6,7"
+
+# Whether the launcher may start the recall retriever service.
+AUTO_START_RECALL_SERVICE: "1"
+
+# Whether the launcher stops its recall retriever service on exit.
+AUTO_STOP_RECALL_SERVICE: "1"
+
+# Seconds to wait for the recall retriever service.
+RECALL_SERVICE_WAIT_SECONDS: "240"
+
+# Whether the launcher may start the LLM judge service.
+AUTO_START_LLM_JUDGE: "1"
+
+# Whether the launcher stops its LLM judge service on exit.
+AUTO_STOP_LLM_JUDGE: "1"
+
+# Whether to preflight the LLM judge endpoint.
+LLM_JUDGE_PREFLIGHT: "1"
+
+# Seconds to wait for the LLM judge service.
+LLM_JUDGE_WAIT_SECONDS: "600"
+
+# Explicit device wait list. Null derives from the final device env values.
+WAIT_FOR_GPUS: null
+
+# Whether to wait for target devices before starting services or training.
+WAIT_FOR_GPU_RELEASE: "1"
+
+# Device wait polling interval in seconds.
+WAIT_FOR_GPU_INTERVAL_SECONDS: "30"
+
+# Label shown in device wait logs.
+WAIT_FOR_GPU_LABEL: "mix-signal experiment GPU wait"

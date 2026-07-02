@@ -1,10 +1,10 @@
-# Format checks enforced on CI:
-# 1. Comments must appear above each field.
-# 2. There must be a blank line between each field.
-# 3. Inline comments (after a field on the same line) are not allowed.
-# 4. Indentation level is respected for nested fields.
+# CI 中强制执行的格式检查：
+# 1. 注释必须写在字段上方。
+# 2. 字段之间必须保留一个空行。
+# 3. 不允许行内注释，也就是不能把注释放在字段同一行后面。
+# 4. 嵌套字段必须保持正确缩进层级。
 
-# specify the default per-component configs
+# 指定各组件的默认配置。
 defaults:
 
   # actor_rollout_ref.actor: trainer/config/actor/dp_actor.yaml
@@ -13,302 +13,323 @@ defaults:
   # data: trainer/config/data/legacy_data.yaml
   - data@data: legacy_data
 
-  # Reference model config.
+  # 参考模型配置。
   - ref@actor_rollout_ref.ref: dp_ref
 
-  # Rollout model config.
+  # rollout 推理模型配置。
   - rollout@actor_rollout_ref.rollout: rollout
 
-  # Model config.
+  # HuggingFace 模型配置。
   - model@actor_rollout_ref.model: hf_model
 
-  # Critic model config.
+  # critic 模型配置。
   - critic@critic: dp_critic
 
-  # Reward model config.
+  # reward model 配置。
   - reward_model@reward_model: dp_reward_model
 
-  # Rollout correction config.
+  # rollout correction 配置。
   - algorithm@algorithm.rollout_correction: rollout_correction
 
-  # Ranker contrastive config.
-  - ranker_contrastive
+  # ranker/recall/contrastive 训练基础配置；内容合并到全局配置树。
+  - experimental/ranker_base@_global_: ranker_contrastive
 
-  # Async ranker signal labeling config.
-  - async_labeling
+  # 异步 ranker 信号标注基础配置；内容合并到全局配置树。
+  - experimental/async_ranker_training_base@_global_: async_ranker_training
 
-  # load the reference default config, then apply the fields in the current yaml
+  # 先加载引用的默认配置，再应用当前 YAML 中定义的字段。
   - _self_
 
-# config for actor, rollout and reference model
+# actor、rollout 和参考模型相关配置。
 actor_rollout_ref:
 
-  # Whether it's a hybrid engine, currently only supports hybrid engine
+  # 是否使用 hybrid engine；当前只支持 hybrid engine。
   hybrid_engine: true
 
-  # Timeout for operations executed against the process group
+  # 针对进程组执行操作时的超时时间。
   nccl_timeout: 600
 
-  # Rollout model config.
+  # rollout 模型配置。
   rollout:
 
-    # for huge model, layered summon can save memory (prevent OOM) but make it slower
+    # 对大模型启用 layered summon 可节省显存、降低 OOM 风险，但会变慢。
     layered_summon: False
 
-# custom reward function definition
+# 自定义 reward 函数定义。
 custom_reward_function:
 
-  # The path to the file containing your customized reward function.
-  path: null
+  # 包含自定义 reward 函数的文件路径。
+  path: ${oc.env:COAGENTIC_PROJECT_ROOT,/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/CoAgenticRetriever}/rewards/search_qa_f1_with_format_penalty.py
 
-  # The name of the reward function within the specified file.
-  name: compute_score
+  # 指定文件中的 reward 函数名称。
+  name: search_qa_f1_penalty_compute_score
 
-  # Additional kwargs to pass to the reward function.
-  reward_kwargs: {}
+  # 传给 reward 函数的额外关键字参数。
+  reward_kwargs:
 
-# config for the algorithm
+    # 输出格式错误时的 reward 惩罚项。
+    format_penalty: -0.2
+
+# 算法相关配置。
 algorithm:
 
-  # Required when using verl.utils.omega_conf_to_dataclass to instantiate dataclass configs
+  # 使用 verl.utils.omega_conf_to_dataclass 实例化 dataclass 配置时需要指定。
   _target_: verl.trainer.config.AlgoConfig
 
-  # Discount factor for future rewards
+  # 未来 reward 的折扣因子。
   gamma: 1.0
 
-  # Trade-off between bias and variance in the GAE estimator
+  # GAE 估计器中 bias 和 variance 的权衡系数。
   lam: 1.0
 
-  # Advantage estimator type: "gae", "grpo", "reinforce_plus_plus", etc.
+  # advantage 估计器类型，例如 "gae"、"grpo"、"reinforce_plus_plus" 等。
   adv_estimator: gae
 
-  # Whether to normalize advantages by std.
+  # 是否按标准差归一化 advantage。
   norm_adv_by_std_in_grpo: True
 
-  # Whether to enable in-reward KL penalty
+  # 是否启用 reward 内部的 KL 惩罚。
   use_kl_in_reward: False
 
-  # How to estimate KL divergence
+  # KL divergence 的估计方式。
   kl_penalty: kl
 
-  # KL control configuration
+  # KL 控制配置。
   kl_ctrl:
 
-    # Required when using verl.utils.omega_conf_to_dataclass to instantiate dataclass configs
+    # 使用 verl.utils.omega_conf_to_dataclass 实例化 dataclass 配置时需要指定。
     _target_: verl.trainer.config.KLControlConfig
 
-    # KL control type
+    # KL 控制类型。
     type: fixed
 
-    # Initial coefficient for KL penalty
+    # KL 惩罚的初始系数。
     kl_coef: 0.001
 
-    # Horizon value for adaptive controller
+    # 自适应控制器的 horizon 值。
     horizon: 10000
 
-    # Target KL divergence
+    # 目标 KL divergence。
     target_kl: 0.1
 
-  # Whether to enable preference feedback PPO
+  # 是否启用 preference feedback PPO。
   use_pf_ppo: False
 
-  # Preference feedback PPO settings
+  # preference feedback PPO 配置。
   pf_ppo:
 
-    # Method for reweighting samples
+    # 样本重加权方法。
     reweight_method: pow
 
-    # Power used for weight scaling
+    # 权重缩放使用的幂指数。
     weight_pow: 2.0
 
-# config for the trainer
+# trainer 相关配置。
 trainer:
 
-  # Whether to balance batch sizes across distributed workers
+  # 是否在分布式 worker 之间均衡 batch size。
   balance_batch: True
 
-  # Number of epochs in training
-  total_epochs: 30
+  # 训练 epoch 数。
+  total_epochs: 1
 
-  # Total training steps
+  # 总训练步数。
   total_training_steps: null
 
-  # Project name for experiment tracking
+  # 实验追踪使用的项目名。
   project_name: verl_examples
 
-  # Experiment name for run identification
+  # 用于标识 run 的实验名。
   experiment_name: gsm8k
 
-  # Logging backends to use
+  # 使用的日志后端。
   logger: ["console", "wandb"]
 
-  # Number of generations to log during validation
+  # 验证时记录的生成样本数量。
   log_val_generations: 0
 
-  # Directory for logging rollout data
+  # 训练 reward manager 打印检查的样本批次数量。
+  num_examine: 0
+
+  # 验证 reward manager 打印检查的样本批次数量。
+  val_num_examine: 1
+
+  # rollout 数据日志目录。
   rollout_data_dir: null
-  # Dump rollout data every N global steps. <=0 disables rollout dump.
+
+  # 每隔 N 个 global step dump 一次 rollout 数据；<=0 表示关闭 dump。
   dump_rollout_every_step_num: 10
-  # Number of trajectories to dump each time. -1 means dump the full rollout batch.
+
+  # 每次 dump 的轨迹数量；-1 表示 dump 完整 rollout batch。
   dump_rollout_num_everytime: 1
-  # Maximum number of rollout dump files to keep. -1 means unlimited.
+
+  # 最多保留的 rollout dump 文件数量；-1 表示不限制。
   max_rollout_dump_num: -1
 
-  # Rollout trace detail level. full writes tool_call_details/messages with complete observations and top-N docs; partial keeps the lightweight legacy dump.
+  # rollout trace 详细程度；full 写入包含完整 observations 和 top-N 文档的 tool_call_details/messages，partial 保留轻量旧版 dump。
   rollout_trace_mode: full
 
-  # Directory for logging validation data
+  # 是否禁用 rollout 内旧 reranker 路径。
+  disable_reranker_rollout: true
+
+  # 验证数据日志目录。
   validation_data_dir: null
 
-  # Number of nodes used in the training
+  # 训练使用的节点数量。
   nnodes: 1
 
-  # Number of GPUs per node
+  # 每个节点使用的 GPU 数量。
   n_gpus_per_node: 8
 
-  # Save frequency
+  # checkpoint 保存频率。
   save_freq: -1
 
-  # Redundant time for ESI checkpoint save
+  # ESI checkpoint 保存的冗余时间。
   esi_redundant_time: 0
 
-  # Resume mode
+  # 断点恢复模式。
   resume_mode: auto
 
-  # Path to resume training from
+  # 用于恢复训练的 checkpoint 路径。
   resume_from_path: null
 
-  # Whether to run validation before training begins
+  # 是否在训练开始前运行验证。
   val_before_train: True
 
-  # Whether to run validation only
+  # 是否只运行验证。
   val_only: False
 
-  # Validation frequency
+  # 验证频率。
   test_freq: -1
 
-  # Number of iterations to warm up the critic before updating policy
+  # 更新 policy 前 critic 预热的迭代次数。
   critic_warmup: 0
 
-  # Default path to distributed filesystem for saving checkpoints
+  # 保存 checkpoint 的默认分布式文件系统路径。
   default_hdfs_dir: null
 
-  # Whether to delete local checkpoints after loading
+  # 加载后是否删除本地 checkpoint。
   del_local_ckpt_after_load: False
 
-  # Default local directory for saving checkpoints
+  # 保存 checkpoint 的默认本地目录。
   default_local_dir: checkpoints/${trainer.project_name}/${trainer.experiment_name}
 
-  # Maximum number of actor checkpoints to keep
+  # 最多保留的 actor checkpoint 数量。
   max_actor_ckpt_to_keep: null
 
-  # Maximum number of critic checkpoints to keep
+  # 最多保留的 critic checkpoint 数量。
   max_critic_ckpt_to_keep: null
 
-  # Timeout for Ray worker registration
+  # Ray worker 注册超时时间。
   ray_wait_register_center_timeout: 300
 
-  # Device to run training on
+  # 训练运行设备。
   device: cuda
 
-  # Whether to use legacy worker implementation
+  # 是否使用旧版 worker 实现。
   use_legacy_worker_impl: auto
 
-# profiler configs
+# profiler 相关配置。
 global_profiler:
 
-  # Required when using verl.utils.omega_conf_to_dataclass to instantiate dataclass configs
+  # 使用 verl.utils.omega_conf_to_dataclass 实例化 dataclass 配置时需要指定。
   _target_: verl.utils.profiler.ProfilerConfig
 
-  # Profiling tool
+  # profiling 工具。
   tool: null
 
-  # Profile steps
+  # 需要 profile 的 step。
   steps: null
 
-  # Whether to combine continuous steps into one database
+  # 是否将连续 step 合并到同一个数据库中。
   profile_continuous_steps: False
 
-  # Path to save profiling contents
+  # profiling 内容保存路径。
   save_path: "outputs/profile"
 
-  # Specific tool configs
+  # 各具体工具的配置。
   global_tool_config:
 
-    # nsys config
+    # nsys 配置。
     nsys:
 
-      # Required when using verl.utils.omega_conf_to_dataclass to instantiate dataclass configs
+      # 使用 verl.utils.omega_conf_to_dataclass 实例化 dataclass 配置时需要指定。
       _target_: verl.utils.profiler.config.NsightToolConfig
 
-      # True for each task has its own database, False for all tasks in one training step share one database.
+      # True 表示每个 task 使用独立数据库；False 表示同一个训练 step 内所有 task 共用一个数据库。
       discrete: False
 
-      # Controller Nvidia Nsight Systems options.
+      # controller 侧 Nvidia Nsight Systems 选项。
       controller_nsight_options:
 
-        # Select the API(s) to be traced.
+        # 选择需要 trace 的 API。
         trace: "cuda,nvtx,cublas,ucx"
 
-        # Track GPU memory usage by CUDA kernels.
+        # 跟踪 CUDA kernel 的 GPU 显存使用。
         cuda-memory-usage: "true"
 
-        # CUDA graphs will be traced as a whole.
+        # 将 CUDA graph 作为整体进行 trace。
         cuda-graph-trace: "graph"
 
-      # Worker Nvidia Nsight Systems options.
+      # worker 侧 Nvidia Nsight Systems 选项。
       worker_nsight_options:
 
-        # Select the API(s) to be traced.
+        # 选择需要 trace 的 API。
         trace: "cuda,nvtx,cublas,ucx"
 
-        # Track GPU memory usage by CUDA kernels.
+        # 跟踪 CUDA kernel 的 GPU 显存使用。
         cuda-memory-usage: "true"
 
-        # CUDA graphs will be traced as a whole.
+        # 将 CUDA graph 作为整体进行 trace。
         cuda-graph-trace: "graph"
 
-        # Profiling only in a range of torch.cuda.profiler.start and stop.
+        # 仅在 torch.cuda.profiler.start 和 stop 包围的范围内 profiling。
         capture-range: "cudaProfilerApi"
 
-        # Capture range end behavior.
+        # capture range 结束时的行为。
         capture-range-end: null
 
-        # Send signal to the target application's process group.
+        # 向目标应用的进程组发送信号。
         kill: none
 
-    # enable memory visualization for debugging memory usage
+    # 启用内存可视化，用于调试内存使用。
     torch_memory:
 
-      # Maximum number of allocation entries to record
+      # 最多记录的内存分配条目数。
       trace_alloc_max_entries: 100_000
 
-      # The depth of the call stack to capture for each allocation
+      # 每次分配记录的调用栈深度。
       stack_depth: 32
 
-      # Memory event context
+      # 内存事件上下文。
       context: "all"
 
-      # Stack source
+      # 调用栈来源。
       stacks: "all"
 
-      # Extra kwargs
+      # 额外关键字参数。
       kw_args: {}
 
-# configs for TransferQueue
+# TransferQueue 相关配置。
 transfer_queue:
 
-  # Whether to enable transfer queue
+  # 是否启用 transfer queue。
   enable: False
 
-# configs related to ray
+# Ray 相关配置。
 ray_kwargs:
 
-  # configs related to ray initialization
+  # Ray 初始化相关配置。
   ray_init:
 
-    # Number of CPUs for Ray
-    num_cpus: null
+    # Ray 可用 CPU 数量。
+    num_cpus: 16
 
-  # Path to save Ray timeline JSON
+    # 是否启动 Ray dashboard；训练入口默认关闭，避免占用额外端口和资源。
+    include_dashboard: false
+
+    # Ray object store 内存大小，单位 byte。
+    object_store_memory: 2147483648
+
+  # Ray timeline JSON 保存路径。
   timeline_json_file: null

@@ -42,10 +42,8 @@ tools:
         # ray_actor: AgentLoopWorker 不再各自加载 E5，而是调用训练进程创建的共享 Ray actor。
         # local: 每个 AgentLoopWorker 单独加载一份 E5，仅用于调试旧路径。
         backend: ray_actor
-        # 共享推理 ranker 的 Ray named actor 名称；必须和 trainer 侧配置一致。
-        actor_name: coagentic_shared_dense_ranker
-        # Ray namespace；null 表示使用当前默认 namespace。必须显式写出，避免代码侧兜底。
-        actor_namespace: null
+        # Ray actor name/namespace 由 canonical launcher 从 Hydra
+        # ranker_training.shared_inference_ranker 生成到运行时 tool config。
         # ray_actor 模式下要求 dense ranker 可用；失败时直接抛错中断训练，绝不兜底 recall 顺序。
         required: true
         # ranker 基座模型路径，通常是 e5 retriever encoder。

@@ -1,5 +1,8 @@
 # Data, models, checkpoints, caches
 **/data/
+!/CoAgenticRetriever/config/data/
+/CoAgenticRetriever/config/data/*
+!/CoAgenticRetriever/config/data/co_search_ablation.yaml
 !/data/
 /data/*
 !/data/README.md

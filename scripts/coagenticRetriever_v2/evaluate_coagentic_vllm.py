@@ -692,7 +692,7 @@ class LocalE5Ranker:
 
 
 class LLMJudgeRanker:
-    """OpenAI-compatible listwise reranker using the async-labeling judge prompt."""
+    """OpenAI-compatible listwise reranker using the async-ranker-training judge prompt."""
 
     def __init__(
         self,
