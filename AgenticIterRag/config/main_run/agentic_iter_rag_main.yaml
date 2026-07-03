@@ -1,0 +1,102 @@
+# AgenticIterRag v1 顶层运行 manifest。
+
+# 框架版本标记；用于审计当前配置属于 AgenticIterRag v1。
+version: v1
+
+# 项目标识信息；compiler 会用这些字段生成默认 group 和实验名。
+project:
+  # 项目名称。
+  name: AgenticIterRag
+
+  # 默认实验分组名；可由 overlay 覆盖。
+  group_name: agenticIterRag
+
+  # 默认实验名；可由 overlay 或 EXP_NAME 覆盖。
+  experiment_name: agentic_iter_rag_v1
+
+# 默认配置组选择；compiler 会按这些名字加载对应 YAML。
+config_groups:
+  # 数据配置组。
+  data: co_search_ablation
+
+  # pipeline DAG 配置组。
+  pipeline: offline_two_stage
+
+  # 本地资源配置组。
+  resource: local_8gpu_0_7
+
+  # 推理 runtime 配置组。
+  infer_runtime: agentic_iter_rag_vllm
+
+  # 推理预算配置组。
+  infer_budget: air_aligned_budget
+
+  # LLM reranker 训练配置组。
+  reranker_training: llm_reranker_base
+
+  # agent 模型配置组。
+  model: qwen3_4b
+
+  # rollout 配置组。
+  rollout: air_async_qwen3_4b
+
+# 运行目录配置；compiler 会基于这些根目录派生 run_root、artifact_root 和 report_root。
+runtime:
+  # pipeline 运行日志根目录。
+  run_root: /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/log/agenticIterRag
+
+  # pipeline 报告根目录。
+  report_root: /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/reports/agenticIterRag
+
+  # pipeline 产物根目录。
+  artifact_root: /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/outputs/agenticIterRag
+
+  # 运行名由 compiler 在 runtime 构建；这里保留字段用于审计。
+  run_name: null
+
+  # 运行 slug 由 compiler 在 runtime 构建；这里保留字段用于审计。
+  run_slug: null
+
+  # 运行时间戳由 compiler 在 runtime 构建；这里保留字段用于审计。
+  timestamp: null
+
+# 长期数据产物配置；这些目录用于沉淀可复用数据集，不等同于单次 run 的 outputs 目录。
+data_artifacts:
+  # AgenticIterRag 长期数据集根目录；trajectory 和 reranker train set 都写在这里。
+  root: /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/data/AgenticIterRag
+
+  # agent 推理轨迹数据集配置。
+  trajectory:
+    # trajectory 版本名；null 表示由 runtime 根据本地日期、数据和模型自动生成。
+    version: null
+
+    # false 表示同名时自动新建日期后缀目录，如 260702b_xxx；true 表示完整覆盖同名目录。
+    overwrite: false
+
+    # 是否允许没有任何 search query 的空轨迹产物；生产任务默认不允许。
+    allow_empty_trace: false
+
+  # LLM reranker 训练数据集合配置。
+  llm_reranker_train_set:
+    # input_dataset 外部版本名；null 表示由 build_input_dataset 子阶段自动生成。
+    version: null
+
+    # 兼容字段；实际覆盖策略由 build_input_dataset/build_train_dataset 子配置分别控制。
+    overwrite: false
+
+    # 是否从 trajectory 版本名派生 input_dataset 版本名。
+    derive_version_from_trajectory: true
+
+# 审计策略配置。
+audit:
+  # 是否拒绝 shell-only 业务配置。
+  forbid_shell_only_business_config: true
+
+  # 是否写出最终 YAML 配置。
+  write_final_config: true
+
+  # 是否写出 pipeline manifest。
+  write_manifest: true
+
+  # 是否写出 shell 可 source 的 env 文件。
+  write_env: true

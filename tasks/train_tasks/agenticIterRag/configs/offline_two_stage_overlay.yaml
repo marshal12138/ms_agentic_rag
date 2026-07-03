@@ -1,0 +1,86 @@
+# 本 overlay 描述 AgenticIterRag v1 离线两阶段完整训练任务。
+
+main_run:
+  project:
+    # 本次完整 pipeline 训练任务的默认实验名。
+    experiment_name: agentic_iter_rag_v1_offline_two_stage
+
+pipeline:
+  # 完整训练任务默认从第一阶段开始执行。
+  resume_from_stage: null
+
+  # 完整训练任务默认不提前停止。
+  stop_after_stage: null
+
+  # 完整训练任务默认不跳过任何内部 stage。
+  skip_stages: []
+
+  # 完整训练任务默认不强制重跑已有 manifest 的 stage。
+  force_rerun_stages: []
+
+  stage_configs:
+    build_reranker_dataset:
+      sub_stages:
+        build_input_dataset:
+          # 完整 pipeline 默认先从 trajectory 生产结构化 input_dataset。
+          enabled: true
+
+          # 每个 query 最多保留 50 个候选文档。
+          candidate_top_n: 50
+
+          # 第一版不构造排序监督标签。
+          label_policy: null
+
+          # 第一版不构造 positive_doc_ids。
+          positive_policy: null
+
+          # 不从 no-ranker trace 构造强监督排序。
+          target_ranking_policy: none
+
+        build_train_dataset:
+          # 完整 pipeline 默认继续从 input_dataset 生产 GRPO train_dataset。
+          enabled: true
+
+          # 第一版 train_dataset 使用 GRPO 格式。
+          format: grpo
+
+          # 第一版 prompt 复用 AgenticIterRag 的 <reason>/<rerank> 标签模板。
+          prompt_template_version: air_rerank_tags_v1
+
+          # 输出为 VERL chat message 格式。
+          formatter: verl_chat
+
+          # ground-truth 暂时显式为空。
+          ground_truth_policy: empty
+
+          # 当前不构造真实排序 reward。
+          reward_policy: none
+
+data:
+  # trace 生成默认使用 AIR source 下的训练数据稳定路径。
+  # 该路径可以是软链，便于隔离历史数据目录名和当前 AIR 运行命名。
+  trace_generation_files:
+    - /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/data/AgenticIterRag/source/co_search_ablation.train.parquet
+
+  # null 表示 trace 生成阶段不额外截断样本数，由 runner 或下游实现决定。
+  trace_max_samples: null
+
+infer_runtime:
+  mode:
+    # agent 训练和初始 trace 生成默认不启用 reranker。
+    run_mode: no-ranker
+
+    # no-ranker 模式下 reranker 记录为 none。
+    reranker: none
+
+  artifacts:
+    # 完整 pipeline 需要保留完整轨迹用于后续 reranker 数据构造。
+    keep_trace: full
+
+infer_matrix:
+  # 完整训练任务默认输出四组核心对照。
+  baselines:
+    - origin_agent
+    - trained_agent
+    - trained_agent_original_llm_reranker
+    - trained_agent_trained_llm_reranker

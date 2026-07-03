@@ -1,0 +1,180 @@
+# 本 overlay 专用于 AgenticIterRag v1 的 data produce 任务。
+#
+# 该任务只做两件事：
+# 1. 用已有 agent checkpoint 对指定数据推理，生成 trajectory。
+# 2. 用 trajectory 生成 LLM reranker 的 input_dataset 和 train_dataset。
+#
+# 不在本任务中训练 agent，不训练 LLM reranker，也不跑 infer matrix。
+
+main_run:
+  project:
+    # 本次 data produce 任务的默认实验名；compiler 会用于 run 目录命名。
+    experiment_name: agentic_iter_rag_v1_dataproduce_260702a
+
+  data_artifacts:
+    trajectory:
+      # trajectory 版本名；null 表示 runtime 根据本地日期、数据和模型自动生成。
+      version: null
+
+      # false 表示同名时自动新建日期后缀目录，如 260702b_xxx；true 表示完整覆盖同名目录。
+      overwrite: false
+
+      # data produce 任务默认不允许空轨迹；没有 search query 应视为失败。
+      allow_empty_trace: false
+
+    llm_reranker_train_set:
+      # input_dataset 外部版本名；null 表示 runtime 自动生成。
+      version: null
+
+      # 兼容字段；实际覆盖策略由 build_input_dataset/build_train_dataset 子配置分别控制。
+      overwrite: false
+
+      # 默认从 trajectory 版本名派生 input_dataset 版本名，方便追溯来源。
+      derive_version_from_trajectory: true
+
+pipeline:
+  # data produce 从 generate_traces 开始，不执行 train_agent。
+  resume_from_stage: generate_traces
+
+  # data produce 在 build_reranker_dataset 后停止，不执行后续训练和推理矩阵。
+  stop_after_stage: build_reranker_dataset
+
+  # 不额外跳过所选范围内的 stage。
+  skip_stages: []
+
+  # 默认不强制重跑已有 stage manifest。
+  force_rerun_stages: []
+
+  stage_configs:
+    generate_traces:
+      enabled: true
+
+      overwrite: true
+      
+      inputs:
+        # 已存在 raw trace JSONL；null 表示需要调用 AIR v1 infer backend 真实推理生成。
+        existing_raw_trace_jsonl: null
+
+        # 已存在 canonical trajectory JSONL；null 表示需要从 raw trace 抽取。
+        existing_canonical_trace_jsonl: null
+
+    build_reranker_dataset:
+      sub_stages:
+        build_input_dataset:
+          # 默认执行 trajectory 到 input_dataset 的转换。
+          enabled: true
+
+          # input_dataset 版本名；null 表示 runtime 自动生成。
+          version: null
+
+          # false 表示同名时自动新建日期后缀目录，如 260702b_xxx；true 表示完整覆盖同名目录。
+          overwrite: false
+
+          # 默认从 trajectory 版本派生 input_dataset 版本名。
+          derive_version_from_trajectory: true
+
+          # input_dataset schema 版本。
+          schema_version: v1
+
+          # 构造策略：从 trajectory 的候选文档生成 reranker 候选样本。
+          builder_policy: recall_topn_to_candidates
+
+          # 候选文档来源；第一版默认使用 recall_topn_docs。
+          candidate_source: recall_topn_docs
+
+          # 每个 query 最多保留 50 个候选文档。
+          candidate_top_n: 50
+
+          # 候选文档去重策略。
+          dedupe_policy: keep_first
+
+          # 第一版不构造排序监督标签。
+          label_policy: null
+
+          # 第一版不构造 positive_doc_ids。
+          positive_policy: null
+
+          # 第一版不从 no-ranker trace 构造强监督排序。
+          target_ranking_policy: none
+
+        build_train_dataset:
+          # 默认执行 input_dataset 到 train_dataset 的 prompt 渲染。
+          enabled: true
+
+          # train_dataset 版本名；null 表示 runtime 自动生成。
+          version: null
+
+          # false 表示同名时自动新建新版本目录；true 表示完整覆盖同名目录。
+          overwrite: false
+
+          # 第一版训练数据格式为 GRPO。
+          format: grpo
+
+          # 第一版 prompt 复用 AgenticIterRag 的 reranker 标签模板。
+          prompt_template_version: air_rerank_tags_v1
+
+          # 第一版输出 VERL chat message 格式。
+          formatter: verl_chat
+
+          # 第一版 ground-truth 显式为空。
+          ground_truth_policy: empty
+
+          # 第一版不构造真实排序 reward。
+          reward_policy: none
+
+          # 第一版模型输出格式为 <reason> 和 <rerank> 标签。
+          output_schema: air_rerank_tags
+
+          # null 表示从 infer_runtime.retrieval.visible_top_m 读取 reranker 输出数量。
+          reranker_top_m: null
+
+          # 与 AIR prompt formatter 对齐，每篇候选文档最多写入 2000 字符。
+          max_doc_chars: 2000
+
+data:
+  # data produce 默认使用 AIR source 下的训练数据稳定路径进行推理。
+  # 该路径可以是软链，便于隔离历史数据目录名和当前 AIR 运行命名。
+  trace_generation_files:
+    - /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/data/AgenticIterRag/source/co_search_ablation.train.parquet
+
+  # null 表示不在配置层截断；smoke 时可用 --data.trace_max_samples=5 或 10 覆盖。
+  trace_max_samples: null
+
+infer_runtime:
+  mode:
+    # data produce 默认使用 no-ranker agent 产生轨迹。
+    run_mode: no-ranker
+
+    # no-ranker 模式不启用 reranker。
+    reranker: none
+
+  models:
+    # 用于 data produce 的已训练 agent checkpoint。
+    trained_agent_model: /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/checkpoints/qwen3_4b_probe/coAgenticRetriever/260625-211826-CAR_async_npu_smaller_bs_per_gpu/global_step_79
+
+  artifacts:
+    # data produce 必须保留完整 trace，供后续 trajectory 抽取和排查。
+    keep_trace: full
+
+    # data produce 默认每完成 10 条样本落盘一次，降低长任务中断时的数据损失。
+    flush_every_n: 10
+
+  agent:
+    # data produce 不允许 agent vLLM 瞬时 HTTP 断连变成最终 error。
+    max_retries: 5
+
+    # 第一次 agent retry 等待秒数。
+    retry_delay: 1.0
+
+    # agent retry 退避倍率。
+    retry_backoff: 2.0
+
+    # 关闭 HTTP keep-alive，避免 aiohttp 复用 vLLM 已关闭的连接。
+    http_force_close: true
+
+    # 只要最终仍存在 failed 样本，就让本轮数据生产失败，不进入 dataset build。
+    fail_on_error: true
+
+  retrieval:
+    # data produce 同样提高 retriever HTTP 重试，避免偶发连接抖动污染样本。
+    max_retries: 5

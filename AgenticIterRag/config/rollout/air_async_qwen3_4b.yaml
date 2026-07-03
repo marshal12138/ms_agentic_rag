@@ -1,0 +1,45 @@
+# AgenticIterRag v1 Qwen3-4B async multi-turn rollout 配置。
+
+# rollout 配置名称。
+name: air_async_qwen3_4b
+
+# 多轮工具调用配置。
+multi_turn:
+  # 是否启用多轮工具调用。
+  enable: true
+
+  # 单 worker 最大并发工具调用数。
+  max_parallel_calls: 1
+
+  # 最大 assistant turn 数。
+  max_assistant_turns: 6
+
+  # 最大 user/tool turn 数。
+  max_user_turns: 6
+
+# agent 工具配置。
+agent:
+  # 是否向 prompt 注入 tool schema。
+  inject_tool_schema: false
+
+  # 是否允许 agent 使用搜索工具。
+  use_tool: true
+
+# rollout 采样配置。
+sampling:
+  # rollout 采样温度。
+  temperature: 1.0
+
+  # rollout top-p。
+  top_p: 1.0
+
+  # rollout top-k；-1 表示按后端默认语义关闭 top-k 限制。
+  top_k: -1
+
+# rollout token budget。
+budget:
+  # prompt 最大 token 长度。
+  max_prompt_length: 12000
+
+  # response 最大 token 长度。
+  max_response_length: 4096

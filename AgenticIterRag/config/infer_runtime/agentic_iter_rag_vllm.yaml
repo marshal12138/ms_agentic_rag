@@ -1,0 +1,124 @@
+# AgenticIterRag v1 推理 runtime 配置。
+
+# runtime 配置名称。
+name: agentic_iter_rag_vllm
+
+# 推理模式配置。
+mode:
+  # 默认推理模式；no-ranker 表示只使用 recall 顺序。
+  run_mode: no-ranker
+
+  # 默认 reranker 类型；none 表示不启用 reranker。
+  reranker: none
+
+# 模型路径和模型名配置。
+models:
+  # 原始 agent 模型路径。
+  origin_agent_model: /data01/ms_wksp/agent_up_to_date/models/llm/Qwen3-4B
+
+  # 训练后 agent 模型路径；train_agent stage 完成后由 runtime 填充。
+  trained_agent_model: null
+
+  # 原始 LLM reranker 模型名。
+  original_llm_reranker_model: DeepSeek-V4-Flash
+
+  # 训练后 LLM reranker 模型名；train_llm_reranker stage 完成后由 runtime 填充。
+  trained_llm_reranker_model: null
+
+  # 训练后 LLM reranker 模型路径；train_llm_reranker stage 完成后由 runtime 填充。
+  trained_llm_reranker_model_path: null
+
+  # recall retriever 模型路径。
+  recall_model_path: /data01/ms_wksp/agent_up_to_date/models/retriever/e5-base-v2
+
+# 检索相关配置。
+retrieval:
+  # recall 阶段返回的候选文档数量。
+  final_top_n: 50
+
+  # 最终暴露给 agent 的文档数量。
+  visible_top_m: 5
+
+  # recall 请求最大重试次数。
+  max_retries: 1
+
+  # recall 第一次重试等待秒数。
+  retry_delay: 0.5
+
+  # recall 重试等待时间放大倍率。
+  retry_backoff: 1.0
+
+# agent vLLM 请求配置。
+agent:
+  # agent completion 最大重试次数。该重试覆盖 /v1/completions 的 HTTP 断连和 5xx。
+  max_retries: 3
+
+  # agent completion 第一次重试等待秒数。
+  retry_delay: 1.0
+
+  # agent completion 重试等待时间放大倍率。
+  retry_backoff: 2.0
+
+  # true 表示不复用 HTTP keep-alive 连接，避免复用服务端已关闭的 stale socket。
+  http_force_close: true
+
+  # true 表示只要最终仍有 failed 样本，infer 进程返回非零，阻断后续数据构建。
+  fail_on_error: true
+
+# LLM reranker 推理配置。
+llm_reranker:
+  # reranker prompt 模板路径；null 表示使用内置默认模板。
+  prompt_path: null
+
+  # 每个候选文档注入 prompt 的最大字符数。
+  max_chunk_chars: 512
+
+  # LLM reranker 最大生成 token 数。
+  max_tokens: 1024
+
+  # LLM reranker 采样温度。
+  temperature: 0.0
+
+  # LLM reranker 请求超时时间。
+  request_timeout: 600
+
+  # LLM reranker 最大重试次数。
+  max_retries: 3
+
+  # LLM reranker 第一次重试等待秒数。
+  retry_delay: 2.0
+
+  # LLM reranker 重试等待时间放大倍率。
+  retry_backoff: 2.0
+
+# tool 配置。
+tool:
+  # 是否向 agent prompt 注入 tool schema。
+  inject_tool_schema: false
+
+  # 静态 tool config 路径；null 表示由 runtime 根据模式生成。
+  tool_config: null
+
+  # runtime tool config 路径；由 compiler 或 runner 生成。
+  runtime_tool_config: null
+
+# 推理产物配置。
+artifacts:
+  # 轨迹保留级别；full 表示保留完整工具调用信息。
+  keep_trace: full
+
+  # infer engine 每完成多少条样本就增量落盘一次 metrics/traces。
+  # 默认 10，防止长时间 data produce 过程中网络或服务错误导致全部轨迹丢失。
+  flush_every_n: 10
+
+  # metrics JSONL 路径；runtime 填充。
+  metrics_jsonl: null
+
+  # search timing JSONL 路径；runtime 填充。
+  search_timing_jsonl: null
+
+  # LLM IO JSONL 路径；runtime 填充。
+  llm_io_jsonl: null
+
+  # Markdown 报告路径；runtime 填充。
+  report_path: null

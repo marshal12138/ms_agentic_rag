@@ -1,0 +1,20 @@
+# AgenticIterRag v1 agent 模型配置。
+
+# 模型配置名称。
+name: qwen3_4b
+
+# agent 基座模型路径。
+path: /data01/ms_wksp/agent_up_to_date/models/llm/Qwen3-4B
+
+# 是否允许 Hugging Face remote code。
+trust_remote_code: true
+
+# 是否使用 shared memory 拷贝模型。
+use_shm: false
+
+# 是否启用 gradient checkpointing。
+enable_gradient_checkpointing: true
+
+# 模型训练 dtype。
+dtype: bfloat16
+

@@ -67,6 +67,6 @@ bash "${ROOT}/scripts/coagenticRetriever_v2/01_train_launcher.sh" \
   --OVERLAY_YAML=scripts/coagenticRetriever_v2/strategies_yaml/async_ranker_training_deepseek_flash_rank50_select_all.yaml \
   --OVERLAY_YAML=tasks/train_tasks/coAgenticRetriever/configs/mix_signal_b3_overlay.yaml \
   --OVERLAY_YAML=tasks/train_tasks/coAgenticRetriever/configs/train_args_overlay.yaml \
-  --actor_rollout_ref.rollout.multi_turn.max_parallel_calls=1 \
+  --actor_rollout_ref.rollout.multi_turn.max_parallel_calls=2 \
   --run_mode=no-ranker \
   "$@"

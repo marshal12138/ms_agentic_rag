@@ -1,0 +1,58 @@
+# AgenticIterRag v1 LLM reranker 训练配置。
+
+# reranker 训练配置名称。
+name: llm_reranker_base
+
+# LLM reranker 基座模型路径。
+base_model: /data01/ms_wksp/agent_up_to_date/models/llm/Qwen3-4B
+
+# reranker dataset manifest 路径；build_reranker_dataset stage 完成后填充。
+dataset_manifest: null
+
+# reranker 训练文件路径；可由 dataset manifest 或 runtime 派生。
+train_file: null
+
+# reranker 验证文件路径；null 表示暂不单独设置验证集。
+val_file: null
+
+# reranker 训练输出目录；runtime 填充。
+output_dir: null
+
+# reranker 训练超参。
+trainer:
+  # 训练方法；data produce 第一版生成 GRPO 格式数据。
+  method: grpo
+
+  # 训练 epoch 数。
+  total_epochs: 1
+
+  # 训练 batch size。
+  train_batch_size: 16
+
+  # 每卡 micro batch size。
+  micro_batch_size_per_gpu: 1
+
+  # 学习率。
+  learning_rate: 2.0e-5
+
+  # 训练 prompt 最大 token 长度。
+  max_prompt_length: 12000
+
+  # 训练 response 最大 token 长度。
+  max_response_length: 2048
+
+  # checkpoint 保存间隔。
+  save_freq: 100
+
+  # 日志后端列表。
+  logger:
+    - console
+    - file
+
+# reranker 训练 runtime 字段。
+runtime:
+  # stage manifest 路径；runtime 填充。
+  manifest_path: null
+
+  # 是否只做 dry-run。
+  dry_run: false

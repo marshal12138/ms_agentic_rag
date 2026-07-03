@@ -1,0 +1,112 @@
+# AgenticIterRag v1 local 8-GPU resource profile.
+#
+# This file describes hardware plus stage-level placement. Do not put global
+# role bindings such as resource.agent/resource.recall here; AIR pipelines may
+# execute different stage subsets, so placement must be scoped by stage.
+
+name: local_8gpu_0_7
+
+hardware:
+  accelerator: auto
+  gpu_ids: [0, 1, 2, 3, 4, 5, 6, 7]
+
+defaults:
+  wait_for_gpus:
+    enable: true
+    ids: null
+    interval_seconds: 30
+    label: AgenticIterRag v1 GPU wait
+
+stage_resources:
+  train_agent:
+    note: real AIR trainer integration is not implemented yet; this reserves the whole node for planning.
+    trainer:
+      gpu_ids: [0, 1, 2, 3, 4, 5, 6, 7]
+
+  generate_traces:
+    services:
+      agent_vllm:
+        # Qwen3-4B has 32 attention heads, so TP must divide 32.
+        # With retriever backends on 6/7, TP=4 is the valid local placement.
+        gpu_ids: [0, 1, 2, 3]
+        tensor_parallel_size: 4
+        port: 8140
+        served_model_name: agentic-iter-rag-agent
+        auto_start: true
+        auto_stop: true
+
+      recall:
+        gpu_ids: [6, 7]
+        port: 8130
+        backend_base_port: 8131
+        retrieval_service_url: http://127.0.0.1:8130/retrieve
+        auto_start: true
+        auto_stop: true
+        wait_seconds: 360
+        preflight_query: who got the first nobel prize in physics?
+        preflight_expect: null
+
+      dense_reranker:
+        gpu_ids: []
+        auto_start: false
+        auto_stop: false
+
+      llm_judge:
+        gpu_ids: []
+        endpoint: http://127.0.0.1:8067/v1/chat/completions
+        model: DeepSeek-V4-Flash
+        auto_start: false
+        auto_stop: false
+        preflight: false
+        wait_seconds: 240
+
+  build_reranker_dataset:
+    local_cpu:
+      workers: 1
+
+  train_llm_reranker:
+    trainer:
+      gpu_ids: [0, 1, 2, 3, 4, 5, 6, 7]
+
+  infer_matrix:
+    # Baselines are planned as sequential service groups; repeated GPU ids are intentional here.
+    allow_gpu_overlap: true
+    services:
+      origin_agent_vllm:
+        gpu_ids: [0, 1, 2, 3]
+        tensor_parallel_size: 4
+        port: 8141
+        served_model_name: air-origin-agent
+        auto_start: true
+        auto_stop: true
+
+      trained_agent_vllm:
+        gpu_ids: [0, 1, 2, 3]
+        tensor_parallel_size: 4
+        port: 8140
+        served_model_name: agentic-iter-rag-agent
+        auto_start: true
+        auto_stop: true
+
+      recall:
+        gpu_ids: [5]
+        port: 8130
+        retrieval_service_url: http://127.0.0.1:8130/retrieve
+        auto_start: true
+        auto_stop: true
+        wait_seconds: 240
+
+      original_llm_reranker:
+        gpu_ids: [6, 7]
+        endpoint: http://127.0.0.1:8167/v1/chat/completions
+        model: DeepSeek-V4-Flash
+        auto_start: false
+        auto_stop: false
+
+      trained_llm_reranker:
+        gpu_ids: [6, 7]
+        endpoint: http://127.0.0.1:8177/v1/chat/completions
+        model: null
+        model_path: null
+        auto_start: false
+        auto_stop: false

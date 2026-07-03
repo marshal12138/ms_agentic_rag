@@ -1,0 +1,310 @@
+# AgenticIterRag v1 离线两阶段 pipeline 配置。
+
+# pipeline 配置名称。
+name: offline_two_stage
+
+# pipeline 模式；当前 v1 默认使用离线两阶段。
+mode: offline_two_stage
+
+# 从哪个 stage 开始执行；null 表示从第一个 stage 开始。
+resume_from_stage: null
+
+# 执行到哪个 stage 后停止；null 表示执行到最后一个 stage。
+stop_after_stage: null
+
+# 需要跳过的 stage 列表；默认不跳过。
+skip_stages: []
+
+# 需要强制重跑的 stage 列表；默认不强制重跑。
+force_rerun_stages: []
+
+# pipeline 内部 stage 顺序；这是内部 DAG，不暴露为 shell task。
+stages:
+  - train_agent
+  - generate_traces
+  - build_reranker_dataset
+  - train_llm_reranker
+  - infer_matrix
+
+# 各 stage 的输入、输出和资源声明。
+stage_configs:
+  # search-tool agent 训练阶段。
+  train_agent:
+    # 是否启用该 stage。
+    enabled: true
+
+    # stage 使用的资源配置键；实际资源细节在 resource YAML 中维护。
+    resource_key: agent
+
+    # 训练入口；后续真实训练接入时使用。
+    entry: AgenticIterRag/main_train_agent.py
+
+    # stage 输入字段。
+    inputs:
+      # agent 训练文件来自 data.train_files。
+      train_files: data.train_files
+
+    # stage 输出字段。
+    outputs:
+      # agent checkpoint 由训练阶段 runtime 写入。
+      agent_checkpoint: null
+
+      # stage manifest 由 pipeline runner 写入。
+      manifest: null
+
+  # 使用训练后 agent 生成搜索轨迹。
+  generate_traces:
+    # 是否启用该 stage。
+    enabled: true
+
+    # stage 使用的资源配置键。
+    resource_key: agent
+
+    # 推理入口类型；air_v1_infer 表示使用 AgenticIterRag v1 自有 infer backend。
+    entry_type: air_v1_infer
+
+    # 推理入口脚本；由 pipeline runner 调用 AIR 自己的 launcher，不调用 CAR 脚本。
+    entry: scripts/agenticIterRag_v1/assets/infer_backend/02_air_infer_launcher.sh
+
+    # stage 输入字段。
+    inputs:
+      # agent checkpoint 默认来自 train_agent 输出。
+      agent_checkpoint: null
+
+      # trace 生成数据来自 data.trace_generation_files。
+      data_files: data.trace_generation_files
+
+      # 已存在的原始 trace JSONL；非空时可跳过真实推理，仅做 canonical trajectory 抽取。
+      existing_raw_trace_jsonl: null
+
+      # 已存在的 canonical trajectory JSONL；非空时可跳过真实推理和抽取。
+      existing_canonical_trace_jsonl: null
+
+    # stage 输出字段。
+    outputs:
+      # 原始推理轨迹 JSONL 由 trace 生成阶段 runtime 写入。
+      raw_trace_jsonl: null
+
+      # 标准化后的 trace JSONL 由 trajectory extractor 写入。
+      canonical_trace_jsonl: null
+
+      # trajectory 长期数据集 manifest 由 runtime 写入。
+      trajectory_manifest: null
+
+      # trajectory 长期数据集版本名由 runtime 写入。
+      trajectory_version: null
+
+      # stage manifest 由 pipeline runner 写入。
+      manifest: null
+
+  # 从 trace 构造 LLM reranker 训练数据。
+  build_reranker_dataset:
+    # 是否启用整个 reranker 数据构造父 stage。
+    enabled: true
+
+    # 父 stage 使用的资源配置键；数据构造默认使用 CPU/local 资源。
+    resource_key: local_cpu
+
+    # 父 stage 内部子阶段顺序；这些不是外部 task，也不是 pipeline 顶层 stage。
+    sub_stage_order:
+      - build_input_dataset
+      - build_train_dataset
+
+    # stage 输入字段。
+    inputs:
+      # 标准 trace JSONL 默认来自 generate_traces 输出。
+      canonical_trace_jsonl: null
+
+      # trajectory manifest 默认来自 generate_traces 输出。
+      trajectory_manifest: null
+
+      # 已存在 input_dataset manifest；只重建 train_dataset 时必须提供。
+      input_dataset_manifest: null
+
+    # stage 输出字段。
+    outputs:
+      # input_dataset manifest 路径由 build_input_dataset 子阶段写入。
+      input_dataset_manifest: null
+
+      # train_dataset manifest 路径由 build_train_dataset 子阶段写入。
+      train_dataset_manifest: null
+
+      # llm_reranker_train_set 顶层 manifest 路径由父 stage 汇总写入。
+      reranker_train_set_manifest: null
+
+      # stage manifest 由 pipeline runner 写入。
+      manifest: null
+
+    # build_reranker_dataset 的内部子阶段配置。
+    sub_stages:
+      # 子阶段一：从 trajectory 构造结构化 input_dataset。
+      build_input_dataset:
+        # 是否执行 input_dataset 构造。
+        enabled: true
+
+        # 子阶段资源键；null 表示继承父 stage 的 resource_key。
+        resource_key: null
+
+        # input_dataset 外部版本名；null 表示 runtime 自动生成。
+        version: null
+
+        # false 表示同名时自动新建日期后缀目录，如 260702b_xxx；true 表示完整覆盖同名目录。
+        overwrite: false
+
+        # 是否从 trajectory 版本名派生 input_dataset 版本名。
+        derive_version_from_trajectory: true
+
+        # input_dataset schema 版本。
+        schema_version: v1
+
+        # input_dataset 构造策略。
+        builder_policy: recall_topn_to_candidates
+
+        # 候选文档来源；第一版默认使用 recall_topn_docs。
+        candidate_source: recall_topn_docs
+
+        # 每个 query 最多保留的候选文档数量。
+        candidate_top_n: 50
+
+        # 候选文档去重策略；keep_first 表示保留首次出现的 doc_id。
+        dedupe_policy: keep_first
+
+        # 标签策略；null 表示第一版不构造排序监督标签。
+        label_policy: null
+
+        # 正例策略；null 表示第一版不构造 positive_doc_ids。
+        positive_policy: null
+
+        # 目标排序策略；none 表示不把 no-ranker trace 顺序作为强监督排序。
+        target_ranking_policy: none
+
+        # 子阶段输出字段。
+        outputs:
+          # input_dataset JSONL 路径由 runtime 写入。
+          dataset_jsonl: null
+
+          # input_dataset Parquet 路径由 runtime 写入。
+          dataset_parquet: null
+
+          # input_dataset example 路径由 runtime 写入。
+          example_json: null
+
+          # input_dataset manifest 路径由 runtime 写入。
+          manifest: null
+
+      # 子阶段二：从 input_dataset 渲染可训练 train_dataset。
+      build_train_dataset:
+        # 是否执行 train_dataset 构造。
+        enabled: true
+
+        # 子阶段资源键；null 表示继承父 stage 的 resource_key。
+        resource_key: null
+
+        # train_dataset 内部版本名；null 表示 runtime 自动生成。
+        version: null
+
+        # false 表示同名时自动新建新版本目录；true 表示完整覆盖同名目录。
+        overwrite: false
+
+        # 训练数据格式；第一版实现 GRPO。
+        format: grpo
+
+        # prompt 模板版本；第一版复用 AgenticIterRag 的 <reason>/<rerank> 标签模板。
+        prompt_template_version: air_rerank_tags_v1
+
+        # formatter 名称；verl_chat 表示输出 VERL chat message 格式。
+        formatter: verl_chat
+
+        # ground-truth 策略；empty 表示 reward_model.ground_truth.target 显式为空。
+        ground_truth_policy: empty
+
+        # reward 策略；none 表示第一版不构造真实排序 reward。
+        reward_policy: none
+
+        # 模型输出格式；air_rerank_tags 表示输出 <reason> 和 <rerank> 标签。
+        output_schema: air_rerank_tags
+
+        # reranker 输出候选数量；null 表示使用 infer_runtime.retrieval.visible_top_m。
+        reranker_top_m: null
+
+        # 每篇候选文档写入 prompt 的最大字符数。
+        max_doc_chars: 2000
+
+        # 子阶段输出字段。
+        outputs:
+          # train_dataset JSONL 路径由 runtime 写入。
+          dataset_jsonl: null
+
+          # train_dataset Parquet 路径由 runtime 写入。
+          dataset_parquet: null
+
+          # train_dataset example 路径由 runtime 写入。
+          example_json: null
+
+          # train_dataset manifest 路径由 runtime 写入。
+          manifest: null
+
+  # 训练 LLM reranker。
+  train_llm_reranker:
+    # 是否启用该 stage。
+    enabled: true
+
+    # stage 使用的资源配置键。
+    resource_key: trained_llm_reranker
+
+    # stage 输入字段。
+    inputs:
+      # dataset manifest 默认来自 build_reranker_dataset 输出。
+      dataset_manifest: null
+
+    # stage 输出字段。
+    outputs:
+      # 训练后的 reranker 模型路径由训练阶段 runtime 写入。
+      reranker_model: null
+
+      # 如使用服务化 reranker，该 endpoint 由 runtime 写入。
+      reranker_endpoint: null
+
+      # stage manifest 由 pipeline runner 写入。
+      manifest: null
+
+  # 统一推理 baseline 矩阵。
+  infer_matrix:
+    # 是否启用该 stage。
+    enabled: true
+
+    # stage 使用的资源配置键。
+    resource_key: infer
+
+    # stage 输入字段。
+    inputs:
+      # 推理集来自 data.infer_file。
+      infer_file: data.infer_file
+
+      # agent checkpoint 默认来自 train_agent 输出。
+      agent_checkpoint: null
+
+      # reranker model 默认来自 train_llm_reranker 输出。
+      reranker_model: null
+
+      # reranker endpoint 默认来自 train_llm_reranker 输出。
+      reranker_endpoint: null
+
+    # stage 输出字段。
+    outputs:
+      # 推理报告路径由 runtime 生成。
+      report: null
+
+      # metrics JSONL 路径由 runtime 生成。
+      metrics_jsonl: null
+
+      # stage manifest 由 pipeline runner 写入。
+      manifest: null
+
+# 失败处理策略。
+failure_policy:
+  # 任一 stage 失败后是否停止后续 stage。
+  stop_on_error: true
+
+  # 是否要求依赖输入存在 manifest。
+  require_manifest_inputs: true

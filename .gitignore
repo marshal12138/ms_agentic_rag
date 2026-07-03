@@ -21,6 +21,7 @@ src/checkpoints/__pycache__/
 /outputs/
 /log/
 /temp/
+/.trash/
 **/outputs/
 **/logs/
 !/src/logs/

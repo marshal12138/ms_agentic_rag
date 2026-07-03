@@ -1,0 +1,40 @@
+# 本 overlay 用于只运行 AgenticIterRag v1 推理矩阵。
+
+main_run:
+  project:
+    # infer-matrix-only 任务默认实验名。
+    experiment_name: agentic_iter_rag_v1_infer_matrix_only
+
+pipeline:
+  # infer-matrix-only 从 infer_matrix stage 开始。
+  resume_from_stage: infer_matrix
+
+  # infer-matrix-only 在 infer_matrix stage 后停止。
+  stop_after_stage: infer_matrix
+
+  # infer-matrix-only 不额外跳过 stage。
+  skip_stages: []
+
+  # infer-matrix-only 默认不强制重跑已有 stage manifest。
+  force_rerun_stages: []
+
+infer_runtime:
+  mode:
+    # 默认推理 no-ranker 基线；其他模式通过 YAML overlay 或 CLI dotlist 覆盖。
+    run_mode: no-ranker
+
+    # no-ranker 模式下 reranker 记录为 none。
+    reranker: none
+
+  artifacts:
+    # infer-matrix-only 默认保留完整轨迹，便于和训练 pipeline 产物对齐。
+    keep_trace: full
+
+infer_matrix:
+  # infer-matrix-only 默认输出四组核心对照。
+  baselines:
+    - origin_agent
+    - trained_agent
+    - trained_agent_original_llm_reranker
+    - trained_agent_trained_llm_reranker
+

@@ -1,0 +1,62 @@
+# AgenticIterRag v1 推理预算配置。
+#
+# 这份预算的数值参考既有成熟链路，但运行入口和配置事实源都属于 AIR。
+
+# 预算配置名称。
+name: air_aligned_budget
+
+# 最多推理样本数；-1 表示不限制。
+max_infer_num: -1
+
+# 最多推理 step 数；-1 表示不限制。
+max_infer_steps: -1
+
+# ranker-only 模式最多推理 step 数；-1 表示不限制。
+max_ranker_infer_steps: -1
+
+# 推理 batch size。
+infer_batch_size: 32
+
+# agent 最大 assistant turn 数。
+max_assistant_turns: 6
+
+# agent 最大 user/tool turn 数。
+max_user_turns: 6
+
+# prompt 最大 token 长度。
+max_prompt_length: 11264
+
+# response 最大 token 长度。
+max_response_length: 1024
+
+# tool response 最大 token 长度。
+max_tool_response_length: 4096
+
+# agent 推理采样温度。
+temperature: 0.0
+
+# agent 推理 top-p。
+top_p: 1.0
+
+# OpenAI-compatible 请求超时时间。
+request_timeout: 180
+
+# stop sequences；null 表示不额外设置。
+stop_sequences: null
+
+# vLLM 服务预算。
+vllm:
+  # vLLM 启动等待最长秒数。
+  startup_timeout: 1800
+
+  # vLLM GPU memory utilization。
+  gpu_memory_utilization: 0.60
+
+  # vLLM 最大并发序列数；null 表示由 infer_batch_size 或 runner 推导。
+  max_num_seqs: null
+
+  # vLLM max model len。
+  max_model_len: 12288
+
+  # vLLM attention backend；null 表示不显式覆盖。
+  attention_backend: null

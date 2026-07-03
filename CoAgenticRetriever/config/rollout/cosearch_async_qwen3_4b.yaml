@@ -37,8 +37,8 @@ gpu_memory_utilization: 0.55
 # 是否忽略 EOS 继续生成，false 表示遇到 EOS 后停止。
 ignore_eos: false
 
-# 是否强制 eager 模式，true 可降低 CUDA graph 相关不确定性。
-enforce_eager: true
+# 是否强制 eager 模式，false 允许 CUDA graph 优化以提升 rollout 吞吐。
+enforce_eager: false
 
 # CUDA graph 捕获 batch size 列表，null 表示不单独指定。
 cudagraph_capture_sizes: null
