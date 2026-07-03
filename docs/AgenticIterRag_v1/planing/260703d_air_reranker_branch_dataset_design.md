@@ -94,7 +94,7 @@ data/AgenticIterRag/
 例如：
 
 ```text
-260703f_AIR_v1_traj_xxx__branch_type0_top50_top5_air_rerank_tags_v1_full50
+260703f_AIR_v1_traj_xxx__branch_first_point_top50_top5_air_rerank_tags_v1_full50
 ```
 
 ## 5. 样本 Schema
@@ -129,7 +129,7 @@ data/AgenticIterRag/
     "source_index": 123,
     "step_index": 0,
     "turn_index": 0,
-    "step_policy": "type0",
+    "step_policy": "first_point",
     "question": "original question",
     "sub_query": "agent generated sub query",
     "candidate_doc_ids": ["doc1", "doc2"],
@@ -211,7 +211,9 @@ extra_info.candidate_doc_ids == enhanced.steps[step_index].doc_id_order
 
 ## 7. Step Policy
 
-### type1
+配置值使用 `first_point`、`end_point`、`random_point`。它们对应口语里的 first point、end point、random point。manifest 和 dataset 里统一写 snake_case，避免带空格字符串影响 CLI 覆盖和代码枚举校验。
+
+### first_point
 
 只选第一步 search。
 
@@ -223,7 +225,9 @@ selected_step = steps[0]
 
 如果 `steps` 为空，按 `allow_no_search` 决定跳过或报错。
 
-### type-1
+这是第一版默认策略。它的好处是最稳定、最容易解释，也能最大程度暴露“开局证据选错导致后续偏航”的问题。
+
+### end_point
 
 只选最后一步 search。
 
@@ -233,7 +237,7 @@ selected_step = steps[0]
 selected_step = steps[-1]
 ```
 
-### type0
+### random_point
 
 固定 seed 随机选一步。
 
@@ -277,7 +281,7 @@ build_branch_dataset(config_path, output_manifest_path) -> dict
 
 代码实现时要补中文注释：
 
-- `select_step` 要解释 type0 为什么用稳定 hash。
+- `select_step` 要解释 `random_point` 为什么用稳定 hash。
 - `validate_selected_step` 要解释为什么 sub_query 和 doc_id 顺序必须强校验。
 - `build_branch_sample` 要解释 `extra_info` 哪些字段给 continuation 用，哪些字段给 reward 用。
 - 写 manifest 的地方要说明该数据集和增强轨迹的追溯关系。
@@ -295,7 +299,7 @@ build_branch_dataset(config_path, output_manifest_path) -> dict
   "created_at": "2026-07-03T00:00:00Z",
   "source_enhanced_trajectory_manifest": "...",
   "source_enhanced_trajectory_jsonl": "...",
-  "step_policy": "type0",
+  "step_policy": "first_point",
   "random_seed": 20260703,
   "candidate_top_n": 50,
   "visible_top_m": 5,
@@ -326,6 +330,7 @@ build_branch_dataset(config_path, output_manifest_path) -> dict
 - `sub_query` 和 tool call 不一致。
 - `visible_top_m > candidate_top_n`。
 - `step_policy=all_steps`。
+- `step_policy` 不属于 `first_point/end_point/random_point/all_steps`。
 
 允许跳过的情况：
 
@@ -343,7 +348,7 @@ build_branch_dataset(config_path, output_manifest_path) -> dict
 - 一条单步 search。
 - 一条多步 search。
 
-分别测试 type1、type-1、type0。
+分别测试 `first_point`、`end_point`、`random_point`。
 
 期望：
 
@@ -363,7 +368,7 @@ build_branch_dataset(config_path, output_manifest_path) -> dict
 
 期望构造器失败，错误信息包含具体字段路径。
 
-### 11.3 type0 稳定性测试
+### 11.3 random_point 稳定性测试
 
 同一份数据，同一个 seed，运行两次。
 
@@ -378,6 +383,64 @@ build_branch_dataset(config_path, output_manifest_path) -> dict
 ### 11.4 dry-run 测试
 
 pipeline dry-run 时不写长期数据集，只写 stage manifest。
+
+### 11.5 小样本 smoke
+
+用 3 条增强轨迹跑真实 builder。
+
+期望：
+
+- 至少生成 1 条 branch sample。
+- `candidate_doc_ids` 数量为 50。
+- `visible_top_m` 写入 manifest 且等于 5。
+- `extra_info` 可以被 continuation 模块读取。
+
+### 11.6 注释验收
+
+人工检查：
+
+- builder 核心函数有中文注释。
+- schema 字段转换处有中文注释。
+- 对齐校验逻辑有中文注释。
+- 注释密度参考现有 dataset builder，不写低价值语法注释。
+
+## 12. 配置或接口补充
+
+branch dataset builder 对外只暴露 stage 级接口：
+
+```text
+build_branch_dataset(config_path, output_manifest_path) -> dict
+```
+
+内部函数可以拆成 `load_enhanced_trajectory_manifest`、`select_step`、`validate_selected_step`、`build_branch_sample`，但 pipeline runner 不应该绕过 stage 级接口直接调内部函数。
+
+配置入口主要是：
+
+- `reranker_training.input.enhanced_trajectory_manifest`
+- `reranker_training.branch_dataset.step_policy`
+- `reranker_training.branch_dataset.random_seed`
+- `reranker_training.branch_dataset.candidate_top_n`
+- `reranker_training.branch_dataset.visible_top_m`
+- `reranker_training.branch_dataset.prompt_template_version`
+
+这些字段实现时都要写入 `final_config.yaml` 和 `manifest.json`，保证后续训练可以追溯数据是怎么来的。
+
+## 13. 执行流程补充
+
+builder 执行流程是：
+
+1. 读取增强轨迹 manifest。
+2. 校验 schema version 和上下文格式版本。
+3. 逐条读取增强轨迹。
+4. 按 step policy 选择 search step。
+5. 校验 step 的 query、doc、messages 对齐。
+6. 渲染 full50 reranker prompt。
+7. 组装 branch sample 和 `extra_info`。
+8. 写 `dataset.jsonl`、可选 `dataset.parquet`、`example.json`。
+9. 写 `manifest.json` 和来源 manifest 快照。
+10. 输出 summary，记录样本数、跳过数、失败原因统计。
+
+代码实现计划中要补充充足中文注释，尤其说明每一步校验是在防止“轨迹错配”还是“上下文格式漂移”。
 
 manifest 中应包含：
 

@@ -425,3 +425,73 @@ new reward = 0.7。
 - parser 复杂分支有中文注释。
 - reward 关键策略有中文注释。
 - format penalty 不触发 continuation 的原因写清楚。
+
+### 12.7 小样本 smoke
+
+用 1 条 branch sample 和 2 个 reranker mock output。
+
+期望：
+
+- 一个 output 格式合法并触发 continuation mock。
+- 一个 output 格式非法并直接得到 `-0.5`。
+- reward extra info 能写出 `format_valid`、`visible_doc_ids`、`reward_strategy`。
+
+## 13. 输入和输出补充
+
+prompt/parser/reward 模块输入：
+
+- branch sample 的 `prompt` 和 `extra_info`。
+- reranker 原始输出文本。
+- `candidate_index_to_doc_id`。
+- `candidate_docs`。
+- reward strategy 配置。
+- continuation runner。
+- answer reward function。
+
+模块输出：
+
+- parser 结果。
+- reranker 排序后的 doc id 列表。
+- top5 visible docs。
+- final reward score。
+- reward extra info。
+
+格式错误时输出仍然要结构化，至少包含 `score=-0.5`、`format_valid=false`、`format_error_code` 和 `continuation_status=skipped_format_error`。
+
+## 14. 配置或接口补充
+
+稳定接口建议是：
+
+```text
+render_air_rerank_full50_prompt(...) -> tuple[list[dict], dict]
+parse_rerank_response(text: str, expected_n: int = 50) -> RerankParseResult
+compute_reranker_reward(...) -> dict
+load_answer_reward_function(path: str, name: str) -> Callable
+```
+
+配置字段主要来自：
+
+- `reranker_training.branch_dataset.prompt_template_version`
+- `reranker_training.branch_dataset.candidate_top_n`
+- `reranker_training.branch_dataset.visible_top_m`
+- `reranker_training.reward.strategy`
+- `reranker_training.reward.format_penalty`
+- `reranker_training.reward.answer_reward_function`
+
+代码实现计划中要补充充足中文注释，参考现有 AIR prompt、parser、reward 相关代码的注释方法。parser 和 reward 的分支逻辑必须写中文注释，尤其解释格式错误为什么直接 `-0.5`、为什么不触发 continuation。
+
+## 15. 执行流程补充
+
+一次 reward 计算的完整流程是：
+
+1. 接收 reranker 原始输出。
+2. parser 检查 `<reason>/<rerank>` 标签和 50 个 distinct index。
+3. 如果 parser invalid，直接返回 format penalty。
+4. 如果 parser valid，把 index 映射成 doc id。
+5. 取排序后的前 5 篇 doc。
+6. 调用 continuation runner 得到新 final answer。
+7. 调用 answer reward function 计算新答案分数。
+8. 按 `answer_reward` 或 `delta_answer_reward` 得到最终 reranker reward。
+9. 把 reward 和 extra info 写回 VERL batch。
+
+这个流程里 parser、continuation、answer reward 三层边界要保持清楚。不要让 parser 了解 agent，也不要让 continuation 去解释 reranker 格式。

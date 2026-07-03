@@ -31,7 +31,27 @@ agent llm
 
 第一版只把配置和 manifest 写到本次 run artifact 目录。
 
-## 3. 输出目录
+## 3. 输入和输出
+
+service bundle stage 的输入：
+
+- `train_llm_reranker` stage manifest。
+- 训练后的 reranker model path。
+- frozen/search agent model path。
+- retriever endpoint 和 topN 配置。
+- reranker prompt/parser 版本。
+- observation topM 和 tool response formatter 版本。
+- 本次 run 的 final config。
+
+service bundle stage 的输出：
+
+- `service_config.yaml`
+- `tool_config.yaml`
+- `manifest.json`
+
+这三个文件都写在本次 run artifact 目录，不写到长期数据目录。服务启动脚本后续只需要读取 bundle，不需要重新理解训练配置。
+
+## 4. 输出目录
 
 训练完成后输出：
 
@@ -48,7 +68,27 @@ outputs/agenticIterRag/<group>/<run>/service_bundle/
 - `tool_config.yaml`：search tool 配置，可被启动脚本或 tool registry 消费。
 - `manifest.json`：bundle 来源、模型路径、配置 hash、生成时间。
 
-## 4. service_config.yaml
+## 5. 配置或接口
+
+服务组装模块建议只暴露两个接口：
+
+```text
+build_service_bundle(config: dict, train_manifest: dict, output_dir: Path) -> dict
+validate_service_bundle(bundle_dir: Path) -> None
+```
+
+`build_service_bundle` 负责写文件，`validate_service_bundle` 负责 fail-fast 校验。
+
+外部服务启动脚本只依赖两个稳定入口：
+
+- `service_bundle/service_config.yaml`
+- `service_bundle/tool_config.yaml`
+
+实现时不要让启动脚本读取训练中间文件。训练产物到服务配置的映射关系必须固化在 bundle manifest 里。
+
+代码和配置文件实现计划中要补充充足中文注释，参考现有 AIR 代码文件和配置文件的注释方法。尤其要说明字段来自训练产物、运行环境，还是部署侧覆盖。
+
+## 6. service_config.yaml
 
 示例：
 
@@ -105,7 +145,7 @@ observation:
 - 生成的 YAML 模板必须包含中文注释。
 - 注释要说明字段来源：训练产物、运行环境，还是部署侧可覆盖。
 
-## 5. tool_config.yaml
+## 7. tool_config.yaml
 
 示例：
 
@@ -150,7 +190,7 @@ tools:
 
 注意：现有 `AgenticIterRagRetrieverTool` 当前支持 disabled/ray_actor dense ranker。接入 LLM reranker 服务时，需要后续实现新的 backend 分支或服务 adapter。service bundle 先把配置契约写清楚。
 
-## 6. Manifest
+## 8. Manifest
 
 `manifest.json` 示例：
 
@@ -173,7 +213,7 @@ tools:
 }
 ```
 
-## 7. 生成模块
+## 9. 生成模块
 
 建议实现：
 
@@ -203,7 +243,7 @@ validate_service_bundle(bundle_dir: Path) -> None
 - 字段来源映射处写中文注释，说明哪些来自训练产物，哪些来自 runtime config。
 - fail-fast 策略处写中文注释，说明为什么不静默 fallback。
 
-## 8. Fail-fast 策略
+## 10. Fail-fast 策略
 
 第一版 bundle 默认：
 
@@ -231,7 +271,7 @@ fallback: retriever_top5
 
 但第一版不实现。
 
-## 9. 启动脚本消费方式
+## 11. 启动脚本消费方式
 
 外部服务启动脚本读取：
 
@@ -248,7 +288,22 @@ service_bundle/service_config.yaml
 
 bundle 不负责实际启动进程，只提供配置事实源。
 
-## 10. 校验规则
+## 12. 执行流程
+
+service bundle stage 的执行流程是：
+
+1. runner 调用 build service bundle stage。
+2. stage 读取 final config 和 `train_llm_reranker` manifest。
+3. stage 校验 reranker checkpoint、agent model、retriever endpoint 等输入字段。
+4. stage 生成带中文注释的 `service_config.yaml`。
+5. stage 生成带中文注释的 `tool_config.yaml`。
+6. stage 写 `manifest.json`，记录来源 manifest、模型路径、topN/topM、prompt/parser 版本和 config hash。
+7. stage 立即调用 `validate_service_bundle`。
+8. 校验通过后，把 `service_bundle_dir` 写入 stage manifest。
+
+这里要坚持 fail-fast。只要 reranker model path 缺失或配置不一致，就不要生成看似可用的 bundle。
+
+## 13. 校验规则
 
 生成后立即校验：
 
@@ -265,7 +320,7 @@ bundle 不负责实际启动进程，只提供配置事实源。
 
 校验失败时，build_service_bundle stage 失败。
 
-## 11. Runner 集成
+## 14. Runner 集成
 
 新增 pipeline stage：
 
@@ -289,9 +344,9 @@ build_service_bundle
 
 dry-run 时只写预期路径和配置摘要。
 
-## 12. 测试计划
+## 15. 测试计划
 
-### 12.1 正向生成测试
+### 15.1 正向生成测试
 
 输入 fake train manifest。
 
@@ -301,7 +356,7 @@ dry-run 时只写预期路径和配置摘要。
 - YAML 可解析。
 - manifest 指向真实文件。
 
-### 12.2 字段校验测试
+### 15.2 字段校验测试
 
 删除 reranker model path。
 
@@ -315,7 +370,7 @@ dry-run 时只写预期路径和配置摘要。
 
 - 校验失败。
 
-### 12.3 Tool Config 初始化测试
+### 15.3 Tool Config 初始化测试
 
 用 tool registry 尝试读取 `tool_config.yaml`。
 
@@ -325,7 +380,28 @@ dry-run 时只写预期路径和配置摘要。
 
 如果代码尚未实现 `llm_reranker_service` backend，则测试只校验配置结构，不实例化真实后端。
 
-### 12.4 注释验收
+### 15.4 dry-run 测试
+
+运行到 `build_service_bundle` dry-run。
+
+期望：
+
+- 不要求真实 checkpoint 存在。
+- 写出预期 bundle 路径。
+- 写出将要生成的 `service_config.yaml` 和 `tool_config.yaml` 摘要。
+- stage manifest 标记 `dry_run=true`。
+
+### 15.5 小样本 smoke
+
+用一个 fake reranker checkpoint 目录和 fake agent model path。
+
+期望：
+
+- bundle 可以生成。
+- 校验通过。
+- manifest 里 topN=50、topM=5、required=true。
+
+### 15.6 注释验收
 
 人工检查：
 

@@ -26,6 +26,16 @@ import aiohttp
 import pandas as pd
 from transformers import AutoTokenizer
 
+from agentic_iter_rag.trajectory.enhanced import (
+    CONTEXT_FORMAT_VERSION,
+    ENHANCED_TRAJECTORY_SCHEMA_VERSION,
+    TOOL_RESPONSE_FORMAT_VERSION,
+    doc_id_order,
+    normalize_doc_list,
+    utc_now,
+    validate_enhanced_record,
+)
+
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -302,6 +312,13 @@ def coerce_dict(value: Any) -> dict[str, Any]:
     return dict(value)
 
 
+def first_nonempty(*values: Any) -> str:
+    for value in values:
+        if value is not None and str(value).strip():
+            return str(value).strip()
+    return ""
+
+
 def coerce_answers(value: Any) -> list[str]:
     if value is None:
         return []
@@ -363,6 +380,10 @@ def trace_doc_id(doc: dict[str, Any]) -> str:
 
 def trace_doc_ids(documents: list[dict[str, Any]]) -> list[str]:
     return [trace_doc_id(doc) for doc in documents]
+
+
+def clone_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [dict(message) for message in messages]
 
 
 def apply_chat_template(
@@ -1054,6 +1075,7 @@ async def infer_one(
     final_top5_by_call: list[list[dict[str, Any]]] = []
     recall_top50_by_call: list[list[dict[str, Any]]] = []
     stage_records: list[dict[str, Any]] = []
+    enhanced_steps: list[dict[str, Any]] = []
 
     agent_total_s = 0.0
     retrieve_total_s = 0.0
@@ -1125,10 +1147,12 @@ async def infer_one(
         answer_in_current_turn = extract_answer(assistant_text)
 
         if args.max_assistant_turns and len(assistant_texts) >= args.max_assistant_turns:
+            messages.append({"role": "assistant", "content": assistant_text})
             final_answer = answer_in_current_turn
             status = "answered" if final_answer else "max_turns"
             break
         if args.max_user_turns and user_turns >= args.max_user_turns:
+            messages.append({"role": "assistant", "content": assistant_text})
             final_answer = answer_in_current_turn
             status = "answered" if final_answer else "max_user_turns"
             break
@@ -1141,7 +1165,9 @@ async def infer_one(
             if trim_tokens > 0:
                 prompt_ids = prompt_ids[:-trim_tokens]
             assistant_texts[-1] = assistant_for_history
-            messages.append({"role": "assistant", "content": assistant_for_history})
+            assistant_message = {"role": "assistant", "content": assistant_for_history}
+            messages.append(assistant_message)
+            messages_before_tool_response = clone_messages(messages)
             raw_sub_query = (tool_payload.get("arguments") or {}).get("query")
             sub_query = str(raw_sub_query).strip() if raw_sub_query is not None else ""
             sub_queries.append(sub_query)
@@ -1191,6 +1217,9 @@ async def infer_one(
             ranked_top50_docs = ranked_docs[:TRACE_TOP50]
             ranked_top5_docs = ranked_docs[:TRACE_TOP5]
             final_top5_docs = final_docs[:TRACE_TOP5]
+            recall_topn_docs = normalize_doc_list(documents, limit=args.top_n)
+            original_ranked_docs = normalize_doc_list(ranked_docs, limit=args.top_n)
+            original_visible_docs = normalize_doc_list(final_docs, limit=args.top_m)
             recall_top5_by_call.append(recall_top5_docs)
             ranked_top50_by_call.append(ranked_top50_docs)
             ranked_top5_by_call.append(ranked_top5_docs)
@@ -1199,6 +1228,34 @@ async def infer_one(
                 recall_top50_by_call.append(documents[:TRACE_TOP50])
 
             tool_message = {"role": "tool", "content": tool_response_text}
+            messages_after_original_tool_response = messages_before_tool_response + [dict(tool_message)]
+            normalized_tool_call = dict(tool_payload)
+            normalized_tool_call["arguments"] = dict(tool_payload.get("arguments") or {})
+            normalized_tool_call["arguments"]["query"] = sub_query
+            enhanced_step = {
+                "step_index": len(enhanced_steps),
+                "turn_index": len(assistant_texts) - 1,
+                "sub_query": sub_query,
+                "tool_call": normalized_tool_call,
+                "assistant_tool_call_message": dict(assistant_message),
+                "messages_before_tool_response": messages_before_tool_response,
+                "assistant_turns_so_far": len(assistant_texts),
+                "user_turns_so_far": user_turns,
+                "recall_topn_docs": recall_topn_docs,
+                "original_ranked_docs": original_ranked_docs,
+                "original_visible_docs": original_visible_docs,
+                "original_tool_message": dict(tool_message),
+                "messages_after_original_tool_response": messages_after_original_tool_response,
+                "doc_id_order": doc_id_order(recall_topn_docs),
+                "original_visible_doc_ids": doc_id_order(original_visible_docs),
+                "step_metrics": {
+                    "num_recall_docs": len(documents),
+                    "num_agent_visible_docs": len(final_docs),
+                    "retrieve_s": retrieve_elapsed,
+                    "ranker_s": ranker_elapsed,
+                },
+            }
+            enhanced_steps.append(enhanced_step)
             messages.append(tool_message)
             tool_response_ids = apply_chat_template(
                 agent_tokenizer,
@@ -1277,6 +1334,36 @@ async def infer_one(
         "ranker_enabled": args.run_mode != "no-ranker",
         "status": status,
     }
+    sample_id = first_nonempty(row.get("sample_id"), row.get("uid"), row.get("id"), row.get("index"), idx)
+    trajectory_id = first_nonempty(row.get("trace_id"), row.get("uid"), row.get("id"), f"sample-{idx:06d}")
+    enhanced_trajectory = {
+        "schema_version": ENHANCED_TRAJECTORY_SCHEMA_VERSION,
+        "trajectory_id": str(trajectory_id),
+        "sample_id": str(sample_id),
+        "data_source": data_source,
+        "source_index": idx,
+        "question": initial_query,
+        "gold_answers": answers,
+        "agent_model": str(args.agent_model) if args.agent_model else None,
+        "agent_model_role": "trained_agent",
+        "context_format_version": CONTEXT_FORMAT_VERSION,
+        "tool_response_format_version": TOOL_RESPONSE_FORMAT_VERSION,
+        "chat_template_source": "qwen3_chat_template",
+        "tokenizer_name_or_path": str(args.agent_model) if args.agent_model else None,
+        "baseline_final_answer": final_answer,
+        "baseline_reward": metrics["f1"],
+        "baseline_metrics": metrics,
+        "initial_prompt_messages": clone_messages(prompt_messages),
+        "final_messages": clone_messages(messages),
+        "steps": enhanced_steps,
+        "raw_trace_ref": {"path": None, "line_index": idx},
+        "created_at": utc_now(),
+    }
+    validate_enhanced_record(
+        enhanced_trajectory,
+        no_ranker=args.run_mode == "no-ranker",
+        top_m=args.top_m,
+    )
     trace = {
         "index": idx,
         "data_source": data_source,
@@ -1292,6 +1379,13 @@ async def infer_one(
         "status": status,
         "metrics": metrics,
         "stage_records": stage_records,
+        "enhanced_trajectory": enhanced_trajectory,
+        "final_messages": clone_messages(messages),
+        "agent_model": str(args.agent_model) if args.agent_model else None,
+        "tokenizer_name_or_path": str(args.agent_model) if args.agent_model else None,
+        "context_format_version": CONTEXT_FORMAT_VERSION,
+        "tool_response_format_version": TOOL_RESPONSE_FORMAT_VERSION,
+        "chat_template_source": "qwen3_chat_template",
     }
     if args.keep_trace == "full":
         trace["retrieved_top50_chunks"] = recall_top50_by_call

@@ -224,11 +224,14 @@ def generate_trajectory_readme(dataset_dir: Path) -> str:
     trajectory_jsonl = dataset_dir / "trajectory.jsonl"
     raw_trace_jsonl = dataset_dir / "raw_traces.jsonl"
     metrics_jsonl = dataset_dir / "metrics.jsonl"
+    enhanced_trajectory_jsonl = dataset_dir / "enhanced_trajectory.jsonl"
     readme = dataset_dir / "README.md"
 
     trajectory_count = count_jsonl(trajectory_jsonl)
     raw_count = count_jsonl(raw_trace_jsonl)
     metric_count = count_jsonl(metrics_jsonl)
+    enhanced_count = count_jsonl(enhanced_trajectory_jsonl)
+    enhanced_summary = read_json(dataset_dir / "enhanced_summary.json")
     status_counts = Counter({str(k): int(v) for k, v in (summary.get("status_counts") or {}).items()})
     if not status_counts:
         status_counts = counter_from_jsonl(metrics_jsonl, "status")
@@ -253,14 +256,18 @@ def generate_trajectory_readme(dataset_dir: Path) -> str:
             ("raw_trace_count_actual", raw_count),
             ("metric_count_actual", metric_count),
             ("trajectory_record_count_actual", trajectory_count),
+            ("enhanced_record_count_actual", enhanced_count),
+            ("enhanced_search_step_count", enhanced_summary.get("search_step_count", manifest.get("enhanced_search_step_count"))),
             ("raw_trace_count_manifest", manifest.get("raw_trace_count")),
             ("record_count_manifest", manifest.get("record_count")),
+            ("enhanced_record_count_manifest", manifest.get("enhanced_record_count")),
             ("config_hash", manifest.get("config_hash")),
         ],
     )
     warnings = [
         jsonl_mismatch_note("raw_trace_count", manifest.get("raw_trace_count"), raw_count),
         jsonl_mismatch_note("record_count", manifest.get("record_count"), trajectory_count),
+        jsonl_mismatch_note("enhanced_record_count", manifest.get("enhanced_record_count"), enhanced_count),
     ]
     warnings = [item for item in warnings if item]
     if warnings:
@@ -283,6 +290,9 @@ def generate_trajectory_readme(dataset_dir: Path) -> str:
             ("raw_traces", raw_trace_jsonl, "per-source-sample raw AIR inference output"),
             ("metrics", metrics_jsonl, "per-source-sample evaluation/status metrics"),
             ("trajectory", trajectory_jsonl, "canonical per-search-query trajectory records"),
+            ("enhanced_trajectory", enhanced_trajectory_jsonl, "per-source-sample continuation-ready trajectory records"),
+            ("enhanced_summary", dataset_dir / "enhanced_summary.json", "aggregate enhanced trajectory statistics"),
+            ("enhanced_example", dataset_dir / "enhanced_example.json", "one enhanced trajectory example"),
             ("summary", dataset_dir / "summary.json", "aggregate metrics"),
             ("manifest", dataset_dir / "manifest.json", "dataset metadata"),
             ("example", dataset_dir / "example.json", "one example record"),
@@ -313,6 +323,7 @@ def generate_trajectory_readme(dataset_dir: Path) -> str:
     lines += schema_markdown(raw_trace_jsonl, "raw_traces.jsonl")
     lines += schema_markdown(metrics_jsonl, "metrics.jsonl")
     lines += schema_markdown(trajectory_jsonl, "trajectory.jsonl")
+    lines += schema_markdown(enhanced_trajectory_jsonl, "enhanced_trajectory.jsonl")
     lines += ["## Example", "", "See `example.json` for one full example record.", ""]
     return "\n".join(lines)
 

@@ -110,6 +110,11 @@ agentic_rag_with_llm_reranker
 
 这两个模块逻辑上分开。训练模块关心“怎么学”，服务组装模块关心“怎么用”。
 
+详细模块设计见：
+
+- [AIR 专用 GRPO trainer 模块设计](./260703g_air_reranker_grpo_trainer_module_design.md)
+- [agentic RAG with LLM reranker 服务组装设计](./260703h_air_rag_with_llm_reranker_service_bundle_design.md)
+
 ## 5. 训练入口
 
 预设训练入口是：
@@ -149,6 +154,18 @@ bash scripts/agenticIterRag_v1/01_pipeline_launcher.sh \
 ```text
 AgenticIterRag/config/reranker_training/llm_reranker_grpo_branch.yaml
 ```
+
+但最核心的入口 YAML 仍然是：
+
+```text
+AgenticIterRag/config/main_run/agentic_iter_rag_main.yaml
+```
+
+`llm_reranker_grpo_branch.yaml` 要作为 `reranker_training` 配置组挂到这个 main YAML 的 `config_groups` 体系里。也就是说，reranker 训练 pipeline 不是孤立入口，而是 AIR 全流程 pipeline 的一个可选执行分支。
+
+配置与入口细节见：
+
+- [AIR LLM Reranker 配置管理详细设计](./260703c_air_llm_reranker_config_design.md)
 
 ## 6. Pipeline Stage 调整
 
@@ -202,6 +219,10 @@ infer_matrix
 
 但这次 `run_260703a` 默认从 `build_reranker_branch_dataset` 开始。
 
+stage 和配置细节见：
+
+- [AIR LLM Reranker 配置管理详细设计](./260703c_air_llm_reranker_config_design.md)
+
 ## 7. Branch Dataset 设计
 
 branch dataset 是 reranker GRPO 真正消费的数据。
@@ -252,7 +273,7 @@ data/AgenticIterRag/
     "trajectory_id": "traj-123",
     "sample_id": "source-sample-id",
     "step_index": 0,
-    "step_policy": "type0",
+    "step_policy": "first_point",
     "question": "original question",
     "sub_query": "agent generated sub query",
     "candidate_doc_ids": ["doc1", "doc2"],
@@ -286,7 +307,11 @@ data/AgenticIterRag/
 - `extra_info.candidate_docs`：50 篇候选文档。
 - `extra_info.candidate_index_to_doc_id`：reranker 输出 `[i]` 后映射真实 doc_id。
 - `extra_info.baseline_reward`：delta reward 会用。
-- `extra_info.step_policy`：记录该样本是 type1/type-1/type0 哪种策略选出来的。
+- `extra_info.step_policy`：记录该样本是 `first_point`、`end_point`、`random_point` 哪种策略选出来的。
+
+数据集细节见：
+
+- [AIR Reranker Branch Dataset 详细设计](./260703d_air_reranker_branch_dataset_design.md)
 
 ## 8. Reranker Prompt 和输出格式
 
@@ -338,25 +363,31 @@ Rank ALL 50 passages
 - index 重复。
 - index 数量不是 50。
 
+prompt、parser 和 reward 细节见：
+
+- [AIR Reranker Prompt、Parser 和 Reward 详细设计](./260703e_air_reranker_prompt_parser_reward_design.md)
+
 ## 9. Step Policy
 
 第一版支持三种单步替换策略。
 
-### type1
+配置值使用 snake_case：`first_point`、`end_point`、`random_point`。它们对应口语里的 first point、end point、random point。这里不直接在 YAML 里写带空格的值，是为了 CLI dotlist 覆盖、manifest 记录和代码枚举判断更稳定。
+
+### first_point
 
 只替换第一步 search。
 
 适合看 reranker 对开局证据选择的影响。很多任务第一步搜错，后面就会一路偏。
 
-### type-1
+第一版默认使用这个策略。原因是它最稳定、最容易解释，也最符合“先把训练闭环做干净”的目标。
+
+### end_point
 
 只替换最后一步 search。
 
 适合看 reranker 对最终补证据的影响。这个策略通常 continuation 更短，训练成本更低。
 
-### type0
-
-默认策略。
+### random_point
 
 每条轨迹用固定 seed 随机选择一个 search step。
 
@@ -372,7 +403,7 @@ Rank ALL 50 passages
 ```yaml
 reranker_training:
   branch_dataset:
-    step_policy: type0
+    step_policy: first_point
     random_seed: 20260703
     allow_no_search: false
 ```
@@ -420,6 +451,10 @@ messages_before_tool_response + [new_tool_message]
 注意：后续 search 不允许再调用训练中的 reranker。
 
 这点要写死。因为第一版训练的是“只改变一步 search result”的 counterfactual。如果后续 search 也接入 reranker，那 reward 就不再只归因于当前 reranker action。
+
+continuation rollout 细节见：
+
+- [AIR Reranker Continuation Rollout 详细设计](./260703f_air_reranker_continuation_rollout_design.md)
 
 ## 11. Reward 设计
 
@@ -489,6 +524,10 @@ reranker_training:
     require_baseline_reward_for_delta: true
 ```
 
+prompt、parser 和 reward 细节见：
+
+- [AIR Reranker Prompt、Parser 和 Reward 详细设计](./260703e_air_reranker_prompt_parser_reward_design.md)
+
 ## 12. GRPO 分组
 
 GRPO 的关键是同一个 prompt 下采多个 reranker 输出，然后比较 reward。
@@ -517,6 +556,10 @@ trajectory_id:step_index:baseline_bucket
 
 - 如果某个 group 全部 reward 一样，可以按现有 VERL 逻辑过滤或保留 fallback。
 - 如果有效样本数量不足，要在 metrics 里清楚记录。
+
+prompt、parser 和 reward 细节见：
+
+- [AIR Reranker Prompt、Parser 和 Reward 详细设计](./260703e_air_reranker_prompt_parser_reward_design.md)
 
 ## 13. 训练后端
 
@@ -561,7 +604,19 @@ AgenticIterRag/agentic_iter_rag/reranker_training/
 - `trainer_entry.py`：把 AIR config 翻译成 VERL GRPO 训练任务。
 - `service_bundle.py`：训练结束后生成服务 bundle。
 
+trainer 模块细节见：
+
+- [AIR Reranker GRPO Trainer 模块详细设计](./260703g_air_reranker_grpo_trainer_module_design.md)
+
 ## 14. 配置设计
+
+最核心的 YAML 仍然是：
+
+```text
+AgenticIterRag/config/main_run/agentic_iter_rag_main.yaml
+```
+
+新增的 `llm_reranker_grpo_branch.yaml` 不是独立于主流程之外的配置，而是挂在 main YAML 的 `config_groups.reranker_training` 下面。训练入口通过 `--RERANKER_TRAINING_CONFIG=llm_reranker_grpo_branch` 选择它，compiler 需要把选择结果写回 final config 的 `main_run.config_groups.reranker_training`。
 
 新增或扩展 `reranker_training` 配置：
 
@@ -578,7 +633,7 @@ reranker_training:
     enabled: true
     version: null
     overwrite: false
-    step_policy: type0
+    step_policy: first_point
     random_seed: 20260703
     candidate_top_n: 50
     visible_top_m: 5
@@ -632,15 +687,23 @@ resource:
           gpu_ids: [0, 1, 2, 3]
           tensor_parallel_size: 4
         frozen_agent_vllm:
-          gpu_ids: [4, 5, 6, 7]
-          tensor_parallel_size: 4
+          gpu_ids: [4, 5, 6]
+          tensor_parallel_size: 3
         recall:
           gpu_ids: [7]
           port: 8130
           retrieval_service_url: http://127.0.0.1:8130/retrieve
 ```
 
-实际 GPU 怎么分，可以后续按机器调整，但配置语义要是 stage-level placement。
+默认资源规划不允许 `frozen_agent_vllm` 和 `recall` 共享 GPU。首选方案是 reranker 用 0-3，frozen agent 用 4-6，recall 用 7。
+
+如果 frozen agent 的运行后端不支持 3 卡 TP，备选方案是 frozen agent 用 4-5，recall 用 6-7。也就是说，宁可降低 agent TP，也不要让 recall 和 agent 重叠在同一张卡上。
+
+实际 GPU 怎么分，可以后续按机器调整，但配置语义要是 stage-level placement，并且默认 fail-fast 拒绝 GPU overlap。
+
+配置管理、stage resource、compiler 校验和 dry-run 审计细节见：
+
+- [AIR LLM Reranker 配置管理详细设计](./260703c_air_llm_reranker_config_design.md)
 
 ## 15. Service Bundle
 
@@ -706,6 +769,10 @@ tools:
 
 原因是训练和评估时必须知道 reranker 真的生效了。静默回退会让指标解释变得很混乱。
 
+服务组装细节见：
+
+- [agentic RAG with LLM reranker 服务组装详细设计](./260703h_air_rag_with_llm_reranker_service_bundle_design.md)
+
 ## 16. Test Plan
 
 ### 16.1 增强轨迹前置测试
@@ -762,7 +829,7 @@ with-reranker 链路：
 
 - 把样本 A 的 `messages_before_tool_response` 换成样本 B 的，必须失败。
 - 把 step0 的 top50 docs 换成 step1 的，必须失败。
-- 把 type0 随机选出的 step 改成不存在的 step，必须失败。
+- 把 `random_point` 选出的 step 改成不存在的 step，必须失败。
 
 ### 16.4 要点3：上下文格式一致性
 
@@ -784,15 +851,16 @@ with-reranker 链路：
 
 ### 16.5 要点4：Reranker 生效点位
 
-type1：
+first_point：
 
 - 多步轨迹只选 `step_index=0`。
+- 第一版默认策略必须是 `first_point`。
 
-type-1：
+end_point：
 
 - 多步轨迹只选最后一个 step。
 
-type0：
+random_point：
 
 - 同一个 seed 下选择结果稳定。
 - 换 seed 后允许选择变化。
@@ -802,6 +870,11 @@ all_steps：
 
 - 第一版配置后训练入口直接失败。
 - 错误信息说明该模式留待后续实现。
+
+资源配置负向测试：
+
+- `frozen_agent_vllm.gpu_ids` 和 `recall.gpu_ids` 有交集时，默认必须失败。
+- 如果运行环境不支持 `tensor_parallel_size=3`，必须切换到 agent 两张卡、recall 两张卡的备选配置，而不是允许 GPU overlap。
 
 ### 16.6 要点5：Continuation 搜索工具
 
@@ -894,7 +967,7 @@ baseline 缺失：
 完成：
 
 - 从增强轨迹构造 branch dataset。
-- 支持 type1/type-1/type0。
+- 支持 `first_point`、`end_point`、`random_point`。
 - prompt 要求完整 50 排序。
 
 验收：
@@ -940,13 +1013,17 @@ baseline 缺失：
 - bundle 配置可解析。
 - tool config 可初始化。
 
+trainer 模块和里程碑拆解细节见：
+
+- [AIR Reranker GRPO Trainer 模块详细设计](./260703g_air_reranker_grpo_trainer_module_design.md)
+
 ## 18. 默认决策
 
 第一版默认：
 
 - 使用 Qwen3-4B 作为 reranker base model。
 - search agent 冻结。
-- step policy 使用 `type0`。
+- step policy 使用 `first_point`。
 - reranker 输出完整 50 排序。
 - agent observation 只取 top5。
 - continuation 后续 search 只用 retriever。
@@ -954,5 +1031,7 @@ baseline 缺失：
 - reranker 格式错误 reward 是 `-0.5`。
 - service bundle 只写 artifact 目录。
 - reranker 服务失败 fail-fast。
+- 默认资源规划不允许 frozen agent 和 recall 共享 GPU。
+- 新增代码和配置实现时必须补充充足中文注释，参考现有 AIR 代码和 YAML 的注释方式。
 
 这些默认值不是随便选的。它们的目标是先把训练闭环做干净，保证 reward 能归因到“这一条 reranker 排序”上。

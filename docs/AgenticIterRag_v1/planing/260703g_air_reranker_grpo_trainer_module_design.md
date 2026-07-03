@@ -24,7 +24,30 @@
 - 不实现新的分布式训练框架。
 - 不在 shell 里维护业务配置。
 
-## 3. 包结构
+## 3. 输入和输出
+
+trainer 模块输入：
+
+- AIR final config。
+- branch dataset manifest。
+- reranker base model 路径。
+- frozen agent 模型路径。
+- retriever-only search tool 配置。
+- reward function 配置。
+- resource stage plan。
+
+trainer 模块输出：
+
+- reranker checkpoint。
+- `train_llm_reranker` stage manifest。
+- reward metrics。
+- group filtering metrics。
+- continuation trace 采样日志。
+- 给 service bundle 消费的 reranker model path。
+
+这里不要让 trainer 自己去猜路径。所有输入都应该来自 final config 或上游 stage manifest。
+
+## 4. 包结构
 
 建议新增：
 
@@ -56,7 +79,7 @@ AgenticIterRag/agentic_iter_rag/reranker_training/
 - 复杂函数前写中文注释，说明输入输出和失败策略。
 - 不要写“给变量赋值”这种低价值注释。
 
-## 4. 训练入口
+## 5. 训练入口
 
 `main_train_llm_reranker.py` 从 placeholder 改成真实入口。
 
@@ -76,7 +99,27 @@ AgenticIterRag/agentic_iter_rag/reranker_training/
 agentic_iter_rag.reranker_training.trainer_entry.run_from_config()
 ```
 
-## 5. Trainer Entry 设计
+## 6. 配置或接口
+
+对外稳定接口建议只暴露两个：
+
+```text
+run_from_config(config_path: Path, stage_manifest: Path, dry_run: bool = False) -> dict
+build_verl_training_plan(final_config: dict, branch_manifest: dict) -> dict
+```
+
+`run_from_config` 负责 stage 生命周期，`build_verl_training_plan` 负责把 AIR 配置翻译成 VERL 可消费的训练计划。
+
+不建议让外部直接调用内部 reward runner 或 continuation runner。原因是这些模块依赖 branch sample schema，随意绕过 trainer entry 容易破坏 UID grouping 和 manifest 记录。
+
+接口实现时要补中文注释，说明：
+
+- 哪些字段来自 final config。
+- 哪些字段来自 branch dataset manifest。
+- 哪些字段会写入 stage manifest。
+- 哪些参数禁止从 shell 直接传入。
+
+## 7. Trainer Entry 设计
 
 `trainer_entry.py` 核心接口：
 
@@ -106,7 +149,7 @@ dry-run 时：
 - dry-run 分支写中文注释，说明不会启动训练服务。
 - 写 manifest 前写中文注释，说明下游 service bundle 依赖哪些输出。
 
-## 6. VERL 对接边界
+## 8. VERL 对接边界
 
 AIR 不重写底层优化器。
 
@@ -131,7 +174,7 @@ AIR 自己负责：
 - 不是静态 qrels。
 - 是 continuation answer reward。
 
-## 7. UID Grouping
+## 9. UID Grouping
 
 默认 UID：
 
@@ -153,7 +196,7 @@ trainer 要把 UID 写入 batch extra info，供 GRPO 分组。
 - 第一版沿用 VERL 现有过滤或 fallback 策略。
 - 过滤统计写入 metrics。
 
-## 8. Batch 构造
+## 10. Batch 构造
 
 branch dataset 每条样本进入 VERL 后：
 
@@ -167,7 +210,7 @@ branch dataset 每条样本进入 VERL 后：
 - `messages_before_tool_response` 可能很大，要确认 DataProto non_tensor_batch 能承载。
 - 如果太大，后续可以改成 `context_ref` 引用外部 JSONL，但第一版先直接内嵌，保证实现简单。
 
-## 9. Checkpoint 和 Manifest
+## 11. Checkpoint 和 Manifest
 
 训练 stage manifest 推荐包含：
 
@@ -192,7 +235,24 @@ branch dataset 每条样本进入 VERL 后：
 - 写入 error type 和 message。
 - 不写 fake reranker_model。
 
-## 10. 训练入口 Shell
+## 12. 执行流程
+
+trainer stage 的执行流程是：
+
+1. runner 调用 `main_train_llm_reranker.py`，传入 final config 和 stage manifest 路径。
+2. trainer entry 加载 final config，并校验 reranker training 配置。
+3. trainer entry 读取 branch dataset manifest。
+4. trainer entry 构造 VERL 训练计划。
+5. reranker actor 对同一个 UID prompt 采样多个 response。
+6. parser 校验每个 response 的 `<reason>/<rerank>` 格式。
+7. 格式正确时调用 continuation rollout，格式错误时直接给 format penalty。
+8. reward runner 计算 `answer_reward` 或 `delta_answer_reward`。
+9. VERL 根据组内 reward 做 GRPO 更新。
+10. trainer 写 checkpoint、metrics 和 stage manifest。
+
+执行流程相关代码要补中文注释，重点说明 parser、continuation、reward、GRPO 更新之间的边界。
+
+## 13. 训练入口 Shell
 
 新增 shell 入口时要保留 AIR 注释风格。
 
@@ -204,7 +264,7 @@ branch dataset 每条样本进入 VERL 后：
 - CLI dotlist 只用于临时覆盖。
 - 不允许 shell-only 业务配置。
 
-## 11. Runner 集成
+## 14. Runner 集成
 
 `run_pipeline.py` 增加：
 
@@ -216,7 +276,7 @@ branch dataset 每条样本进入 VERL 后：
 
 dry-run 仍然只写 manifest。
 
-## 12. 错误处理
+## 15. 错误处理
 
 直接失败：
 
@@ -229,7 +289,7 @@ dry-run 仍然只写 manifest。
 
 不应该吞掉这些错误，因为下游 service bundle 必须依赖真实 checkpoint。
 
-## 13. 实现计划
+## 16. 实现计划
 
 顺序：
 
@@ -249,9 +309,9 @@ dry-run 仍然只写 manifest。
 - VERL 对接边界必须注释清楚，避免后续误以为 AIR 重写了训练框架。
 - shell 入口必须解释配置来源和禁止 shell-only 业务配置的原因。
 
-## 14. 测试计划
+## 17. 测试计划
 
-### 14.1 dry-run 测试
+### 17.1 dry-run 测试
 
 运行训练 task `--dry-run`。
 
@@ -260,7 +320,7 @@ dry-run 仍然只写 manifest。
 - stage manifest 写出 base model、dataset manifest、output dir。
 - 不启动 VERL。
 
-### 14.2 branch dataset 缺失测试
+### 17.2 branch dataset 缺失测试
 
 不提供 branch dataset manifest。
 
@@ -269,7 +329,7 @@ dry-run 仍然只写 manifest。
 - 如果构造 stage 没执行，train stage 失败。
 - 错误信息指向 `reranker_training.input.branch_dataset_manifest`。
 
-### 14.3 reward mock 训练测试
+### 17.3 reward mock 训练测试
 
 用 2 条 fake branch sample。
 
@@ -280,14 +340,25 @@ mock continuation 和 reward。
 - 能构造 reranker batch。
 - reward 写到最后有效 token。
 
-### 14.4 checkpoint 测试
+### 17.4 checkpoint 测试
 
 训练完成后：
 
 - reranker checkpoint 路径存在。
 - manifest 中 `reranker_model` 指向真实路径。
 
-### 14.5 注释验收
+### 17.5 小样本 smoke
+
+用 1 到 2 个 UID、每个 UID 采样 2 个 response。
+
+期望：
+
+- UID grouping 正确。
+- continuation 可以被 mock 或真实小模型替代。
+- reward extra info 写入 batch。
+- checkpoint 或 dry-run output dir 能按预期创建。
+
+### 17.6 注释验收
 
 人工检查：
 

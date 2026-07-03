@@ -382,4 +382,72 @@ mock frozen agent 连接失败。
 
 - 上下文拼接处有中文注释。
 - role 顺序校验有中文注释。
+- 后续 search 禁用 reranker 的约束有中文注释。
+- frozen agent 调用边界有中文注释。
+
+### 13.7 dry-run 测试
+
+dry-run 模式不启动 frozen agent。
+
+期望：
+
+- 校验输入 schema。
+- 生成 continuation 预期调用摘要。
+- 不请求 retriever。
+- 不请求 reranker。
+
+### 13.8 小样本 smoke
+
+用 1 条合法 branch sample 和 mock frozen agent。
+
+期望：
+
+- 能构造 `messages_before_tool_response + new_tool_message`。
+- mock agent 返回 final answer。
+- trace 记录 `visible_doc_ids`。
+- `reranker_call_count_after_branch=0`。
+
+## 14. 配置或接口补充
+
+continuation 模块稳定接口建议是：
+
+```text
+validate_branch_context(extra_info) -> None
+render_new_tool_message(docs, config) -> dict
+build_branch_messages(messages_before_tool_response, new_tool_message) -> list[dict]
+run_frozen_agent_continuation(messages, config) -> ContinuationResult
+```
+
+配置字段主要来自：
+
+- `reranker_training.continuation.agent_model`
+- `reranker_training.continuation.use_frozen_agent`
+- `reranker_training.continuation.search_tool_mode`
+- `reranker_training.continuation.max_assistant_turns`
+- `reranker_training.continuation.max_response_length`
+- `reranker_training.branch_dataset.visible_top_m`
+- `tool_response_format_version`
+
+代码实现计划中要补充充足中文注释，参考现有 AIR rollout 和 search tool 代码的注释方法。上下文拼接、role 顺序、后续 search 禁用 reranker 这些关键约束必须写中文注释。
+
+## 15. 执行流程补充
+
+一次 continuation rollout 的执行流程是：
+
+1. 接收 parser 已经验证过的 top5 docs。
+2. 校验 `messages_before_tool_response` 的最后一条是 assistant tool_call。
+3. 用 AIR search tool formatter 渲染新的 tool message。
+4. 拼接 `messages_before_tool_response + [new_tool_message]`。
+5. 初始化 frozen agent 推理客户端。
+6. 初始化 retriever-only search tool。
+7. 从拼接后的 messages 继续 rollout。
+8. 如果 agent 后续继续 search，只调用 retriever。
+9. 遇到 `<answer>`、turn budget、token budget 或 infra error 后终止。
+10. 返回 final answer、trace 和 metrics。
+
+这个流程的核心约束是“只替换当前一步 observation”。不要重跑前序轨迹，也不要让后续 search 使用训练中的 reranker。
+人工检查：
+
+- 上下文拼接处有中文注释。
+- role 顺序校验有中文注释。
 - 禁用后续 reranker 的地方有中文注释。

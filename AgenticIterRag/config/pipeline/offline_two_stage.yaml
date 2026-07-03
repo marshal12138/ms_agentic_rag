@@ -244,6 +244,25 @@ stage_configs:
           # train_dataset manifest 路径由 runtime 写入。
           manifest: null
 
+      # 后续阶段：从 enhanced_trajectory 构造 continuation/branch 训练输入。
+      # 第一版只预留接口，不加入 sub_stage_order，也不改变现有静态 reranker dataset。
+      build_branch_input_dataset:
+        enabled: false
+        resource_key: null
+        source: enhanced_trajectory
+        schema_version: air_reranker_branch_input_v1
+        builder_policy: enhanced_step_to_branch_input
+        candidate_source: recall_topn_docs
+        candidate_top_n: 50
+        reranker_top_m: null
+        require_messages_before_tool_response: true
+        overwrite: false
+        outputs:
+          dataset_jsonl: null
+          dataset_parquet: null
+          example_json: null
+          manifest: null
+
   # 训练 LLM reranker。
   train_llm_reranker:
     # 是否启用该 stage。

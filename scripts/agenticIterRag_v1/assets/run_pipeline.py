@@ -21,6 +21,13 @@ if __package__ is None or __package__ == "":
 
 from agentic_iter_rag.infer_matrix.matrix import build_infer_matrix
 from agentic_iter_rag.pipeline.manifest import write_stage_manifest
+from agentic_iter_rag.trajectory.enhanced import (
+    CONTEXT_FORMAT_VERSION,
+    ENHANCED_TRAJECTORY_SCHEMA_VERSION,
+    TOOL_RESPONSE_FORMAT_VERSION,
+    summarize_enhanced_records,
+    validate_enhanced_record,
+)
 from agentic_iter_rag.trajectory.extract import extract_file
 from agentic_iter_rag.utils.io import (
     copy_file,
@@ -548,6 +555,41 @@ def copy_or_empty(src: Path | None, dst: Path) -> None:
         write_jsonl(dst, [])
 
 
+def extract_enhanced_trajectory_file(
+    *,
+    raw_trace_jsonl: Path,
+    output_jsonl: Path,
+    example_json: Path,
+    summary_json: Path,
+    raw_trace_ref_path: Path,
+    no_ranker: bool,
+    top_n: int,
+    top_m: int,
+) -> dict[str, Any]:
+    records: list[dict[str, Any]] = []
+    missing_lines: list[int] = []
+    for line_index, raw in enumerate(iter_jsonl(raw_trace_jsonl)):
+        enhanced = raw.get("enhanced_trajectory")
+        if not isinstance(enhanced, dict):
+            missing_lines.append(line_index)
+            continue
+        record = dict(enhanced)
+        record["raw_trace_ref"] = {"path": str(raw_trace_ref_path), "line_index": line_index}
+        validate_enhanced_record(record, no_ranker=no_ranker, top_m=top_m)
+        records.append(record)
+    if missing_lines:
+        preview = ", ".join(str(item) for item in missing_lines[:10])
+        raise ValueError(
+            "raw trace jsonl does not contain strict enhanced_trajectory records; "
+            f"missing lines: {preview}. Old raw_traces.jsonl cannot be backfilled strictly."
+        )
+    write_jsonl(output_jsonl, records)
+    write_example(example_json, records[0] if records else None)
+    summary = summarize_enhanced_records(records, top_n=top_n, top_m=top_m)
+    write_json(summary_json, summary)
+    return summary
+
+
 def run_generate_traces(config: dict[str, Any], manifest: Path, dry_run: bool, config_path: Path) -> None:
     stage_cfg = config["pipeline"]["stage_configs"]["generate_traces"]
     resource_plan = stage_resource_plan(config, "generate_traces")
@@ -564,6 +606,9 @@ def run_generate_traces(config: dict[str, Any], manifest: Path, dry_run: bool, c
     metrics_jsonl = trajectory_dir / "metrics.jsonl"
     summary_json = trajectory_dir / "summary.json"
     example_json = trajectory_dir / "example.json"
+    enhanced_trajectory_jsonl = trajectory_dir / "enhanced_trajectory.jsonl"
+    enhanced_example_json = trajectory_dir / "enhanced_example.json"
+    enhanced_summary_json = trajectory_dir / "enhanced_summary.json"
     trajectory_manifest = trajectory_dir / "manifest.json"
     final_config_copy = trajectory_dir / "final_config.yaml"
 
@@ -592,6 +637,9 @@ def run_generate_traces(config: dict[str, Any], manifest: Path, dry_run: bool, c
                 "trajectory_dir": str(trajectory_dir),
                 "canonical_trace_jsonl": str(trajectory_jsonl),
                 "raw_trace_jsonl": str(raw_trace_jsonl),
+                "enhanced_trajectory_jsonl": str(enhanced_trajectory_jsonl),
+                "enhanced_example_json": str(enhanced_example_json),
+                "enhanced_summary_json": str(enhanced_summary_json),
                 "trajectory_manifest": str(trajectory_manifest),
                 "infer_command": infer_command,
                 "infer_env": infer_env_preview,
@@ -605,6 +653,7 @@ def run_generate_traces(config: dict[str, Any], manifest: Path, dry_run: bool, c
     raw_source: Path | None = None
     metrics_source: Path | None = None
     source_mode = "air_v1_infer"
+    enhanced_summary: dict[str, Any] | None = None
 
     if existing_canonical:
         source_mode = "existing_canonical_trace_jsonl"
@@ -636,6 +685,16 @@ def run_generate_traces(config: dict[str, Any], manifest: Path, dry_run: bool, c
         copy_file(raw_source, raw_trace_jsonl)
         extract_file(raw_trace_jsonl, trajectory_jsonl)
         copy_or_empty(metrics_source, metrics_jsonl)
+        enhanced_summary = extract_enhanced_trajectory_file(
+            raw_trace_jsonl=raw_trace_jsonl,
+            output_jsonl=enhanced_trajectory_jsonl,
+            example_json=enhanced_example_json,
+            summary_json=enhanced_summary_json,
+            raw_trace_ref_path=raw_trace_jsonl,
+            no_ranker=str(config["infer_runtime"]["mode"].get("run_mode")) == "no-ranker",
+            top_n=int(config["infer_runtime"]["retrieval"]["final_top_n"]),
+            top_m=int(config["infer_runtime"]["retrieval"]["visible_top_m"]),
+        )
 
     if existing_canonical:
         record_count = count_jsonl(trajectory_jsonl)
@@ -657,6 +716,8 @@ def run_generate_traces(config: dict[str, Any], manifest: Path, dry_run: bool, c
         "record_count": record_count,
         "raw_trace_count": count_jsonl(raw_trace_jsonl),
         "metric_count": count_jsonl(metrics_jsonl),
+        "enhanced_record_count": enhanced_summary.get("record_count", 0) if enhanced_summary else 0,
+        "enhanced_search_step_count": enhanced_summary.get("search_step_count", 0) if enhanced_summary else 0,
         "source_summary": source_summary,
     }
     write_json(summary_json, summary)
@@ -676,6 +737,15 @@ def run_generate_traces(config: dict[str, Any], manifest: Path, dry_run: bool, c
         "metrics_jsonl": str(metrics_jsonl),
         "summary_json": str(summary_json),
         "example_json": str(example_json),
+        "enhanced_trajectory_jsonl": str(enhanced_trajectory_jsonl) if enhanced_summary else None,
+        "enhanced_example_json": str(enhanced_example_json) if enhanced_summary else None,
+        "enhanced_summary_json": str(enhanced_summary_json) if enhanced_summary else None,
+        "enhanced_schema_version": ENHANCED_TRAJECTORY_SCHEMA_VERSION if enhanced_summary else None,
+        "enhanced_record_count": enhanced_summary.get("record_count", 0) if enhanced_summary else 0,
+        "enhanced_record_count_actual": enhanced_summary.get("record_count", 0) if enhanced_summary else 0,
+        "enhanced_search_step_count": enhanced_summary.get("search_step_count", 0) if enhanced_summary else 0,
+        "context_format_version": CONTEXT_FORMAT_VERSION if enhanced_summary else None,
+        "tool_response_format_version": TOOL_RESPONSE_FORMAT_VERSION if enhanced_summary else None,
         "final_config_yaml": str(final_config_copy),
         "record_count": record_count,
         "raw_trace_count": count_jsonl(raw_trace_jsonl),
@@ -691,6 +761,12 @@ def run_generate_traces(config: dict[str, Any], manifest: Path, dry_run: bool, c
         "trajectory_dir": str(trajectory_dir),
         "raw_trace_jsonl": str(raw_trace_jsonl),
         "canonical_trace_jsonl": str(trajectory_jsonl),
+        "enhanced_trajectory_jsonl": str(enhanced_trajectory_jsonl) if enhanced_summary else None,
+        "enhanced_example_json": str(enhanced_example_json) if enhanced_summary else None,
+        "enhanced_summary_json": str(enhanced_summary_json) if enhanced_summary else None,
+        "enhanced_record_count": enhanced_summary.get("record_count", 0) if enhanced_summary else 0,
+        "enhanced_record_count_actual": enhanced_summary.get("record_count", 0) if enhanced_summary else 0,
+        "enhanced_search_step_count": enhanced_summary.get("search_step_count", 0) if enhanced_summary else 0,
         "trajectory_manifest": str(trajectory_manifest),
         "trajectory_readme": str(trajectory_readme),
         "example_json": str(example_json),
@@ -700,6 +776,8 @@ def run_generate_traces(config: dict[str, Any], manifest: Path, dry_run: bool, c
         {
             "raw_trace_jsonl": str(raw_trace_jsonl),
             "canonical_trace_jsonl": str(trajectory_jsonl),
+            "enhanced_trajectory_jsonl": str(enhanced_trajectory_jsonl) if enhanced_summary else None,
+            "enhanced_summary_json": str(enhanced_summary_json) if enhanced_summary else None,
             "trajectory_manifest": str(trajectory_manifest),
             "trajectory_version": version,
             "trajectory_readme": str(trajectory_readme),
