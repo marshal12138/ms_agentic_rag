@@ -34,6 +34,16 @@ QUERY_BATCH_SIZE="${QUERY_BATCH_SIZE:-32}"
 OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
 MKL_NUM_THREADS="${MKL_NUM_THREADS:-1}"
 DRY_RUN="${DRY_RUN:-0}"
+# retriever 资产预检默认关闭；训练/推理编排层可以对第一个 backend 显式打开。
+# 即使跳过 verifier，脚本仍会做必要的文件存在性检查，并在 server 启动时真实加载 index/corpus。
+SKIP_RETRIEVAL_ASSET_VERIFY="${SKIP_RETRIEVAL_ASSET_VERIFY:-1}"
+
+is_truthy() {
+  case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
+    1|true|yes|y|on) return 0 ;;
+    *) return 1 ;;
+  esac
+}
 
 cd "${ROOT}"
 export HF_HOME="${HF_HOME:-${ROOT}/.cache/huggingface}"
@@ -61,6 +71,7 @@ QUERY_BATCH_SIZE=${QUERY_BATCH_SIZE}
 HOST=${HOST}
 PORT=${PORT}
 RECALL_FINAL_TOP_N=${RECALL_FINAL_TOP_N}
+SKIP_RETRIEVAL_ASSET_VERIFY=${SKIP_RETRIEVAL_ASSET_VERIFY}
 EOF
   exit 0
 fi
@@ -82,11 +93,6 @@ if [[ ! -f "${GPU_DENSE_RETRIEVER_SERVER}" ]]; then
   exit 2
 fi
 
-if [[ ! -f "${VERIFY_RETRIEVAL_ASSETS}" ]]; then
-  echo "ERROR: AIR retrieval asset verifier not found: ${VERIFY_RETRIEVAL_ASSETS}" >&2
-  exit 2
-fi
-
 if [[ "${DEVICE}" != "$(air_accel_device_prefix)"* ]]; then
   echo "ERROR: AIR dense retrieval server requires DEVICE prefix $(air_accel_device_prefix); got DEVICE=${DEVICE}" >&2
   exit 2
@@ -100,9 +106,17 @@ then
   exit 2
 fi
 
-"${PY}" "${VERIFY_RETRIEVAL_ASSETS}" \
-  --index "${INDEX_FILE}" \
-  --corpus "${CORPUS_FILE}"
+if is_truthy "${SKIP_RETRIEVAL_ASSET_VERIFY}"; then
+  echo "Skipping AIR retrieval asset verifier for this backend: SKIP_RETRIEVAL_ASSET_VERIFY=${SKIP_RETRIEVAL_ASSET_VERIFY}" >&2
+else
+  if [[ ! -f "${VERIFY_RETRIEVAL_ASSETS}" ]]; then
+    echo "ERROR: AIR retrieval asset verifier not found: ${VERIFY_RETRIEVAL_ASSETS}" >&2
+    exit 2
+  fi
+  "${PY}" "${VERIFY_RETRIEVAL_ASSETS}" \
+    --index "${INDEX_FILE}" \
+    --corpus "${CORPUS_FILE}"
+fi
 
 echo "Starting AIR GPU dense retriever from ${GPU_DENSE_RETRIEVER_SERVER}" >&2
 echo "  $(air_accel_visible_devices_var)=${RETRIEVER_GPU_IDS}" >&2

@@ -1,0 +1,50 @@
+# SPAD-RAG 第一版 Qwen3-1.7B + GLM4.7 smoke overlay。
+
+main_run:
+  project:
+    experiment_name: agentic_iter_rag_v1_spad_qwen3_1_7b_glm47_smoke
+  config_groups:
+    pipeline: offline_two_stage
+    agent_training: spad_rag_base
+    model: qwen3_1_7b
+    rollout: air_async_qwen3_1_7b
+
+pipeline:
+  resume_from_stage: train_agent
+  stop_after_stage: train_agent
+  skip_stages: []
+  force_rerun_stages: [train_agent]
+  stage_configs:
+    train_agent:
+      enabled: true
+      impl: spad_rag
+      impl_config_ref: agent_training
+
+agent_training:
+  default_backend: smoke
+  resume_from_sub_stage: null
+  stop_after_sub_stage: null
+  skip_sub_stages: []
+  force_rerun_sub_stages: []
+  teacher_answerer:
+    default_service_profile: glm47_single_vllm
+  sub_stages:
+    search_policy_rl:
+      enabled: true
+      backend: smoke
+      smoke:
+        max_samples: 8
+        total_training_steps: 1
+    answer_refresh_data:
+      enabled: true
+      backend: smoke
+      smoke:
+        max_samples: 8
+    answer_distillation:
+      enabled: true
+      phases:
+        sft:
+          enabled: false
+        dpo:
+          enabled: true
+          backend: smoke

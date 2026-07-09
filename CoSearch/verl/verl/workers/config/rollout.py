@@ -38,6 +38,10 @@ class SamplingConfig(BaseConfig):
     top_k: int = -1
     top_p: float = 1.0
     do_sample: bool = True
+    # 生成停止字符串；AIR LLM reranker 用它在 </rerank> 后提前结束无效 decode。
+    stop: Optional[list[str]] = None
+    # 是否把停止字符串保留在输出中；reranker parser 需要看到 </rerank> 闭合标签。
+    include_stop_str_in_output: bool = False
     n: int = 1
 
 
@@ -126,6 +130,11 @@ class RolloutConfig(BaseConfig):
     top_p: float = 1.0
     do_sample: bool = True
     n: int = 1
+    # 生成停止字符串；AIR LLM reranker 用 </rerank> 提前结束结构化输出。
+    # 这个字段必须在 RolloutConfig 上，因为 actor_rollout_ref.rollout 会直接实例化成 RolloutConfig。
+    stop: Optional[list[str]] = None
+    # 是否把 stop 字符串保留在输出中；保留闭合标签可以让 reranker parser 正常通过格式校验。
+    include_stop_str_in_output: bool = False
 
     # Early termination threshold for multi-turn rollout in sglang.
     # Abort remaining requests when (1 - over_sample_rate) * total_requests are completed.

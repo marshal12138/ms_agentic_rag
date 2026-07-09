@@ -23,7 +23,10 @@ stages:
   - train_agent
   - generate_traces
   - build_reranker_dataset
+  - build_reranker_branch_dataset
+  - filter_reranker_branch_dataset
   - train_llm_reranker
+  - build_service_bundle
   - infer_matrix
 
 # 各 stage 的输入、输出和资源声明。
@@ -39,15 +42,31 @@ stage_configs:
     # 训练入口；后续真实训练接入时使用。
     entry: AgenticIterRag/main_train_agent.py
 
+    # agent 训练实现。默认保持 placeholder，不影响跳过 train_agent 的 dataproduce/reranker 任务；
+    # SPAD 实验 overlay 会覆盖为 spad_rag。
+    impl: placeholder
+
+    # 训练实现配置引用；spad_rag 的完整内部配置来自 config.agent_training。
+    impl_config_ref: agent_training
+
     # stage 输入字段。
     inputs:
       # agent 训练文件来自 data.train_files。
       train_files: data.train_files
 
+      # agent 验证文件来自 data.val_files。
+      val_files: data.val_files
+
+      # 初始 actor 模型默认来自 model 配置组。
+      init_actor_model: model.path
+
     # stage 输出字段。
     outputs:
       # agent checkpoint 由训练阶段 runtime 写入。
       agent_checkpoint: null
+
+      # agent 训练内部 manifest，记录 impl、sub-stage 产物和最终 checkpoint 选择。
+      agent_training_manifest: null
 
       # stage manifest 由 pipeline runner 写入。
       manifest: null
@@ -244,24 +263,53 @@ stage_configs:
           # train_dataset manifest 路径由 runtime 写入。
           manifest: null
 
-      # 后续阶段：从 enhanced_trajectory 构造 continuation/branch 训练输入。
-      # 第一版只预留接口，不加入 sub_stage_order，也不改变现有静态 reranker dataset。
-      build_branch_input_dataset:
-        enabled: false
-        resource_key: null
-        source: enhanced_trajectory
-        schema_version: air_reranker_branch_input_v1
-        builder_policy: enhanced_step_to_branch_input
-        candidate_source: recall_topn_docs
-        candidate_top_n: 50
-        reranker_top_m: null
-        require_messages_before_tool_response: true
-        overwrite: false
-        outputs:
-          dataset_jsonl: null
-          dataset_parquet: null
-          example_json: null
-          manifest: null
+  # 从增强轨迹构造 LLM reranker GRPO branch dataset。
+  build_reranker_branch_dataset:
+    # 是否启用该 stage。
+    enabled: true
+
+    # branch dataset 构造只使用本地 CPU。
+    resource_key: local_cpu
+
+    # stage 输入字段。
+    inputs:
+      # 增强轨迹 manifest；默认来自 generate_traces 输出，也可以由 overlay 指定已有数据集。
+      enhanced_trajectory_manifest: null
+
+      # 静态 reranker train set manifest；仅用于审计来源，不作为 continuation 上下文。
+      reranker_train_set_manifest: null
+
+    # stage 输出字段。
+    outputs:
+      # branch dataset manifest 路径。
+      branch_dataset_manifest: null
+
+      # stage manifest 由 pipeline runner 写入。
+      manifest: null
+
+  # 从 branch dataset 中筛选训练 slice。
+  filter_reranker_branch_dataset:
+    # 是否启用该 stage；默认关闭，避免影响旧链路。
+    # 需要 hard/improvable 子集训练时，由 overlay 显式打开。
+    enabled: false
+
+    # 过滤只使用本地 CPU。
+    resource_key: local_cpu
+
+    # stage 输入字段。
+    inputs:
+      # 输入 branch dataset manifest。
+      # null 表示默认消费 build_reranker_branch_dataset 的输出；
+      # 也可以由 overlay 指向已有 first_point / end_point / random_point branch manifest。
+      source_branch_dataset_manifest: null
+
+    # stage 输出字段。
+    outputs:
+      # 过滤后的 branch dataset manifest；会自动传给 train_llm_reranker。
+      filtered_branch_dataset_manifest: null
+
+      # stage manifest 由 pipeline runner 写入。
+      manifest: null
 
   # 训练 LLM reranker。
   train_llm_reranker:
@@ -269,11 +317,15 @@ stage_configs:
     enabled: true
 
     # stage 使用的资源配置键。
-    resource_key: trained_llm_reranker
+    resource_key: train_llm_reranker
 
     # stage 输入字段。
     inputs:
-      # dataset manifest 默认来自 build_reranker_dataset 输出。
+      # branch dataset manifest 默认来自 build_reranker_branch_dataset 输出；
+      # 如果启用 filter_reranker_branch_dataset，则会被过滤后的 manifest 覆盖。
+      branch_dataset_manifest: null
+
+      # 静态 dataset manifest 仅用于审计，不作为 AIR branch GRPO 主输入。
       dataset_manifest: null
 
     # stage 输出字段。
@@ -285,6 +337,30 @@ stage_configs:
       reranker_endpoint: null
 
       # stage manifest 由 pipeline runner 写入。
+      manifest: null
+
+  # 训练完成后生成带 LLM reranker 的服务配置 bundle。
+  build_service_bundle:
+    # 是否启用该 stage。
+    enabled: true
+
+    # service bundle 只写配置和 manifest，使用本地 CPU。
+    resource_key: local_cpu
+
+    # stage 输入字段。
+    inputs:
+      # reranker model 默认来自 train_llm_reranker 输出。
+      reranker_model: null
+
+      # agent model 默认来自 infer_runtime.models.trained_agent_model。
+      agent_model: null
+
+    # stage 输出字段。
+    outputs:
+      # service bundle 目录。
+      service_bundle_dir: null
+
+      # service bundle manifest。
       manifest: null
 
   # 统一推理 baseline 矩阵。

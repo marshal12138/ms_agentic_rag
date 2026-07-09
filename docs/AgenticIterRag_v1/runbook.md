@@ -67,7 +67,7 @@ bash tasks/train_tasks/agenticIterRag/run_00_AIR_v1_offline_example_task.sh \
 AIR resource YAML 使用 stage-level placement。dry-run 后检查：
 
 ```text
-outputs/agenticIterRag/<group>/<run>/execution_plan.yaml
+log/agenticIterRag/<run>/outputs/execution_plan.yaml
 ```
 
 其中 `stage_resource_plan` 会列出本次 selected stages 实际使用的 GPU、端口和服务实例。每个 stage manifest
@@ -77,19 +77,21 @@ outputs/agenticIterRag/<group>/<run>/execution_plan.yaml
 
 dry-run 和真实运行都会写入：
 
-- `log/agenticIterRag/`
-- `outputs/agenticIterRag/`
+- `log/agenticIterRag/<run>/runtime_logs/`
+- `log/agenticIterRag/<run>/outputs/`
 - `reports/agenticIterRag/`
 
-pipeline 顶层 manifest 和 execution plan 位于本次 run 的 artifact 目录下。每个内部 stage 的 manifest 位于：
+`runtime_logs/` 保存 pipeline 级日志和最终配置快照；`outputs/` 保存 pipeline manifest、execution plan、stage manifest、checkpoint 和 stage 产物。
+
+pipeline 顶层 manifest 和 execution plan 位于本次 run 的 `outputs/` 目录下。每个内部 stage 的 manifest 位于：
 
 ```text
-stages/<stage>/manifest.json
+outputs/stages/<stage>/manifest.json
 ```
 
 `build_reranker_dataset` 还有两个内部子阶段 manifest：
 
 ```text
-stages/build_reranker_dataset/build_input_dataset/manifest.json
-stages/build_reranker_dataset/build_train_dataset/manifest.json
+outputs/stages/build_reranker_dataset/build_input_dataset/manifest.json
+outputs/stages/build_reranker_dataset/build_train_dataset/manifest.json
 ```

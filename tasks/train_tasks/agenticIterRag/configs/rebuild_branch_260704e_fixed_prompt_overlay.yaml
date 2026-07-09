@@ -1,0 +1,81 @@
+# AIR v1 260704e branch dataset fixed prompt 补产 overlay。
+# 这份配置只重建 branch dataset，不启动 reranker 训练或 service bundle。
+
+main_run:
+  project:
+    # 本次只做 prompt 修正后的数据补产，用于后续 stage2 诊断和训练。
+    experiment_name: agentic_iter_rag_v1_rebuild_branch_260704e_fixed_prompt
+
+  data_artifacts:
+    trajectory:
+      # 固定使用已经完成的 260704e 全量 trajectory。
+      version: 260704e_AIR_v1_traj_co_search_ablation.train_global_step_79
+      overwrite: false
+      allow_empty_trace: false
+
+    llm_reranker_branch_train_set:
+      # 新 version 显式带 fixed_example，避免误读旧 prompt 已物化数据。
+      version: 260704e_AIR_v1_traj_co_search_ablation.train_global_step_79__branch_first_point_top50_top5_cosearch_rerank_topm_v1_plus_no_analyze50_fixed_example
+      overwrite: false
+
+pipeline:
+  # 只执行 branch dataset 构造。
+  resume_from_stage: build_reranker_branch_dataset
+  stop_after_stage: build_reranker_branch_dataset
+  skip_stages: []
+
+  # 固定重跑 builder；长期数据目录仍由 overwrite=false 保护，若同名存在会自动生成安全后缀。
+  force_rerun_stages:
+    - build_reranker_branch_dataset
+
+  stage_gap_seconds: 0
+
+  stage_configs:
+    generate_traces:
+      enabled: false
+
+    build_reranker_dataset:
+      inputs:
+        # 仅用于 final config 审计；本 overlay 默认不会执行该 stage。
+        trajectory_manifest: /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/data/AgenticIterRag/trajectory/260704e_AIR_v1_traj_co_search_ablation.train_global_step_79/manifest.json
+        input_dataset_manifest: null
+
+    build_reranker_branch_dataset:
+      inputs:
+        # 固定使用 260704e 增强轨迹 manifest。
+        enhanced_trajectory_manifest: /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/data/AgenticIterRag/trajectory/260704e_AIR_v1_traj_co_search_ablation.train_global_step_79/manifest.json
+
+        # 固定复用已完成的静态 reranker dataset，仅用于 lineage 审计。
+        reranker_train_set_manifest: /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/data/AgenticIterRag/llm_reranker_train_set/260704e_AIR_v1_traj_co_search_ablation.train_global_step_79__input_recall50_emptylabel_b/manifest.json
+
+data:
+  # 保留原始训练文件声明用于审计；本 overlay 不重新生产轨迹。
+  trace_generation_files:
+    - /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/data/AgenticIterRag/source/co_search_ablation.train.parquet
+  trace_max_samples: -1
+
+reranker_training:
+  input:
+    # 固定使用 260704e 增强轨迹 manifest。
+    enhanced_trajectory_manifest: /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/data/AgenticIterRag/trajectory/260704e_AIR_v1_traj_co_search_ablation.train_global_step_79/manifest.json
+
+    # 固定复用已完成的静态 reranker dataset，仅用于 lineage 审计。
+    reranker_train_set_manifest: /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/data/AgenticIterRag/llm_reranker_train_set/260704e_AIR_v1_traj_co_search_ablation.train_global_step_79__input_recall50_emptylabel_b/manifest.json
+
+    # 由本次 build_reranker_branch_dataset 动态写回。
+    branch_dataset_manifest: null
+
+  branch_dataset:
+    # 与 main_run.data_artifacts.llm_reranker_branch_train_set.version 保持一致。
+    version: 260704e_AIR_v1_traj_co_search_ablation.train_global_step_79__branch_first_point_top50_top5_cosearch_rerank_topm_v1_plus_no_analyze50_fixed_example
+    overwrite: false
+    step_policy: first_point
+    candidate_top_n: 50
+    visible_top_m: 5
+    max_doc_chars: 2000
+
+    # 修正后的默认 prompt version。
+    prompt_template_version: cosearch_rerank_topm_v1_plus_no_analyze50_fixed_example
+
+    # 全量补产，不继承基础配置里的 smoke_max_samples=8。
+    smoke_max_samples: null

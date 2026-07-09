@@ -1,0 +1,72 @@
+# SPAD-RAG Stage 3 local DPO small-step efficiency ablation.
+#
+# This overlay consumes the Stage 2 answer_distill_dataset_manifest and runs
+# the default DPO phase with pairwise loss plus chosen-answer SFT auxiliary loss.
+
+main_run:
+  project:
+    experiment_name: agentic_iter_rag_v1_spad_qwen3_1_7b_glm47_stage3_dpo_smoke
+  config_groups:
+    pipeline: offline_two_stage
+    agent_training: spad_rag_base
+    model: qwen3_1_7b
+    rollout: air_async_qwen3_1_7b
+
+pipeline:
+  resume_from_stage: train_agent
+  stop_after_stage: train_agent
+  skip_stages: []
+  force_rerun_stages: [train_agent]
+  stage_configs:
+    train_agent:
+      enabled: true
+      impl: spad_rag
+      impl_config_ref: agent_training
+
+agent_training:
+  default_backend: smoke
+  resume_from_sub_stage: answer_distillation
+  stop_after_sub_stage: answer_distillation
+  skip_sub_stages: []
+  force_rerun_sub_stages: [answer_distillation]
+  sub_stages:
+    search_policy_rl:
+      enabled: false
+    answer_refresh_data:
+      enabled: false
+    answer_distillation:
+      enabled: true
+      phase_order: [sft, dpo]
+      inputs:
+        init_actor_checkpoint: /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/outputs/agenticIterRag/agenticIterRag/260709-050525-640638-pipeline-agentic_iter_rag_v1_spad_qwen3_1_7b_glm47_stage2_refresh_smoke/stages/train_agent/spad_rag/answer_refresh_data/actor_model_hf/global_step_5
+        dataset_manifest: /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/outputs/agenticIterRag/agenticIterRag/260709-050525-640638-pipeline-agentic_iter_rag_v1_spad_qwen3_1_7b_glm47_stage2_refresh_smoke/stages/train_agent/spad_rag/answer_refresh_data/answer_distill_dataset_manifest.json
+      phases:
+        sft:
+          enabled: false
+        dpo:
+          enabled: true
+          backend: local_dpo
+          train_batch_size: 1
+          total_training_steps: 2
+          max_samples: 4
+          max_length: 4096
+          learning_rate: 1.0e-6
+          beta: 0.1
+          pairwise_loss_weight: 1.0
+          chosen_sft_loss_weight: 0.2
+          clip_grad_norm: 1.0
+          apply_chat_template_kwargs:
+            enable_thinking: false
+
+resource:
+  stage_resources:
+    train_agent:
+      impls:
+        spad_rag:
+          sub_stages:
+            answer_distillation:
+              phases:
+                dpo:
+                  trainer:
+                    gpu_ids: [0]
+                    n_gpus_per_node: 1

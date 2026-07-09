@@ -32,7 +32,12 @@ config_groups:
   infer_budget: air_aligned_budget
 
   # LLM reranker 训练配置组。
-  reranker_training: llm_reranker_base
+  # 默认挂载 AIR branch GRPO reranker 训练配置；具体任务仍可通过 --RERANKER_TRAINING_CONFIG 覆盖。
+  reranker_training: llm_reranker_grpo_branch
+
+  # agent 训练实现配置组。
+  # train_agent.impl=spad_rag 时读取这里的内部 sub-stage、prompt、reward 和 distillation 配置。
+  agent_training: spad_rag_base
 
   # agent 模型配置组。
   model: qwen3_4b
@@ -40,16 +45,16 @@ config_groups:
   # rollout 配置组。
   rollout: air_async_qwen3_4b
 
-# 运行目录配置；compiler 会基于这些根目录派生 run_root、artifact_root 和 report_root。
+# 运行目录配置；compiler 会基于这些根目录派生单次 run 目录、run-local outputs 和 report_root。
 runtime:
-  # pipeline 运行日志根目录。
+  # pipeline 单次运行根目录；compiler 会在该目录下创建 <RUN_NAME>/。
   run_root: /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/log/agenticIterRag
 
   # pipeline 报告根目录。
   report_root: /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/reports/agenticIterRag
 
-  # pipeline 产物根目录。
-  artifact_root: /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/outputs/agenticIterRag
+  # 单次 run 内部产物目录名；实际路径为 ${run_root}/<RUN_NAME>/outputs。
+  outputs_dir: outputs
 
   # 运行名由 compiler 在 runtime 构建；这里保留字段用于审计。
   run_name: null
@@ -85,6 +90,17 @@ data_artifacts:
     overwrite: false
 
     # 是否从 trajectory 版本名派生 input_dataset 版本名。
+    derive_version_from_trajectory: true
+
+  # LLM reranker branch 训练数据集合配置。
+  llm_reranker_branch_train_set:
+    # branch dataset 外部版本名；null 表示根据增强轨迹版本、step policy 和 prompt 版本自动生成。
+    version: null
+
+    # false 表示同名时自动追加日期后缀；true 表示完整覆盖同名目录。
+    overwrite: false
+
+    # 是否从 trajectory 版本名派生 branch dataset 版本名。
     derive_version_from_trajectory: true
 
 # 审计策略配置。

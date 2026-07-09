@@ -8,8 +8,10 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -20,7 +22,11 @@ if __package__ is None or __package__ == "":
     sys.path.insert(0, str(project_root_for_import))
 
 from agentic_iter_rag.infer_matrix.matrix import build_infer_matrix
+from agentic_iter_rag.agent_training.train_agent_entry import run_from_config as run_train_agent_from_config
 from agentic_iter_rag.pipeline.manifest import write_stage_manifest
+from agentic_iter_rag.reranker_training.branch_dataset import run_from_config as run_branch_dataset_from_config
+from agentic_iter_rag.reranker_training.filter_branch_dataset import run_from_config as run_filter_branch_dataset_from_config
+from agentic_iter_rag.reranker_training.service_bundle import run_from_config as run_service_bundle_from_config
 from agentic_iter_rag.trajectory.enhanced import (
     CONTEXT_FORMAT_VERSION,
     ENHANCED_TRAJECTORY_SCHEMA_VERSION,
@@ -75,6 +81,21 @@ def as_list(value: Any) -> list[str]:
     return [str(value)]
 
 
+def stage_gap_seconds(pipeline: dict[str, Any]) -> float:
+    """读取 stage 间资源冷却时间。
+
+    这个字段只在配置显式设置时生效，用于全链路任务中等待 vLLM、retriever、Ray 和 NPU 显存彻底释放。
+    """
+
+    value = pipeline.get("stage_gap_seconds", 0)
+    if value in (None, ""):
+        return 0.0
+    seconds = float(value)
+    if seconds < 0:
+        raise ValueError(f"pipeline.stage_gap_seconds must be >= 0, got {value}")
+    return seconds
+
+
 def as_int_list(value: Any) -> list[int]:
     if value is None:
         return []
@@ -88,6 +109,31 @@ def as_int_list(value: Any) -> list[int]:
 
 def gpu_csv(value: Any) -> str:
     return ",".join(str(x) for x in as_int_list(value))
+
+
+def recall_backend_type(recall: dict[str, Any]) -> str:
+    """读取 recall backend 类型。
+
+    新配置使用 backend_type 显式区分 cpu/npu/cuda；如果旧配置仍然只写 gpu_ids，
+    这里按 npu 兜底，保证旧 dataproduce 配置迁移过程中错误更容易定位。
+    """
+
+    return str(recall.get("backend_type") or ("npu" if recall.get("gpu_ids") else "cpu")).lower()
+
+
+def recall_active_accelerator_gpu_ids(recall: dict[str, Any]) -> list[int]:
+    """只在 npu/cuda backend 下返回真实会被使用的 retriever 卡位。"""
+
+    backend_type = recall_backend_type(recall)
+    if backend_type not in {"npu", "cuda"}:
+        return []
+    accelerator = recall.get("accelerator_backend") if isinstance(recall.get("accelerator_backend"), dict) else {}
+    return as_int_list(accelerator.get("gpu_ids", recall.get("gpu_ids")))
+
+
+def recall_proxy_config(recall: dict[str, Any]) -> dict[str, Any]:
+    proxy = recall.get("proxy")
+    return proxy if isinstance(proxy, dict) else {}
 
 
 def count_jsonl(path: Path) -> int:
@@ -178,11 +224,88 @@ def write_basic_stage(stage: str, config: dict[str, Any], manifest: Path, dry_ru
     write_stage_manifest(manifest, stage=stage, config=config, outputs=payload)
 
 
+def process_tree_pgids(root_pid: int) -> set[int]:
+    """收集 root_pid 子进程树里所有进程组。
+
+    某些 stage 内部会再启动新的进程组，比如 VERL、vLLM、retriever 和 reporter。
+    仅 kill root 进程组会遗漏这些服务，所以这里基于 ps 快照追踪完整后代树。
+    """
+
+    try:
+        output = subprocess.check_output(
+            ["ps", "-eo", "pid=,ppid=,pgid="],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        )
+    except Exception:
+        return {root_pid}
+    children_by_parent: dict[int, list[tuple[int, int]]] = {}
+    pgids: set[int] = set()
+    for line in output.splitlines():
+        parts = line.split()
+        if len(parts) != 3:
+            continue
+        try:
+            pid, ppid, pgid = (int(part) for part in parts)
+        except ValueError:
+            continue
+        if pid == root_pid:
+            pgids.add(pgid)
+        children_by_parent.setdefault(ppid, []).append((pid, pgid))
+    stack = [root_pid]
+    seen: set[int] = set()
+    while stack:
+        pid = stack.pop()
+        if pid in seen:
+            continue
+        seen.add(pid)
+        for child_pid, child_pgid in children_by_parent.get(pid, []):
+            pgids.add(child_pgid)
+            stack.append(child_pid)
+    pgids.add(root_pid)
+    return pgids
+
+
+def signal_process_groups(pgids: set[int], sig: int) -> None:
+    """向多个进程组发送信号；忽略已经退出的进程组。"""
+
+    for pgid in sorted(pgids, reverse=True):
+        try:
+            os.killpg(pgid, sig)
+        except ProcessLookupError:
+            continue
+        except PermissionError:
+            continue
+
+
+def check_call_process_group(cmd: list[str], *, cwd: Path | None = None, env: dict[str, str] | None = None) -> None:
+    """以独立进程组运行 stage 子进程，保证中断时能把子进程树一起清掉。"""
+
+    process = subprocess.Popen(cmd, cwd=cwd, env=env, start_new_session=True)
+    try:
+        return_code = process.wait()
+    except BaseException:
+        # pipeline 收到 Ctrl-C / TERM / 异常时，先温和停止整个 stage 子进程树；
+        # 超时后再强杀，避免 vLLM、retriever、Ray worker 残留占用端口和 NPU 显存。
+        pgids = process_tree_pgids(process.pid)
+        try:
+            signal_process_groups(pgids, signal.SIGTERM)
+            process.wait(timeout=60)
+        except ProcessLookupError:
+            pass
+        except subprocess.TimeoutExpired:
+            signal_process_groups(process_tree_pgids(process.pid) | pgids, signal.SIGKILL)
+            process.wait(timeout=30)
+        raise
+    if return_code != 0:
+        raise subprocess.CalledProcessError(return_code, cmd)
+
+
 def write_dataset_readme(repo_root: Path, dataset_dir: Path) -> Path:
     """Generate a human-readable README for a produced dataset directory."""
 
     script = repo_root / "scripts" / "agenticIterRag_v1" / "assets" / "build_dataset_readme.py"
-    subprocess.check_call([sys.executable, str(script), "--dataset-dir", str(dataset_dir)])
+    check_call_process_group([sys.executable, str(script), "--dataset-dir", str(dataset_dir)])
     return dataset_dir / "README.md"
 
 
@@ -256,14 +379,86 @@ def validate_stage_resource_plan(config: dict[str, Any], stage: str, plan: dict[
     hardware_gpus = set(as_int_list(resource["hardware"].get("gpu_ids")))
     if not hardware_gpus:
         raise ValueError("resource.hardware.gpu_ids must contain at least one GPU id")
+    train_agent_impl = (
+        config.get("pipeline", {})
+        .get("stage_configs", {})
+        .get("train_agent", {})
+        .get("impl")
+    )
+    if stage == "train_agent" and train_agent_impl != "spad_rag" and "impls" in plan:
+        plan = {key: value for key, value in plan.items() if key != "impls"}
+    if stage == "train_agent" and train_agent_impl == "spad_rag":
+        impls = plan.get("impls") if isinstance(plan.get("impls"), dict) else {}
+        spad = impls.get("spad_rag") if isinstance(impls.get("spad_rag"), dict) else None
+        if spad is None:
+            raise ValueError("resource.stage_resources.train_agent.impls.spad_rag must be set")
+        sub_stages = spad.get("sub_stages") if isinstance(spad.get("sub_stages"), dict) else {}
+        for sub_stage_name, sub_stage_plan in sub_stages.items():
+            if not isinstance(sub_stage_plan, dict):
+                raise TypeError(f"resource train_agent.impls.spad_rag.sub_stages.{sub_stage_name} must be a mapping")
+            if sub_stage_name == "answer_distillation" and isinstance(sub_stage_plan.get("phases"), dict):
+                for phase_name, phase_plan in sub_stage_plan["phases"].items():
+                    if not isinstance(phase_plan, dict):
+                        raise TypeError(
+                            "resource train_agent.impls.spad_rag.sub_stages.answer_distillation."
+                            f"phases.{phase_name} must be a mapping"
+                        )
+                    validate_stage_resource_plan(
+                        config,
+                        f"train_agent.impls.spad_rag.sub_stages.answer_distillation.phases.{phase_name}",
+                        phase_plan,
+                    )
+                remainder = {k: v for k, v in sub_stage_plan.items() if k != "phases"}
+                if remainder:
+                    validate_stage_resource_plan(
+                        config,
+                        f"train_agent.impls.spad_rag.sub_stages.{sub_stage_name}",
+                        remainder,
+                    )
+            else:
+                validate_stage_resource_plan(
+                    config,
+                    f"train_agent.impls.spad_rag.sub_stages.{sub_stage_name}",
+                    sub_stage_plan,
+                )
+        return
     allow_gpu_overlap = bool(plan.get("allow_gpu_overlap"))
 
     owners: dict[int, str] = {}
 
+    def validate_recall_node(name: str, node: dict[str, Any]) -> None:
+        backend_type = recall_backend_type(node)
+        if backend_type not in {"cpu", "npu", "cuda"}:
+            raise ValueError(f"resource stage {stage}.{name}.backend_type must be cpu/npu/cuda, got {backend_type!r}")
+        if node.get("retrieval_service_url") and node.get("port"):
+            expected = f":{node['port']}/"
+            if expected not in str(node["retrieval_service_url"]):
+                raise ValueError(
+                    f"resource stage {stage}.{name}.retrieval_service_url port does not match port={node['port']}"
+                )
+        if backend_type == "cpu":
+            instance_count = int(node.get("instance_count") or 8)
+            if instance_count < 1:
+                raise ValueError(f"resource stage {stage}.{name}.instance_count must be >= 1")
+            cpu_backend = node.get("cpu_backend") if isinstance(node.get("cpu_backend"), dict) else {}
+            doc_dtype = str(cpu_backend.get("doc_dtype") or "float32")
+            if doc_dtype != "float32":
+                raise ValueError(f"resource stage {stage}.{name}.cpu_backend.doc_dtype must be float32")
+        else:
+            gpu_ids = recall_active_accelerator_gpu_ids(node)
+            if not gpu_ids:
+                raise ValueError(
+                    f"resource stage {stage}.{name}.accelerator_backend.gpu_ids must contain at least one GPU id"
+                )
+
     def visit(name: str, node: Any) -> None:
         if not isinstance(node, dict):
             return
-        if "gpu_ids" in node:
+        is_recall_node = name.endswith("recall")
+        if is_recall_node:
+            validate_recall_node(name, node)
+        is_multi_instance_container = str(node.get("backend_type") or "").lower() == "multi_instance_proxy"
+        if "gpu_ids" in node and not is_multi_instance_container:
             gpu_ids = as_int_list(node["gpu_ids"])
             missing = sorted(set(gpu_ids) - hardware_gpus)
             if missing:
@@ -274,34 +469,41 @@ def validate_stage_resource_plan(config: dict[str, Any], stage: str, plan: dict[
                         f"resource stage {stage} has overlapping GPU {gpu_id}: {owners[gpu_id]} and {name}"
                     )
                 owners[gpu_id] = name
-            if "tensor_parallel_size" in node and int(node["tensor_parallel_size"]) != len(gpu_ids):
-                raise ValueError(
-                    f"resource stage {stage}.{name}.tensor_parallel_size must equal len(gpu_ids): "
-                    f"{node['tensor_parallel_size']} != {len(gpu_ids)}"
-                )
+            if "tensor_parallel_size" in node:
+                tensor_parallel_size = int(node["tensor_parallel_size"])
+                if tensor_parallel_size <= 0:
+                    raise ValueError(
+                        f"resource stage {stage}.{name}.tensor_parallel_size must be positive: {tensor_parallel_size}"
+                    )
+                # tensor_parallel_size 可以小于 gpu_ids 数量，此时表示同一组 GPU 上启动多个 rollout replica。
+                # 例如 stage1_format_actor 使用 8 张 NPU、TP=1，会形成 8 个单卡 vLLM replica，提高 64*16 rollout 吞吐。
+                if len(gpu_ids) % tensor_parallel_size != 0:
+                    raise ValueError(
+                        f"resource stage {stage}.{name}.gpu_ids count must be divisible by tensor_parallel_size: "
+                        f"{len(gpu_ids)} % {tensor_parallel_size} != 0"
+                    )
+        backend_type = recall_backend_type(node) if is_recall_node else None
         for child_name, child in node.items():
+            # CPU retriever 不读取 accelerator_backend，accelerator retriever 也不读取 cpu_backend。
+            # 校验阶段同步跳过 inactive 分支，避免配置里保留的切换模板被误算成当前资源占用。
+            if is_recall_node and backend_type == "cpu" and child_name == "accelerator_backend":
+                continue
+            if is_recall_node and backend_type in {"npu", "cuda"} and child_name == "cpu_backend":
+                continue
             if isinstance(child, dict):
                 visit(f"{name}.{child_name}" if name else str(child_name), child)
 
     visit("", plan)
-
-    services = plan.get("services") if isinstance(plan.get("services"), dict) else {}
-    recall = services.get("recall")
-    if isinstance(recall, dict) and len(as_int_list(recall.get("gpu_ids"))) < 1:
-        raise ValueError(f"resource stage {stage}.services.recall.gpu_ids must contain at least one GPU id")
-    if isinstance(recall, dict) and recall.get("retrieval_service_url") and recall.get("port"):
-        expected = f":{recall['port']}/"
-        if expected not in str(recall["retrieval_service_url"]):
-            raise ValueError(
-                f"resource stage {stage}.services.recall.retrieval_service_url port does not match port={recall['port']}"
-            )
 
     ports: dict[int, str] = {}
 
     def visit_ports(name: str, node: Any) -> None:
         if not isinstance(node, dict):
             return
-        if "port" in node and node["port"] is not None:
+        # multi_instance_proxy 节点自身的 port 可能来自旧单实例配置继承；
+        # 真实监听端口在 proxy.port 和 instances[*].port，避免把容器节点误判成重复端口。
+        is_multi_instance_container = str(node.get("backend_type") or "").lower() == "multi_instance_proxy"
+        if "port" in node and node["port"] is not None and not is_multi_instance_container:
             port = int(node["port"])
             if port in ports:
                 raise ValueError(f"resource stage {stage} has duplicate port {port}: {ports[port]} and {name}")
@@ -471,6 +673,8 @@ def air_infer_runtime_env(
         "MAX_NUM_SEQS": str(max_num_seqs),
         "PROXY_PORT": str(recall["port"]),
         "RETRIEVAL_SERVICE_URL": str(recall["retrieval_service_url"]),
+        "RECALL_BACKEND_TYPE": recall_backend_type(recall),
+        "RECALL_INSTANCE_COUNT": str(recall.get("instance_count") or ""),
         "RETRIEVAL_MAX_RETRIES": str(infer_runtime["retrieval"]["max_retries"]),
         "RETRIEVAL_RETRY_DELAY": str(infer_runtime["retrieval"]["retry_delay"]),
         "RETRIEVAL_RETRY_BACKOFF": str(infer_runtime["retrieval"]["retry_backoff"]),
@@ -513,12 +717,38 @@ def air_resource_env(config: dict[str, Any], stage: str, resource_plan: dict[str
     if not isinstance(llm_judge, dict):
         llm_judge = {}
     wait_cfg = stage_wait_config(config, stage, resource_plan)
+    backend_type = recall_backend_type(recall)
+    cpu_backend = recall.get("cpu_backend") if isinstance(recall.get("cpu_backend"), dict) else {}
+    accelerator_backend = recall.get("accelerator_backend") if isinstance(recall.get("accelerator_backend"), dict) else {}
+    proxy = recall_proxy_config(recall)
     return {
         "GROUP_NAME": "agenticIterRag",
         "AGENT_GPU_IDS": gpu_csv(agent_vllm["gpu_ids"]),
         "RANK_GPU_ID": gpu_csv(dense_reranker.get("gpu_ids")),
-        "RECALL_GPU_ID": gpu_csv(recall["gpu_ids"]),
+        "RECALL_BACKEND_TYPE": backend_type,
+        "RECALL_INSTANCE_COUNT": str(recall.get("instance_count") or ""),
+        "RECALL_GPU_ID": gpu_csv(accelerator_backend.get("gpu_ids", recall.get("gpu_ids"))),
         "RECALL_BACKEND_BASE_PORT": str(recall.get("backend_base_port") or ""),
+        "RECALL_PROXY_STRATEGY": str(proxy.get("strategy") or recall.get("proxy_strategy") or "least_inflight"),
+        "RECALL_PROXY_TIMEOUT": str(proxy.get("timeout") or recall.get("proxy_timeout") or ""),
+        "RECALL_PROXY_FAILURE_COOLDOWN_SECONDS": str(
+            proxy.get("failure_cooldown_seconds") or recall.get("proxy_failure_cooldown_seconds") or ""
+        ),
+        "RECALL_PROXY_LATENCY_EWMA_ALPHA": str(
+            proxy.get("latency_ewma_alpha") or recall.get("proxy_latency_ewma_alpha") or ""
+        ),
+        "RECALL_PROXY_MAX_RETRIES_PER_REQUEST": str(
+            proxy.get("max_retries_per_request") or recall.get("proxy_max_retries_per_request") or ""
+        ),
+        "RECALL_ASSET_PRECHECK": "1" if recall.get("asset_precheck") else "0",
+        "RECALL_QUERY_PREFLIGHT": "1" if recall.get("query_preflight") else "0",
+        "RETRIEVAL_PREFLIGHT_QUERY": str(recall.get("preflight_query") or "who got the first nobel prize in physics?"),
+        "RETRIEVAL_PREFLIGHT_EXPECT": str(recall.get("preflight_expect") or ""),
+        "RECALL_CPU_THREADS_PER_INSTANCE": str(cpu_backend.get("cpu_threads_per_instance") or ""),
+        "RECALL_CPU_QUERY_BATCH_SIZE": str(cpu_backend.get("query_batch_size") or ""),
+        "RECALL_CPU_DOC_DTYPE": str(cpu_backend.get("doc_dtype") or ""),
+        "RECALL_ACCELERATOR_QUERY_BATCH_SIZE": str(accelerator_backend.get("query_batch_size") or ""),
+        "RECALL_ACCELERATOR_DOC_DTYPE": str(accelerator_backend.get("doc_dtype") or ""),
         "LLM_JUDGE_GPU_IDS": gpu_csv(llm_judge.get("gpu_ids")),
         "AUTO_START_RECALL_SERVICE": "1" if recall.get("auto_start") else "0",
         "AUTO_STOP_RECALL_SERVICE": "1" if recall.get("auto_stop") else "0",
@@ -645,6 +875,26 @@ def run_generate_traces(config: dict[str, Any], manifest: Path, dry_run: bool, c
                 "infer_env": infer_env_preview,
             },
         )
+        # dry-run 不会真实写 trajectory manifest，但后续 stage 仍需要看到计划中的 manifest 路径，
+        # 这样整条 generate_traces -> train_llm_reranker 链路可以在编译阶段被完整校验。
+        stage_cfg.setdefault("outputs", {}).update(
+            {
+                "raw_trace_jsonl": str(raw_trace_jsonl),
+                "canonical_trace_jsonl": str(trajectory_jsonl),
+                "enhanced_trajectory_jsonl": str(enhanced_trajectory_jsonl),
+                "enhanced_summary_json": str(enhanced_summary_json),
+                "trajectory_manifest": str(trajectory_manifest),
+                "trajectory_version": version,
+                "manifest": str(manifest),
+            }
+        )
+        build_inputs = config["pipeline"]["stage_configs"]["build_reranker_dataset"]["inputs"]
+        build_inputs["canonical_trace_jsonl"] = str(trajectory_jsonl)
+        build_inputs["trajectory_manifest"] = str(trajectory_manifest)
+        branch_inputs = config["pipeline"]["stage_configs"]["build_reranker_branch_dataset"]["inputs"]
+        branch_inputs["enhanced_trajectory_manifest"] = str(trajectory_manifest)
+        config["reranker_training"].setdefault("input", {})["enhanced_trajectory_manifest"] = str(trajectory_manifest)
+        persist_final_config(config_path, config)
         return
 
     ensure_fresh_dir(trajectory_dir, overwrite=bool(config["main_run"]["data_artifacts"]["trajectory"]["overwrite"]))
@@ -677,7 +927,7 @@ def run_generate_traces(config: dict[str, Any], manifest: Path, dry_run: bool, c
                     infer_report_path=infer_report_path,
                 )
             )
-            subprocess.check_call(infer_command, cwd=repo_root, env=infer_env)
+            check_call_process_group(infer_command, cwd=repo_root, env=infer_env)
             raw_source = infer_trace_dir / "traces.jsonl"
             metrics_source = infer_trace_dir / "metrics.jsonl"
         if not raw_source.exists():
@@ -787,6 +1037,9 @@ def run_generate_traces(config: dict[str, Any], manifest: Path, dry_run: bool, c
     build_inputs = config["pipeline"]["stage_configs"]["build_reranker_dataset"]["inputs"]
     build_inputs["canonical_trace_jsonl"] = str(trajectory_jsonl)
     build_inputs["trajectory_manifest"] = str(trajectory_manifest)
+    branch_inputs = config["pipeline"]["stage_configs"]["build_reranker_branch_dataset"]["inputs"]
+    branch_inputs["enhanced_trajectory_manifest"] = str(trajectory_manifest)
+    config["reranker_training"].setdefault("input", {})["enhanced_trajectory_manifest"] = str(trajectory_manifest)
     persist_final_config(config_path, config)
     copy_file(config_path, final_config_copy)
     write_stage_manifest(manifest, stage="generate_traces", config=stage_cfg, outputs=stage_outputs)
@@ -830,6 +1083,25 @@ def run_build_reranker_dataset(config: dict[str, Any], manifest: Path, dry_run: 
     validate_stage_resource_plan(config, "build_reranker_dataset", stage_resource_plan(config, "build_reranker_dataset"))
     if dry_run:
         write_build_dataset_dry_run(config, manifest, artifact_root)
+        stage_cfg = config["pipeline"]["stage_configs"]["build_reranker_dataset"]
+        train_set_manifest = (
+            artifact_root
+            / "stages"
+            / "build_reranker_dataset"
+            / "build_train_dataset"
+            / "planned_train_dataset_manifest.json"
+        )
+        stage_cfg.setdefault("outputs", {}).update(
+            {
+                "train_dataset_manifest": str(train_set_manifest),
+                "reranker_train_set_manifest": str(train_set_manifest),
+                "manifest": str(manifest),
+            }
+        )
+        branch_inputs = config["pipeline"]["stage_configs"]["build_reranker_branch_dataset"]["inputs"]
+        branch_inputs["reranker_train_set_manifest"] = str(train_set_manifest)
+        config["reranker_training"].setdefault("input", {})["reranker_train_set_manifest"] = str(train_set_manifest)
+        persist_final_config(config_path, config)
         return
 
     cmd = [
@@ -841,7 +1113,7 @@ def run_build_reranker_dataset(config: dict[str, Any], manifest: Path, dry_run: 
         "--stage-manifest",
         str(manifest),
     ]
-    subprocess.check_call(cmd)
+    check_call_process_group(cmd)
     stage_manifest = read_json(manifest)
     outputs = stage_manifest.get("outputs") or {}
     outputs["resource_plan"] = resource_plan
@@ -858,12 +1130,155 @@ def run_build_reranker_dataset(config: dict[str, Any], manifest: Path, dry_run: 
     )
     if outputs.get("train_dataset_manifest"):
         config["reranker_training"]["dataset_manifest"] = outputs["train_dataset_manifest"]
+    if outputs.get("reranker_train_set_manifest"):
+        branch_inputs = config["pipeline"]["stage_configs"]["build_reranker_branch_dataset"]["inputs"]
+        branch_inputs["reranker_train_set_manifest"] = outputs["reranker_train_set_manifest"]
+        config["reranker_training"].setdefault("input", {})["reranker_train_set_manifest"] = outputs[
+            "reranker_train_set_manifest"
+        ]
     persist_final_config(config_path, config)
 
 
 # ---------------------------------------------------------------------------
-# stage 分发：正式 data produce 只执行 generate_traces 和 build_reranker_dataset。
+# build_reranker_branch_dataset / filter_reranker_branch_dataset / train_llm_reranker / build_service_bundle：
+# AIR LLM reranker branch GRPO 新链路。
 # ---------------------------------------------------------------------------
+
+
+def run_build_reranker_branch_dataset(config: dict[str, Any], manifest: Path, dry_run: bool, config_path: Path) -> None:
+    resource_plan = normalize_stage_plan(stage_resource_plan(config, "build_reranker_branch_dataset"))
+    validate_stage_resource_plan(
+        config,
+        "build_reranker_branch_dataset",
+        stage_resource_plan(config, "build_reranker_branch_dataset"),
+    )
+    outputs = run_branch_dataset_from_config(config_path, manifest, dry_run=dry_run)
+    outputs["resource_plan"] = resource_plan
+    stage_manifest = read_json(manifest)
+    stage_manifest["outputs"] = outputs
+    write_json(manifest, stage_manifest)
+
+    branch_manifest = outputs.get("branch_dataset_manifest")
+    if not branch_manifest:
+        raise ValueError("build_reranker_branch_dataset did not produce branch_dataset_manifest")
+    stage_cfg = config["pipeline"]["stage_configs"]["build_reranker_branch_dataset"]
+    stage_cfg.setdefault("outputs", {}).update(
+        {
+            "branch_dataset_manifest": branch_manifest,
+            "branch_dataset_jsonl": outputs.get("branch_dataset_jsonl"),
+            "branch_dataset_version": outputs.get("branch_dataset_version"),
+            "manifest": str(manifest),
+        }
+    )
+    filter_stage = config["pipeline"]["stage_configs"].get("filter_reranker_branch_dataset")
+    if isinstance(filter_stage, dict):
+        filter_stage.setdefault("inputs", {})["source_branch_dataset_manifest"] = branch_manifest
+    train_inputs = config["pipeline"]["stage_configs"]["train_llm_reranker"]["inputs"]
+    train_inputs["branch_dataset_manifest"] = branch_manifest
+    rt_input = config["reranker_training"].setdefault("input", {})
+    rt_input["branch_dataset_manifest"] = branch_manifest
+    persist_final_config(config_path, config)
+    if dry_run:
+        return
+
+
+def run_filter_reranker_branch_dataset(config: dict[str, Any], manifest: Path, dry_run: bool, config_path: Path) -> None:
+    resource_plan = normalize_stage_plan(stage_resource_plan(config, "filter_reranker_branch_dataset"))
+    validate_stage_resource_plan(
+        config,
+        "filter_reranker_branch_dataset",
+        stage_resource_plan(config, "filter_reranker_branch_dataset"),
+    )
+    outputs = run_filter_branch_dataset_from_config(config_path, manifest, dry_run=dry_run)
+    outputs["resource_plan"] = resource_plan
+    stage_manifest = read_json(manifest)
+    stage_manifest["outputs"] = outputs
+    write_json(manifest, stage_manifest)
+
+    filtered_manifest = outputs.get("filtered_branch_dataset_manifest") or outputs.get("subset_manifest")
+    if not filtered_manifest:
+        raise ValueError("filter_reranker_branch_dataset did not produce filtered_branch_dataset_manifest")
+    stage_cfg = config["pipeline"]["stage_configs"]["filter_reranker_branch_dataset"]
+    stage_cfg.setdefault("outputs", {}).update(
+        {
+            "filtered_branch_dataset_manifest": filtered_manifest,
+            "filtered_branch_dataset_jsonl": outputs.get("filtered_branch_dataset_jsonl") or outputs.get("subset_jsonl"),
+            "filtered_branch_dataset_version": outputs.get("filtered_branch_dataset_version") or outputs.get("subset_version"),
+            "manifest": str(manifest),
+        }
+    )
+    train_inputs = config["pipeline"]["stage_configs"]["train_llm_reranker"]["inputs"]
+    train_inputs["branch_dataset_manifest"] = filtered_manifest
+    rt_input = config["reranker_training"].setdefault("input", {})
+    rt_input["branch_dataset_manifest"] = filtered_manifest
+    rt_input["filtered_branch_dataset_manifest"] = filtered_manifest
+    persist_final_config(config_path, config)
+    if dry_run:
+        return
+
+
+def run_train_llm_reranker(config: dict[str, Any], manifest: Path, dry_run: bool, config_path: Path) -> None:
+    resource_plan = normalize_stage_plan(stage_resource_plan(config, "train_llm_reranker"))
+    validate_stage_resource_plan(config, "train_llm_reranker", stage_resource_plan(config, "train_llm_reranker"))
+    cmd = [
+        sys.executable,
+        str(Path(os.environ.get("REPO_ROOT", Path.cwd())) / "AgenticIterRag" / "main_train_llm_reranker.py"),
+        "--config",
+        str(config_path),
+        "--manifest",
+        str(manifest),
+    ]
+    if dry_run:
+        cmd.append("--dry-run")
+    check_call_process_group(cmd, cwd=Path(os.environ.get("REPO_ROOT", Path.cwd())))
+    stage_manifest = read_json(manifest)
+    outputs = stage_manifest.get("outputs") or {}
+    outputs["resource_plan"] = resource_plan
+    stage_manifest["outputs"] = outputs
+    write_json(manifest, stage_manifest)
+
+    reranker_model = outputs.get("reranker_model")
+    if not reranker_model:
+        raise ValueError("train_llm_reranker did not produce reranker_model")
+    stage_cfg = config["pipeline"]["stage_configs"]["train_llm_reranker"]
+    stage_cfg.setdefault("outputs", {}).update(
+        {
+            "reranker_model": reranker_model,
+            "reranker_checkpoint": outputs.get("reranker_checkpoint"),
+            "manifest": str(manifest),
+        }
+    )
+    config["reranker_training"].setdefault("runtime", {})["manifest_path"] = str(manifest)
+    config["reranker_training"]["runtime"]["trained_model_path"] = reranker_model
+    config["infer_runtime"].setdefault("models", {})["trained_llm_reranker_model_path"] = reranker_model
+    config["infer_runtime"]["models"]["trained_llm_reranker_model"] = Path(str(reranker_model)).name
+    bundle_inputs = config["pipeline"]["stage_configs"]["build_service_bundle"]["inputs"]
+    bundle_inputs["reranker_model"] = reranker_model
+    persist_final_config(config_path, config)
+    if dry_run:
+        return
+
+
+def run_build_service_bundle(config: dict[str, Any], manifest: Path, dry_run: bool, config_path: Path) -> None:
+    resource_plan = normalize_stage_plan(stage_resource_plan(config, "build_service_bundle"))
+    validate_stage_resource_plan(config, "build_service_bundle", stage_resource_plan(config, "build_service_bundle"))
+    outputs = run_service_bundle_from_config(config_path, manifest, dry_run=dry_run)
+    outputs["resource_plan"] = resource_plan
+    stage_manifest = read_json(manifest)
+    stage_manifest["outputs"] = outputs
+    write_json(manifest, stage_manifest)
+    if dry_run:
+        return
+
+    stage_cfg = config["pipeline"]["stage_configs"]["build_service_bundle"]
+    stage_cfg.setdefault("outputs", {}).update(
+        {
+            "service_bundle_dir": outputs.get("service_bundle_dir"),
+            "manifest": outputs.get("manifest") or str(manifest),
+        }
+    )
+    config["reranker_training"].setdefault("runtime", {})["service_bundle_dir"] = outputs.get("service_bundle_dir")
+    persist_final_config(config_path, config)
 
 
 def run_stage(stage: str, config: dict[str, Any], manifest: Path, dry_run: bool, config_path: Path) -> None:
@@ -873,33 +1288,35 @@ def run_stage(stage: str, config: dict[str, Any], manifest: Path, dry_run: bool,
         write_basic_stage(stage, stage_cfg, manifest, dry_run, {"status": "disabled", "resource_plan": resource_plan})
         return
     if stage == "train_agent":
-        write_basic_stage(
-            stage,
-            stage_cfg,
-            manifest,
-            dry_run,
+        outputs = run_train_agent_from_config(config_path, manifest, dry_run=dry_run)
+        outputs["resource_plan"] = resource_plan
+        stage_manifest = read_json(manifest)
+        stage_manifest["outputs"] = outputs
+        write_json(manifest, stage_manifest)
+        if dry_run:
+            return
+        stage_cfg.setdefault("outputs", {}).update(
             {
-                "resource_plan": resource_plan,
-                "entry": "AgenticIterRag/main_train_agent.py",
-                "note": "真实 agent 训练后续接入 AIR 自有 trainer；当前 pipeline 保留统一调度契约。",
-            },
+                "agent_checkpoint": outputs.get("agent_checkpoint"),
+                "agent_training_manifest": outputs.get("agent_training_manifest"),
+                "manifest": str(manifest),
+            }
         )
+        if outputs.get("agent_checkpoint"):
+            config.setdefault("infer_runtime", {}).setdefault("models", {})["trained_agent_model"] = outputs["agent_checkpoint"]
+        persist_final_config(config_path, config)
     elif stage == "generate_traces":
         run_generate_traces(config, manifest, dry_run, config_path)
     elif stage == "build_reranker_dataset":
         run_build_reranker_dataset(config, manifest, dry_run, config_path)
+    elif stage == "build_reranker_branch_dataset":
+        run_build_reranker_branch_dataset(config, manifest, dry_run, config_path)
+    elif stage == "filter_reranker_branch_dataset":
+        run_filter_reranker_branch_dataset(config, manifest, dry_run, config_path)
     elif stage == "train_llm_reranker":
-        write_basic_stage(
-            stage,
-            stage_cfg,
-            manifest,
-            dry_run,
-            {
-                "resource_plan": resource_plan,
-                "base_model": config["reranker_training"].get("base_model"),
-                "dataset_manifest": config["reranker_training"].get("dataset_manifest"),
-            },
-        )
+        run_train_llm_reranker(config, manifest, dry_run, config_path)
+    elif stage == "build_service_bundle":
+        run_build_service_bundle(config, manifest, dry_run, config_path)
     elif stage == "infer_matrix":
         matrix = build_infer_matrix({"baselines": config.get("infer_matrix", {}).get("baselines")})
         write_basic_stage(stage, stage_cfg, manifest, dry_run, {"resource_plan": resource_plan, "matrix": matrix})
@@ -930,13 +1347,17 @@ def main() -> None:
     completed: list[str] = []
     skipped_existing: list[str] = []
     force_rerun = set(as_list(pipeline.get("force_rerun_stages")))
-    for stage in stages:
+    gap_seconds = stage_gap_seconds(pipeline)
+    for index, stage in enumerate(stages):
         manifest = stage_manifest_path(artifact_root, stage)
         if manifest.exists() and stage not in force_rerun:
             skipped_existing.append(stage)
             continue
         run_stage(stage, config, manifest, args.dry_run, args.config)
         completed.append(stage)
+        if gap_seconds > 0 and not args.dry_run and index < len(stages) - 1:
+            print(f"waiting {gap_seconds:g}s before next stage to let runtime resources settle")
+            time.sleep(gap_seconds)
     write_json(
         args.manifest,
         {

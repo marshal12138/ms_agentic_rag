@@ -15,7 +15,12 @@
 
 from msgspec import field
 from packaging import version as vs
-from vllm.lora.models import LoRAModel
+# vLLM 0.13 moved LoRAModel from vllm.lora.models to
+# vllm.lora.lora_model. Keep the fallback for older vLLM builds.
+try:
+    from vllm.lora.lora_model import LoRAModel
+except ModuleNotFoundError:  # pragma: no cover - compatibility path
+    from vllm.lora.models import LoRAModel
 from vllm.lora.request import LoRARequest
 from vllm.lora.utils import get_adapter_absolute_path
 from vllm.lora.worker_manager import LRUCacheWorkerLoRAManager

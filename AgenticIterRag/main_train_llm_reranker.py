@@ -1,32 +1,22 @@
-"""LLM reranker training placeholder entry for AgenticIterRag v1."""
+"""LLM reranker training entry for AgenticIterRag v1."""
 
 from __future__ import annotations
 
 import argparse
 from pathlib import Path
 
-from agentic_iter_rag.pipeline.manifest import write_stage_manifest
-from agentic_iter_rag.utils.io import read_yaml
+from agentic_iter_rag.reranker_training.trainer_entry import run_from_config
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Train AgenticIterRag v1 LLM reranker.")
     parser.add_argument("--config", required=True, type=Path)
     parser.add_argument("--manifest", required=True, type=Path)
+    parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
-    config = read_yaml(args.config)
-    write_stage_manifest(
-        args.manifest,
-        stage="train_llm_reranker",
-        config=config,
-        outputs={
-            "status": "not_started",
-            "note": "training backend is intentionally scaffolded for v1 framework preparation",
-        },
-    )
-    print(f"wrote reranker training manifest to {args.manifest}")
+    outputs = run_from_config(args.config, args.manifest, dry_run=args.dry_run)
+    print(f"wrote reranker training manifest to {args.manifest}: {outputs}")
 
 
 if __name__ == "__main__":
     main()
-

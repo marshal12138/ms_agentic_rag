@@ -1,0 +1,412 @@
+# AIR v1 从 data produce 到 LLM reranker 训练的全链路 overlay。
+# 这份配置把 run_260702a 的轨迹生产参数和 run_260703a 的 reranker 训练参数接到同一条 pipeline。
+# 所有新增 YAML 字段都保留中文注释，风格参考现有 AIR 配置文件。
+
+main_run:
+  project:
+    # 本次全链路实验名；compiler 会用于 run 目录命名和后续审计。
+    experiment_name: agentic_iter_rag_v1_dataprod_to_llm_reranker_training_260703b
+
+  data_artifacts:
+    trajectory:
+      # trajectory 版本名；null 表示 runtime 根据日期、数据和模型自动生成。
+      version: null
+
+      # false 表示同名时自动新建日期后缀目录，避免覆盖长期数据。
+      overwrite: false
+
+      # 全链路不允许空轨迹；没有 search query 应视为失败。
+      allow_empty_trace: false
+
+    llm_reranker_train_set:
+      # 静态 reranker input/train dataset 版本名；null 表示 runtime 自动生成。
+      version: null
+
+      # 默认不覆盖已有数据集。
+      overwrite: false
+
+      # 默认从 trajectory 版本名派生，方便追踪来源。
+      derive_version_from_trajectory: true
+
+    llm_reranker_branch_train_set:
+      # branch dataset 版本名；null 表示从 trajectory 版本和 first_point 策略自动派生。
+      version: null
+
+      # 默认不覆盖已有 branch dataset。
+      overwrite: false
+
+pipeline:
+  # 默认从 LLM reranker 训练开始，复用已经生产完成的 branch dataset。
+  # 如果确实需要重新生成轨迹，可在命令行显式覆盖 --pipeline.resume_from_stage=generate_traces。
+  resume_from_stage: train_llm_reranker
+
+  # 全链路执行到 service bundle 产出后停止。
+  stop_after_stage: build_service_bundle
+
+  # 不额外跳过所选范围内的 stage。
+  skip_stages: []
+
+  # 默认不强制重跑已有 stage manifest；每次新 RUN_NAME 会自然生成新 artifact 目录。
+  force_rerun_stages: []
+
+  # stage 之间等待一段时间，让 vLLM、retriever、Ray 和 NPU 显存完成释放。
+  stage_gap_seconds: 60
+
+  stage_configs:
+    generate_traces:
+      enabled: false
+
+      # 轨迹生产 stage 每次 run 使用新的 trajectory 目录；目录存在时按 artifact overwrite 策略处理。
+      overwrite: true
+
+      inputs:
+        # null 表示调用 AIR v1 infer backend 真实生成 raw trace。
+        existing_raw_trace_jsonl: null
+
+        # null 表示从 raw trace 抽取 canonical/enhanced trajectory。
+        existing_canonical_trace_jsonl: null
+
+    build_reranker_dataset:
+      sub_stages:
+        build_input_dataset:
+          # 继续构造静态 reranker input dataset，供审计和对照。
+          enabled: true
+
+          # input_dataset 版本名；null 表示 runtime 自动生成。
+          version: null
+
+          # 默认不覆盖长期数据。
+          overwrite: false
+
+          # 默认从 trajectory 版本派生 input_dataset 版本。
+          derive_version_from_trajectory: true
+
+          # input_dataset schema 版本。
+          schema_version: v1
+
+          # 从 trajectory 中每步 recall_topn_docs 构造候选文档。
+          builder_policy: recall_topn_to_candidates
+
+          # 候选文档来源。
+          candidate_source: recall_topn_docs
+
+          # 每个 query 保留 top50 候选文档。
+          candidate_top_n: 50
+
+          # 候选文档按首次出现去重。
+          dedupe_policy: keep_first
+
+          # 第一版不构造排序监督标签。
+          label_policy: null
+
+          # 第一版不构造 positive_doc_ids。
+          positive_policy: null
+
+          # 第一版不把 no-ranker trace 顺序作为强监督排序。
+          target_ranking_policy: none
+
+        build_train_dataset:
+          # 继续渲染静态 reranker train dataset，供审计和对照。
+          enabled: true
+
+          # train_dataset 版本名；null 表示 runtime 自动生成。
+          version: null
+
+          # 默认不覆盖长期数据。
+          overwrite: false
+
+          # 输出 GRPO 训练格式。
+          format: grpo
+
+          # 静态 train set 使用 v1 prompt；branch GRPO 会使用 full50 prompt。
+          prompt_template_version: air_rerank_tags_v1
+
+          # 输出 VERL chat message 格式。
+          formatter: verl_chat
+
+          # ground truth 显式为空。
+          ground_truth_policy: empty
+
+          # 静态数据本身不构造 reward。
+          reward_policy: none
+
+          # reranker 输出格式为 <reason>/<rerank> 标签。
+          output_schema: air_rerank_tags
+
+          # null 表示从 infer_runtime.retrieval.visible_top_m 读取。
+          reranker_top_m: null
+
+          # 每篇文档写入 prompt 的最大字符数。
+          max_doc_chars: 2000
+
+    build_reranker_branch_dataset:
+      inputs:
+        # 由 generate_traces stage 动态写入。
+        enhanced_trajectory_manifest: null
+
+        # 由 build_reranker_dataset stage 动态写入，仅用于审计来源。
+        reranker_train_set_manifest: null
+
+    train_llm_reranker:
+      inputs:
+        # 默认直接读取已补产的全量 CoSearch topM branch dataset，避免继续误读旧 full50 branch dataset。
+        # 如果从 generate_traces 或 build_reranker_branch_dataset 开始，runner 会用新产物动态覆盖这里。
+        branch_dataset_manifest: /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/data/AgenticIterRag/llm_reranker_branch_train_set/260703c_AIR_v1_traj_co_search_ablation.train_global_step_79__branch_first_point_top50_top5_cosearch_rerank_topm_v1_full/manifest.json
+
+    build_service_bundle:
+      inputs:
+        # 由 train_llm_reranker stage 动态写入。
+        reranker_model: null
+
+data:
+  # 与 run_260702a 保持一致：使用 AIR source 下的训练数据。
+  trace_generation_files:
+    - /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/data/AgenticIterRag/source/co_search_ablation.train.parquet
+
+  # 小数据 smoke 默认由脚本覆盖成 100；全量脚本会改成 -1。
+  trace_max_samples: null
+
+infer_runtime:
+  mode:
+    # data produce 阶段默认使用 no-ranker agent 生产轨迹。
+    run_mode: no-ranker
+
+    # no-ranker 模式不启用 reranker。
+    reranker: none
+
+  models:
+    # 与 run_260702a 保持一致：使用已训练 search agent checkpoint 生产轨迹，也作为 continuation frozen agent。
+    trained_agent_model: /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/checkpoints/qwen3_4b_probe/coAgenticRetriever/260625-211826-CAR_async_npu_smaller_bs_per_gpu/global_step_79
+
+  artifacts:
+    # 保留完整 trace，供增强轨迹抽取和排查。
+    keep_trace: full
+
+    # 每 10 条样本落盘一次，降低长任务中断损失。
+    flush_every_n: 10
+
+  agent:
+    # 允许 agent vLLM 偶发 HTTP 断连重试。
+    max_retries: 5
+
+    # 第一次 agent retry 等待秒数。
+    retry_delay: 1.0
+
+    # agent retry 退避倍率。
+    retry_backoff: 2.0
+
+    # 关闭 HTTP keep-alive，避免复用 vLLM 已关闭连接。
+    http_force_close: true
+
+    # 只要最终仍存在 failed 样本，就让本轮数据生产失败。
+    fail_on_error: true
+
+  retrieval:
+    # retriever HTTP 请求重试次数。
+    max_retries: 5
+
+infer_budget:
+  # 轨迹生产默认并发 batch，与 run_260702a dataproduce 链路保持一致。
+  # 这个值直接写进 overlay，避免依赖 shell-only dotlist 覆盖导致全链路脚本和 dataproduce 性能不一致。
+  infer_batch_size: 96
+
+  vllm:
+    # agent vLLM 默认显存使用率，与 run_260702a dataproduce 链路保持一致。
+    # 提高该值可以支撑更大的推理 batch；如果后续机器显存变化，再通过明确配置覆盖。
+    gpu_memory_utilization: 0.8
+
+reranker_training:
+  input:
+    # 由 generate_traces stage 动态写入。
+    enhanced_trajectory_manifest: null
+
+    # 由 build_reranker_dataset stage 动态写入，仅用于审计来源。
+    reranker_train_set_manifest: null
+
+    # 默认直接读取已补产的全量 CoSearch topM branch dataset。
+    # 如果从 generate_traces 或 build_reranker_branch_dataset 开始，runner 会用新产物动态覆盖这里。
+    branch_dataset_manifest: /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/data/AgenticIterRag/llm_reranker_branch_train_set/260703c_AIR_v1_traj_co_search_ablation.train_global_step_79__branch_first_point_top50_top5_cosearch_rerank_topm_v1_full/manifest.json
+
+  branch_dataset:
+    # 默认使用第一步 search 作为 reranker 介入点。
+    step_policy: first_point
+
+    # 全链路真实训练不截断 branch dataset。
+    smoke_max_samples: null
+
+  trainer:
+    # 使用真实 VERL GRPO 训练。
+    backend: verl
+
+    # 公共 rollout n 默认值；phase 内显式配置时以 phase 为准。
+    n_samples_per_prompt: 8
+
+    # 公共 epoch 默认值；phase 内显式配置时以 phase 为准。
+    total_epochs: 1
+
+    # 公共总 step 默认值；phase 内显式配置时以 phase 为准。
+    total_training_steps: null
+
+    # 公共 batch size 底线；phase 内显式配置时以 phase 为准。
+    train_batch_size: 64
+
+    # 公共训练样本数默认值；phase 内显式配置时以 phase 为准。
+    train_max_samples: -1
+
+    # validation dataset 初始化使用 1 条样本即可。
+    val_max_samples: 1
+
+    # 每 10 个 step 保存一次 checkpoint；配合 max_actor_ckpt_to_keep=1，只保留最新一个 actor checkpoint。
+    save_freq: 10
+
+    # reranker response 最大 token 数；用户指定底线，不参与消融。
+    max_response_length: 1024
+
+    # 不改变 1024 上限；模型输出 </rerank> 后提前停止，减少无效 decode。
+    sampling_stop:
+      - "</rerank>"
+
+    # 必须保留 </rerank>，否则格式 parser 会认为缺少闭合标签。
+    include_stop_str_in_output: true
+
+    # 与 max_prompt_length=12000、max_response_length=1024 对齐。
+    rollout_max_model_len: 13024
+
+    # 高吞吐 rollout token budget；保持 64*16 不变，通过更大的合批预算提升 NPU 利用率。
+    max_num_batched_tokens: 65536
+
+    # 高吞吐 rollout 并发序列数；不能只按 n=16 设置，否则 1024 rollout 会大量排队。
+    max_num_seqs: 128
+
+    # stage1 不启动 frozen agent/retriever，显存主要给 reranker KV cache 使用。
+    rollout_gpu_memory_utilization: 0.85
+
+    # 长 prompt 训练默认启用 chunked prefill，避免 prefill 阶段低利用率。
+    enable_chunked_prefill: true
+
+    # 同一 prompt 有 16 条 rollout，启用 prefix cache 复用公共前缀。
+    enable_prefix_caching: true
+
+    # 关闭 eager，让 vLLM-Ascend 使用可用优化；兼容失败时再显式回退。
+    enforce_eager: false
+
+  training_phases:
+    stage1_format:
+      # 默认只开启 stage1，用真实 NPU 训练格式和长度偏好。
+      enabled: true
+
+      # stage1 使用 8 张 NPU，训练 batch size 底线为 64。
+      train_batch_size: 64
+
+      # 全链路默认训练完整 1 个 epoch。
+      total_training_steps: null
+
+      # 全链路默认读取全部 branch samples。
+      train_max_samples: -1
+
+      # reranker response 最大 token 数；长度 reward 阈值仍是 512。
+      max_response_length: 1024
+
+      # stage1 保留 1024 上限，但生成完整 </rerank> 后立即停止。
+      sampling_stop:
+        - "</rerank>"
+
+      # stage1 parser 需要看到闭合标签，所以停止符保留在输出中。
+      include_stop_str_in_output: true
+
+      # stage1 的 rollout n 改为 8，减少每 step 的 rollout 长尾和 PPO update token 总量。
+      n_samples_per_prompt: 8
+
+      # stage1 使用 async vLLM server rollout；sync SPMD 路径当前不支持 stop string，所以不能作为正式默认。
+      rollout_mode: async
+
+      # stage1 每卡 actor update micro batch；不改变全局 batch，只控制固定合批回退时的单次 backward 压力。
+      # 动态 token 合批开启后，真实切片主要由 ppo_max_token_len_per_gpu 决定。
+      micro_batch_size_per_gpu: 1
+
+      # stage1 old logprob 每卡 micro batch；rollout-logprob bypass 关闭时才会实际走到。
+      log_prob_micro_batch_size_per_gpu: 1
+
+      # stage1 PPO update 每卡 token budget；保持 64*16 和 1024 不变，只把单次 backward chunk 控制在不 OOM 的范围。
+      # 该值必须大于 rollout_max_model_len=13024；14336 是当前满足 VERL 断言的最小稳定候选。
+      ppo_max_token_len_per_gpu: 14336
+
+      # stage1 old logprob 每卡 token budget；只控制内部切片，不改变训练样本和 rollout 数。
+      # 正常路径会复用 rollout_log_probs 跳过二次 old_log_prob，这里主要是保守回退值。
+      log_prob_max_token_len_per_gpu: 14336
+
+      # stage1 启用 remove-padding，避免对 12000 prompt 上限产生的大量 padding 做无效训练计算。
+      use_remove_padding: true
+
+      # stage1 启用动态 token 合批，按真实 token 数组织 micro batch，提高 update 阶段吞吐。
+      use_dynamic_bsz: true
+
+      # stage1 rollout 阶段直接返回 logprob，后续复用它作为 old_log_probs。
+      calculate_rollout_log_probs: true
+
+      # stage1 actor update 显式使用 rollout_log_probs，避免单 mini-batch 场景被 on-policy 分支覆盖。
+      use_rollout_log_probs: true
+
+      # stage1 启用 rollout-correction bypass，跳过昂贵的 old_log_prob 二次 forward。
+      rollout_correction_bypass_mode: true
+
+      # stage1 仍使用 PPO loss，不切换成 policy-gradient loss。
+      rollout_correction_use_policy_gradient: false
+
+      # stage1 开启 actor activation offload，降低 64*16*1024 下 actor backward 峰值显存。
+      # 这只影响显存/速度 tradeoff，不改变底线 batch、rollout 数、response 上限和 reward 语义。
+      actor_activation_offload: true
+
+      # stage1 actor update 进度日志间隔；用于现场观察长 step 不是卡死。
+      actor_progress_interval: 8
+
+      # stage1 agent-loop worker 数；64 份小分片能显著缩短 1024 条 rollout 的尾部等待。
+      agent_loop_num_workers: 64
+
+      # stage1 只看 reranker 输出格式和长度，不用 reference policy；关闭 KL 可以跳过 ref model 初始化，直接提升启动和训练吞吐。
+      use_kl_loss: false
+
+      # stage1 初始模型还没学会稳定闭合标签，降低采样发散度以提高 </rerank> 命中率。
+      rollout_temperature: 0.7
+
+      # stage1 配合 temperature=0.7 收窄采样范围，减少拖到 1024 token 的长尾输出。
+      rollout_top_p: 0.9
+
+      # stage1 高吞吐合批 token budget，解决长 prompt 只能单条/少量合批的问题。
+      max_num_batched_tokens: 65536
+
+      # stage1 高吞吐并发序列上限，允许同一个 step 的 1024 条 rollout 更充分进入 vLLM 队列。
+      max_num_seqs: 128
+
+      # stage1 独占 8 张 NPU，但要预留一部分显存给 actor update 与 NPU runtime，避免 rollout 后 update 阶段 OOM。
+      rollout_gpu_memory_utilization: 0.75
+
+      # stage1 长 prompt 默认启用 chunked prefill。
+      enable_chunked_prefill: true
+
+      # stage1 同 prompt 多 rollout 默认启用 prefix cache。
+      enable_prefix_caching: true
+
+      # stage1 默认关闭 eager，优先吞吐。
+      enforce_eager: false
+
+    stage2_agentic:
+      # stage2 agentic rollout reward 默认关闭，后续需要时显式打开。
+      enabled: false
+
+  reward:
+    # 默认直接使用新 answer reward，不扣 baseline。
+    strategy: answer_reward
+
+  reporting:
+    # 启用 AIR LLM reranker 训练曲线和报告。
+    enabled: true
+
+    # 每 60 秒检查一次 VERL 日志。
+    interval_seconds: 60
+
+    # 每新增 1 个 completed step 刷新一次 latest 曲线。
+    step_interval: 1
+
+    # 训练退出后强制生成最终报告和最终 latest 曲线。
+    generate_final_on_exit: true

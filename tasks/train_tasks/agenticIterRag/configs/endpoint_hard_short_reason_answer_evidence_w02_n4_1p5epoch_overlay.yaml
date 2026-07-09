@@ -1,0 +1,21 @@
+# End-point hard-slice formal training: answer + evidence-hit w=0.2, n=4, 1.5 epochs.
+# Start only after end-point short ablation is stable.
+
+main_run:
+  project:
+    experiment_name: agentic_iter_rag_v1_endpoint_hard_short_reason_ans_ev_w02_n4_1p5epoch
+
+pipeline:
+  resume_from_stage: build_reranker_branch_dataset
+  stop_after_stage: train_llm_reranker
+  force_rerun_stages:
+    - build_reranker_branch_dataset
+    - filter_reranker_branch_dataset
+    - train_llm_reranker
+
+reranker_training:
+  training_phases:
+    stage2_agentic:
+      sub_strategy: answer_reward_plus_evidence_hit
+      evidence_hit_weight: 0.2
+      total_epochs: 1.5

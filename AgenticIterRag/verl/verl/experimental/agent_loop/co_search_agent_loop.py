@@ -496,6 +496,12 @@ class CoSearchAgentLoop(AgentLoopBase):
         # Only include top_n_documents if the tool saved them (save_top_n_documents=True)
         if "top_n_documents" in res:
             tool_call_detail["top_50_documents"] = res["top_n_documents"]
+        # AIR retriever returns structured recall/rank outputs. Keep them in the
+        # trajectory so downstream teacher reward and distillation data builders
+        # do not need to parse the rendered tool text.
+        for docs_key in ("recall_top50_docs", "rank_top50_docs", "rank_top5_docs", "rank_final_top_docs"):
+            if docs_key in res:
+                tool_call_detail[docs_key] = res[docs_key]
         # Save the final returned documents (top-5 after reranking or fallback)
         tool_call_detail["top_5_documents"] = tool_response_text  # raw text, or could be parsed
         agent_data.tool_call_details.append(tool_call_detail)

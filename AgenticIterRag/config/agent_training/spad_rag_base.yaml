@@ -1,0 +1,249 @@
+# SPAD-RAG agent training strategy config.
+#
+# 这份配置只描述 train_agent.impl=spad_rag 的内部训练策略。
+# AIR 顶层 stage 顺序仍由 pipeline/offline_two_stage.yaml 管理。
+
+# 配置名称。
+name: spad_rag_base
+
+# 本配置对应的 train_agent implementation。
+impl: spad_rag
+
+# SPAD-RAG 内部子阶段顺序；这些不是 AIR 顶层 pipeline stage。
+sub_stage_order:
+  - search_policy_rl
+  - answer_refresh_data
+  - answer_distillation
+
+# 从哪个 SPAD 子阶段开始执行；null 表示从第一个子阶段开始。
+resume_from_sub_stage: null
+
+# 执行到哪个 SPAD 子阶段后停止；null 表示执行到最后。
+stop_after_sub_stage: null
+
+# 需要跳过的 SPAD 子阶段列表。
+skip_sub_stages: []
+
+# 需要强制重跑的 SPAD 子阶段列表。
+force_rerun_sub_stages: []
+
+# 第一版默认使用 smoke 后端打通配置、manifest 和数据契约；真实训练由 overlay 切到 verl/dpo 后端。
+default_backend: smoke
+
+# 基础配置引用；由 SPAD config resolver 在运行时解析。
+refs:
+  # 训练数据来自 data 配置组。
+  train_files: data.train_files
+
+  # 验证数据来自 data 配置组。
+  val_files: data.val_files
+
+  # 初始 actor 模型来自 model 配置组。
+  init_actor_model: model.path
+
+  # prompt 最大 token 长度来自 data 配置组。
+  max_prompt_length: data.max_prompt_length
+
+  # response 最大 token 长度来自 data 配置组。
+  max_response_length: data.max_response_length
+
+# Teacher answerer 配置；profile 不绑定卡号，卡号来自 resource 当前 sub-stage。
+teacher_answerer:
+  # 默认 teacher 服务 profile。
+  default_service_profile: glm47_single_vllm
+
+  # Teacher prompt 版本。
+  prompt_version: spad_teacher_evidence_answer_v1
+
+  # 证据不足时 teacher 必须输出的短答案。
+  insufficient_answer: 证据不足无法作答
+
+  # OpenAI-compatible 调用默认参数。
+  request:
+    temperature: 0.0
+    top_p: 1.0
+    max_tokens: 1024
+    timeout_seconds: 180
+    chat_template_kwargs:
+      enable_thinking: false
+
+  # 可选服务 profile；具体 GPU/端口由 resource 当前 sub-stage 覆盖。
+  service_profiles:
+    glm47_single_vllm:
+      backend_type: vllm_container
+      model_path: /data01/ms_wksp/agent_up_to_date/models/llm/GLM-4.7-Flash
+      served_model_name: GLM-4.7-Flash
+      trust_remote_code: true
+      container_image: m.daocloud.io/quay.io/ascend/vllm-ascend:v0.21.0rc1
+      container_name: spad_glm47_vllm_8067
+      tensor_parallel_size: 2
+      gpu_memory_utilization: 0.95
+      max_model_len: 32000
+      kv_cache_dtype: auto
+      moe_backend: auto
+      disable_custom_all_reduce: true
+      endpoint: http://127.0.0.1:8067/v1/chat/completions
+
+# Stage 1 reward 默认参数。
+reward:
+  # teacher answer F1 的权重。
+  teacher_f1_weight: 1.0
+
+  # 每次 search 的成本。
+  search_cost: 0.02
+
+  # 格式错误惩罚。
+  invalid_format_penalty: -0.5
+
+  # 缺少 <reason> 但 action 结构合法时的小惩罚；用于兼容 Qwen3 non-thinking 模板早期策略。
+  missing_reason_penalty: -0.02
+
+  # 非法 action 惩罚。
+  invalid_action_penalty: -0.5
+
+  # 重复 query 惩罚。
+  duplicate_query_penalty: -0.1
+
+  # 没有合法停止惩罚。
+  no_finish_penalty: -0.5
+
+# SPAD-RAG 实现级输出；由 train_agent runtime 写入。
+outputs:
+  search_policy_actor_checkpoint: null
+  search_policy_rollout_manifest: null
+  search_policy_reward_manifest: null
+  answer_refresh_manifest: null
+  answer_distill_dataset_manifest: null
+  answer_distilled_actor_checkpoint: null
+  spad_manifest: null
+
+# SPAD-RAG 内部子阶段配置。
+sub_stages:
+  search_policy_rl:
+    # 是否启用 Stage 1。
+    enabled: true
+
+    # 后端：smoke / verl。
+    backend: smoke
+
+    # smoke 后端只验证数据、reward schema 和 manifest，不更新模型参数。
+    smoke:
+      max_samples: 8
+      total_training_steps: 1
+
+    # 真实 Stage 1 训练参数；默认参考 CAR 搜索 agent 训练实践。
+    trainer:
+      method: grpo
+      total_epochs: 1
+      total_training_steps: null
+      train_batch_size: 64
+      actor_batch_size: 64
+      ppo_mini_batch_size: 64
+      actor_micro_batch_size_per_gpu: 2
+      log_prob_micro_batch_size_per_gpu: 4
+      n_samples_per_prompt: 8
+      val_batch_size: 8
+      train_max_samples: data.train_max_samples
+      val_max_samples: data.val_max_samples
+      learning_rate: 1.0e-6
+      save_freq: 5
+      test_freq: -1
+      logger: ["console"]
+      # 每个 sub-stage 结束后自动释放本 stage 启动的服务；复用到的 existing/external 服务不会被停止。
+      auto_stop_services: true
+
+    rollout:
+      # Stage 1 在生成到 <answer> 后停止，并保留 stop string 作为停止动作 credit。
+      stop_sequences: ["<answer>"]
+      include_stop_str_in_output: true
+      max_assistant_turns: 6
+      max_user_turns: 6
+      visible_top_m: 5
+      max_doc_chars: 2000
+
+    outputs:
+      actor_checkpoint: null
+      rollout_jsonl: null
+      reward_jsonl: null
+      manifest: null
+
+  answer_refresh_data:
+    # 是否启用 Stage 2。
+    enabled: true
+
+    # 后端：smoke / rollout。
+    backend: smoke
+
+    # 每个 sub-stage 结束后自动释放本 stage 启动的服务；复用到的 existing/external 服务不会被停止。
+    auto_stop_services: true
+
+    # smoke 后端构造少量 chosen/rejected 样本，用于验证 Stage 3 数据契约。
+    smoke:
+      max_samples: 8
+
+    rollout:
+      # Stage 2 不在 <answer> 处 stop，要保留 actor answer 作为 rejected。
+      stop_sequences: []
+      max_assistant_turns: 6
+      max_user_turns: 6
+      visible_top_m: 5
+      max_doc_chars: 2000
+
+    dataset:
+      version: null
+      overwrite: false
+      output_schema: spad_answer_distill_pair_v1
+
+    inputs:
+      actor_checkpoint: null
+
+    outputs:
+      dataset_jsonl: null
+      dataset_manifest: null
+      manifest: null
+
+  answer_distillation:
+    # 是否启用 Stage 3。
+    enabled: true
+
+    # Stage 3 内部 phase 顺序；SFT 默认关闭，DPO 默认开启。
+    phase_order:
+      - sft
+      - dpo
+
+    inputs:
+      init_actor_checkpoint: null
+      dataset_manifest: null
+
+    outputs:
+      checkpoint: null
+      manifest: null
+
+    phases:
+      sft:
+        enabled: false
+        backend: smoke
+        train_batch_size: 64
+        micro_batch_size_per_gpu: 2
+        learning_rate: 1.0e-6
+        total_epochs: 1
+        total_training_steps: null
+        loss_weight: 1.0
+        outputs:
+          checkpoint: null
+          manifest: null
+
+      dpo:
+        enabled: true
+        backend: smoke
+        train_batch_size: 64
+        micro_batch_size_per_gpu: 2
+        learning_rate: 1.0e-6
+        total_epochs: 1
+        total_training_steps: null
+        beta: 0.1
+        pairwise_loss_weight: 1.0
+        chosen_sft_loss_weight: 0.2
+        outputs:
+          checkpoint: null
+          manifest: null

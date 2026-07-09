@@ -1,0 +1,156 @@
+# AIR v1 LLM reranker stage2 conservative formal training overlay.
+# Start this only after the matching 3-step stability ablation remains format-stable.
+
+main_run:
+  project:
+    experiment_name: agentic_iter_rag_v1_stage2_hard_short_reason_ans_ev_w02_lr5e6_kl02_n4_1epoch
+
+pipeline:
+  resume_from_stage: train_llm_reranker
+  stop_after_stage: train_llm_reranker
+  skip_stages: []
+  force_rerun_stages:
+    - train_llm_reranker
+
+  stage_configs:
+    train_llm_reranker:
+      inputs:
+        branch_dataset_manifest: /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/data/AgenticIterRag/llm_reranker_branch_train_set/260704e_AIR_v1_traj_co_search_ablation.train_global_step_79__branch_first_point_top50_top5_short_reason_hard_top50hit_top5miss_baseline0/manifest.json
+
+reranker_training:
+  continuation:
+    agent_model: /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/checkpoints/qwen3_4b_probe/coAgenticRetriever/260625-211826-CAR_async_npu_smaller_bs_per_gpu/global_step_79
+
+  input:
+    branch_dataset_manifest: /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/data/AgenticIterRag/llm_reranker_branch_train_set/260704e_AIR_v1_traj_co_search_ablation.train_global_step_79__branch_first_point_top50_top5_short_reason_hard_top50hit_top5miss_baseline0/manifest.json
+
+  training_phases:
+    stage1_format:
+      enabled: false
+
+    stage2_agentic:
+      enabled: true
+      init_model: /data01/ms_wksp/agent_up_to_date/models/llm/Qwen3-4B
+
+      sub_strategy: answer_reward_plus_evidence_hit
+      evidence_hit_weight: 0.2
+      format_invalid_score: -0.5
+
+      learning_rate: 5.0e-6
+      use_kl_loss: true
+      kl_loss_coef: 0.02
+      kl_loss_type: low_var_kl
+      entropy_coeff: 0.0
+
+      train_batch_size: 64
+      ppo_mini_batch_size: 64
+      n_samples_per_prompt: 4
+      val_n_samples_per_prompt: 4
+
+      total_training_steps: 6
+      total_epochs: 1
+      train_max_samples: -1
+
+      val_before_train: false
+      val_only: false
+      test_freq: -1
+      val_max_samples: 1
+      val_batch_size: 1
+
+      max_prompt_length: 16384
+      max_response_length: 256
+      rollout_max_model_len: 16640
+
+      actor_activation_offload: false
+      actor_optimizer_offload: false
+      actor_param_offload: false
+      ref_param_offload: true
+      actor_forward_prefetch: false
+      ref_forward_prefetch: false
+
+      use_dynamic_bsz: true
+      use_remove_padding: true
+      micro_batch_size_per_gpu: 1
+      log_prob_micro_batch_size_per_gpu: 1
+      ppo_max_token_len_per_gpu: 18432
+      log_prob_max_token_len_per_gpu: 18432
+
+      calculate_rollout_log_probs: true
+      use_rollout_log_probs: true
+      rollout_correction_bypass_mode: true
+      rollout_correction_use_policy_gradient: false
+
+      rollout_gpu_memory_utilization: 0.80
+      max_num_seqs: 160
+      max_num_batched_tokens: 98304
+      enable_chunked_prefill: true
+      enable_prefix_caching: true
+      enforce_eager: false
+
+      rollout_temperature: 0.7
+      rollout_top_p: 0.9
+      sampling_stop:
+        - "</rerank>"
+      include_stop_str_in_output: true
+
+      agent_loop_num_workers: 64
+      save_freq: 3
+
+resource:
+  stage_resources:
+    train_llm_reranker:
+      phase_services:
+        stage2_agentic:
+          services:
+            frozen_agent_vllm:
+              backend_type: multi_instance_proxy
+              served_model_name: agentic-iter-rag-frozen-agent
+              auto_start: true
+              auto_stop: true
+              proxy:
+                host: 127.0.0.1
+                port: 8140
+                strategy: least_inflight
+                timeout: 300
+                failure_cooldown_seconds: 10
+                latency_ewma_alpha: 0.2
+                max_retries_per_request: 3
+              instances:
+                - name: frozen_agent_0
+                  gpu_ids: [4]
+                  tensor_parallel_size: 1
+                  port: 8141
+                  max_num_seqs: 24
+                  gpu_memory_utilization: 0.90
+                - name: frozen_agent_1
+                  gpu_ids: [5]
+                  tensor_parallel_size: 1
+                  port: 8142
+                  max_num_seqs: 24
+                  gpu_memory_utilization: 0.90
+                - name: frozen_agent_2
+                  gpu_ids: [6]
+                  tensor_parallel_size: 1
+                  port: 8143
+                  max_num_seqs: 24
+                  gpu_memory_utilization: 0.90
+
+            recall:
+              backend_type: npu
+              instance_count: 1
+              port: 8130
+              backend_base_port: 8131
+              retrieval_service_url: http://127.0.0.1:8130/retrieve
+              auto_start: true
+              auto_stop: true
+              wait_seconds: 360
+              proxy:
+                strategy: least_inflight
+                timeout: 180
+                failure_cooldown_seconds: 10
+                latency_ewma_alpha: 0.2
+                max_retries_per_request: 1
+              accelerator_backend:
+                gpu_ids: [7]
+                query_batch_size: 32
+                doc_dtype: float16

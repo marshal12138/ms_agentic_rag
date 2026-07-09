@@ -1,0 +1,21 @@
+# End-point hard-slice A1 ablation: answer-only reward, n=4, 3 steps.
+
+main_run:
+  project:
+    experiment_name: agentic_iter_rag_v1_endpoint_hard_short_reason_answer_only_n4_3step
+
+pipeline:
+  resume_from_stage: build_reranker_branch_dataset
+  stop_after_stage: train_llm_reranker
+  force_rerun_stages:
+    - build_reranker_branch_dataset
+    - filter_reranker_branch_dataset
+    - train_llm_reranker
+
+reranker_training:
+  training_phases:
+    stage2_agentic:
+      sub_strategy: answer_reward
+      evidence_hit_weight: 0.0
+      total_training_steps: 3
+      save_freq: 10

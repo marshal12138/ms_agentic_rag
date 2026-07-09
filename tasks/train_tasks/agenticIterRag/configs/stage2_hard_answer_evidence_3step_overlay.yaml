@@ -1,0 +1,174 @@
+# AIR v1 LLM reranker stage2 hard 子集 answer + evidence-hit 消融 overlay。
+# 目标：
+#   1. 与 A1 使用完全相同的 hard 子集和系统训练参数。
+#   2. 在 final answer F1 之外加入少量 top5 evidence-hit 辅助信号，降低 continuation answer reward 噪声。
+#   3. 只跑 3 个 training step，用于和 A1 对比 reward 分布、格式稳定性和初步训练方向。
+
+main_run:
+  project:
+    experiment_name: agentic_iter_rag_v1_stage2_hard_answer_evidence_w02_n4_3step
+
+pipeline:
+  # 直接从 train_llm_reranker 开始，不重建数据集。
+  resume_from_stage: train_llm_reranker
+
+  # 消融阶段只关注训练本身，暂不构建 service bundle。
+  stop_after_stage: train_llm_reranker
+
+  skip_stages: []
+
+  force_rerun_stages:
+    - train_llm_reranker
+
+  stage_configs:
+    train_llm_reranker:
+      inputs:
+        # fixed_example prompt 的 hard/improvable 子集。
+        branch_dataset_manifest: /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/data/AgenticIterRag/llm_reranker_branch_train_set/260704e_AIR_v1_traj_co_search_ablation.train_global_step_79__branch_first_point_top50_top5_fixed_example_hard_top50hit_top5miss_baseline0/manifest.json
+
+reranker_training:
+  continuation:
+    # stage2 continuation 使用与 dataproduce 相同的 frozen search agent checkpoint。
+    agent_model: /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/checkpoints/qwen3_4b_probe/coAgenticRetriever/260625-211826-CAR_async_npu_smaller_bs_per_gpu/global_step_79
+
+  input:
+    # train stage 直接消费 hard 子集 branch dataset。
+    branch_dataset_manifest: /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/data/AgenticIterRag/llm_reranker_branch_train_set/260704e_AIR_v1_traj_co_search_ablation.train_global_step_79__branch_first_point_top50_top5_fixed_example_hard_top50hit_top5miss_baseline0/manifest.json
+
+  training_phases:
+    stage1_format:
+      # 本轮只验证 stage2 策略，不跑格式阶段。
+      enabled: false
+
+    stage2_agentic:
+      enabled: true
+
+      # 直接从原始 Qwen3-4B 初始化，避免继承旧 stage1 长输出漂移。
+      init_model: /data01/ms_wksp/agent_up_to_date/models/llm/Qwen3-4B
+
+      # A2：final answer F1 为主，top5 evidence-hit 为辅助。
+      sub_strategy: answer_reward_plus_evidence_hit
+      evidence_hit_weight: 0.2
+
+      train_batch_size: 64
+      ppo_mini_batch_size: 64
+      n_samples_per_prompt: 4
+      val_n_samples_per_prompt: 4
+
+      # hard 子集 396 条，3 step 约覆盖 192 个 prompt；足够先看 reward 分布和格式稳定性。
+      total_training_steps: 3
+      total_epochs: 1
+      train_max_samples: -1
+
+      # 消融阶段关闭 validation，避免额外 continuation 干扰训练耗时判断。
+      val_before_train: false
+      val_only: false
+      test_freq: -1
+      val_max_samples: 1
+      val_batch_size: 1
+
+      max_prompt_length: 16384
+      max_response_length: 512
+      rollout_max_model_len: 16896
+
+      # 复用 5-step 效率消融中已经验证过的 stage2 稳定参数。
+      actor_activation_offload: false
+      actor_optimizer_offload: false
+      actor_param_offload: false
+      ref_param_offload: true
+      actor_forward_prefetch: false
+      ref_forward_prefetch: false
+
+      use_dynamic_bsz: true
+      use_remove_padding: true
+      micro_batch_size_per_gpu: 1
+      log_prob_micro_batch_size_per_gpu: 1
+      ppo_max_token_len_per_gpu: 18432
+      log_prob_max_token_len_per_gpu: 18432
+
+      calculate_rollout_log_probs: true
+      use_rollout_log_probs: true
+      rollout_correction_bypass_mode: true
+      rollout_correction_use_policy_gradient: false
+
+      use_kl_loss: true
+      kl_loss_coef: 0.001
+      kl_loss_type: low_var_kl
+      entropy_coeff: 0.0
+
+      rollout_gpu_memory_utilization: 0.80
+      max_num_seqs: 160
+      max_num_batched_tokens: 98304
+      enable_chunked_prefill: true
+      enable_prefix_caching: true
+      enforce_eager: false
+
+      rollout_temperature: 1.0
+      rollout_top_p: 1.0
+      sampling_stop:
+        - "</rerank>"
+      include_stop_str_in_output: true
+
+      agent_loop_num_workers: 64
+      save_freq: 10
+
+resource:
+  stage_resources:
+    train_llm_reranker:
+      phase_services:
+        stage2_agentic:
+          services:
+            frozen_agent_vllm:
+              # 3 个单卡 frozen agent 实例，通过 proxy 做 least-inflight 负载均衡。
+              backend_type: multi_instance_proxy
+              served_model_name: agentic-iter-rag-frozen-agent
+              auto_start: true
+              auto_stop: true
+              proxy:
+                host: 127.0.0.1
+                port: 8140
+                strategy: least_inflight
+                timeout: 300
+                failure_cooldown_seconds: 10
+                latency_ewma_alpha: 0.2
+                max_retries_per_request: 3
+              instances:
+                - name: frozen_agent_0
+                  gpu_ids: [4]
+                  tensor_parallel_size: 1
+                  port: 8141
+                  max_num_seqs: 24
+                  gpu_memory_utilization: 0.90
+                - name: frozen_agent_1
+                  gpu_ids: [5]
+                  tensor_parallel_size: 1
+                  port: 8142
+                  max_num_seqs: 24
+                  gpu_memory_utilization: 0.90
+                - name: frozen_agent_2
+                  gpu_ids: [6]
+                  tensor_parallel_size: 1
+                  port: 8143
+                  max_num_seqs: 24
+                  gpu_memory_utilization: 0.90
+
+            recall:
+              # stage2 retriever 固定单 NPU 实例，占用 7。
+              backend_type: npu
+              instance_count: 1
+              port: 8130
+              backend_base_port: 8131
+              retrieval_service_url: http://127.0.0.1:8130/retrieve
+              auto_start: true
+              auto_stop: true
+              wait_seconds: 360
+              proxy:
+                strategy: least_inflight
+                timeout: 180
+                failure_cooldown_seconds: 10
+                latency_ewma_alpha: 0.2
+                max_retries_per_request: 1
+              accelerator_backend:
+                gpu_ids: [7]
+                query_batch_size: 32
+                doc_dtype: float16

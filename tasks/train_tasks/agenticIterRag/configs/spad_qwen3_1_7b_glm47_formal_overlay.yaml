@@ -1,0 +1,160 @@
+# SPAD-RAG Qwen3-1.7B + GLM4.7 formal three-stage training overlay.
+#
+# This keeps SPAD-RAG under pipeline.offline_two_stage -> train_agent and runs
+# the internal sub-stages in order: search_policy_rl -> answer_refresh_data ->
+# answer_distillation.
+
+main_run:
+  project:
+    experiment_name: agentic_iter_rag_v1_spad_qwen3_1_7b_glm47_formal
+  config_groups:
+    pipeline: offline_two_stage
+    agent_training: spad_rag_base
+    model: qwen3_1_7b
+    rollout: air_async_qwen3_1_7b
+
+pipeline:
+  resume_from_stage: train_agent
+  stop_after_stage: train_agent
+  skip_stages: []
+  force_rerun_stages: [train_agent]
+  stage_configs:
+    train_agent:
+      enabled: true
+      impl: spad_rag
+      impl_config_ref: agent_training
+
+agent_training:
+  default_backend: smoke
+  resume_from_sub_stage: search_policy_rl
+  stop_after_sub_stage: null
+  skip_sub_stages: []
+  force_rerun_sub_stages: [search_policy_rl, answer_refresh_data, answer_distillation]
+  teacher_answerer:
+    default_service_profile: glm47_single_vllm
+  sub_stages:
+    search_policy_rl:
+      enabled: true
+      backend: verl
+      trainer:
+        total_epochs: 1
+        total_training_steps: 50
+        train_batch_size: 8
+        ppo_mini_batch_size: 8
+        actor_micro_batch_size_per_gpu: 1
+        log_prob_micro_batch_size_per_gpu: 1
+        n_samples_per_prompt: 2
+        train_max_samples: 400
+        val_max_samples: 8
+        val_batch_size: 4
+        save_freq: 10
+        test_freq: -1
+        agent_loop_num_workers: 4
+        teacher_batch_workers: 4
+        rollout_gpu_memory_utilization: 0.55
+        max_num_seqs: 8
+        max_prompt_length: 12000
+        max_response_length: 1536
+        rollout_max_model_len: 13536
+        max_num_batched_tokens: 13536
+        use_torch_compile: false
+        auto_stop_services: true
+        ray_num_cpus: 24
+        rollout_progress_interval: 30
+        timeout_seconds: 86400
+        logger: ["console"]
+      rollout:
+        max_assistant_turns: 3
+        max_user_turns: 3
+        max_tool_response_length: 1536
+    answer_refresh_data:
+      enabled: true
+      backend: rollout
+      auto_stop_services: true
+      inputs:
+        max_samples: 400
+      rollout:
+        temperature: 1.0
+        top_p: 1.0
+        max_response_tokens: 1024
+        max_assistant_turns: 3
+        max_user_turns: 3
+        visible_top_m: 5
+        max_doc_chars: 1536
+        max_model_len: 13024
+        gpu_memory_utilization: 0.45
+        actor_timeout_seconds: 180
+        search_timeout: 120
+      filter:
+        require_teacher_format_valid: true
+        require_evidence_sufficient: true
+        min_teacher_f1: 0.0
+    answer_distillation:
+      enabled: true
+      phase_order: [sft, dpo]
+      phases:
+        sft:
+          enabled: false
+        dpo:
+          enabled: true
+          backend: local_dpo
+          train_batch_size: 1
+          total_training_steps: 50
+          max_samples: 400
+          max_length: 4096
+          learning_rate: 1.0e-6
+          beta: 0.1
+          pairwise_loss_weight: 1.0
+          chosen_sft_loss_weight: 0.2
+          clip_grad_norm: 1.0
+          apply_chat_template_kwargs:
+            enable_thinking: false
+
+resource:
+  stage_resources:
+    train_agent:
+      impls:
+        spad_rag:
+          sub_stages:
+            answer_refresh_data:
+              services:
+                actor_vllm:
+                  gpu_ids: [0, 1, 2, 3]
+                  tensor_parallel_size: 4
+                  port: 8340
+                  served_model_name: spad-refresh-actor
+                  auto_start: true
+                  auto_stop: true
+                  wait_seconds: 600
+                  gpu_memory_utilization: 0.45
+                  max_model_len: 13024
+                teacher_answerer:
+                  profile: glm47_single_vllm
+                  gpu_ids: [4, 5]
+                  tensor_parallel_size: 2
+                  port: 8067
+                  endpoint: http://127.0.0.1:8067/v1/chat/completions
+                  served_model_name: GLM-4.7-Flash
+                  auto_start: true
+                  auto_stop: true
+                  preflight: true
+                  wait_seconds: 600
+                recall:
+                  backend_type: npu
+                  instance_count: 2
+                  port: 8130
+                  backend_base_port: 8131
+                  retrieval_service_url: http://127.0.0.1:8130/retrieve
+                  auto_start: true
+                  auto_stop: true
+                  wait_seconds: 360
+                  accelerator_backend:
+                    gpu_ids: [6, 7]
+                    query_batch_size: 32
+                    doc_dtype: float16
+            answer_distillation:
+              phases:
+                dpo:
+                  trainer:
+                    gpu_ids: [0]
+                    n_gpus_per_node: 1

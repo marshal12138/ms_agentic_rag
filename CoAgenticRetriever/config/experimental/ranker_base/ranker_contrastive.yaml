@@ -56,7 +56,7 @@ ranker:
   max_query_length: 256
 
   # ranker document 输入的最大 token 长度。
-  max_doc_length: 512
+  max_doc_length: 2000
 
   # 加载 Hugging Face 资产时是否允许执行自定义模型代码。
   trust_remote_code: true
@@ -78,7 +78,7 @@ ranker_training:
   max_query_length: 256
 
   # 训练时 document 输入的最大 token 长度。
-  max_doc_length: 512
+  max_doc_length: 2000
 
   # ranker 优化时的梯度裁剪范数。
   max_grad_norm: 1.0

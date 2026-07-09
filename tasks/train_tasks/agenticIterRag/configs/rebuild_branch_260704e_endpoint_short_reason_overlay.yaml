@@ -1,0 +1,59 @@
+# AIR v1 260704e end-point branch dataset short-reason prompt overlay.
+# This only rebuilds the branch dataset from the existing enhanced trajectory.
+
+main_run:
+  project:
+    experiment_name: agentic_iter_rag_v1_rebuild_branch_260704e_endpoint_short_reason
+
+  data_artifacts:
+    trajectory:
+      version: 260704e_AIR_v1_traj_co_search_ablation.train_global_step_79
+      overwrite: false
+      allow_empty_trace: false
+
+    llm_reranker_branch_train_set:
+      version: 260704e_AIR_v1_traj_co_search_ablation.train_global_step_79__branch_end_point_top50_top5_short_reason
+      overwrite: false
+
+pipeline:
+  resume_from_stage: build_reranker_branch_dataset
+  stop_after_stage: build_reranker_branch_dataset
+  skip_stages: []
+  force_rerun_stages:
+    - build_reranker_branch_dataset
+  stage_gap_seconds: 0
+
+  stage_configs:
+    generate_traces:
+      enabled: false
+
+    build_reranker_dataset:
+      inputs:
+        trajectory_manifest: /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/data/AgenticIterRag/trajectory/260704e_AIR_v1_traj_co_search_ablation.train_global_step_79/manifest.json
+        input_dataset_manifest: null
+
+    build_reranker_branch_dataset:
+      inputs:
+        enhanced_trajectory_manifest: /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/data/AgenticIterRag/trajectory/260704e_AIR_v1_traj_co_search_ablation.train_global_step_79/manifest.json
+        reranker_train_set_manifest: /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/data/AgenticIterRag/llm_reranker_train_set/260704e_AIR_v1_traj_co_search_ablation.train_global_step_79__input_recall50_emptylabel_b/manifest.json
+
+data:
+  trace_generation_files:
+    - /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/data/AgenticIterRag/source/co_search_ablation.train.parquet
+  trace_max_samples: -1
+
+reranker_training:
+  input:
+    enhanced_trajectory_manifest: /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/data/AgenticIterRag/trajectory/260704e_AIR_v1_traj_co_search_ablation.train_global_step_79/manifest.json
+    reranker_train_set_manifest: /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/data/AgenticIterRag/llm_reranker_train_set/260704e_AIR_v1_traj_co_search_ablation.train_global_step_79__input_recall50_emptylabel_b/manifest.json
+    branch_dataset_manifest: null
+
+  branch_dataset:
+    version: 260704e_AIR_v1_traj_co_search_ablation.train_global_step_79__branch_end_point_top50_top5_short_reason
+    overwrite: false
+    step_policy: end_point
+    candidate_top_n: 50
+    visible_top_m: 5
+    max_doc_chars: 2000
+    prompt_template_version: cosearch_rerank_topm_v1_short_reason_fixed_example
+    smoke_max_samples: null

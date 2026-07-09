@@ -33,6 +33,9 @@ RUNTIME_ENV="$("${PY}" "${COMPILER}" \
 # shellcheck disable=SC1090
 source "${RUNTIME_ENV}"
 
+PIPELINE_TERMINAL_LOG="${PIPELINE_TERMINAL_LOG:-${LOG_DIR}/pipeline.terminal.log}"
+mkdir -p "$(dirname "${PIPELINE_TERMINAL_LOG}")"
+
 RUNNER_ARGS=(
   --config "${FINAL_CONFIG_YAML}"
   --manifest "${MANIFEST_PATH}"
@@ -42,4 +45,7 @@ if [[ "${LOCAL_DRY_RUN}" == "1" || "${DRY_RUN:-0}" == "1" ]]; then
   RUNNER_ARGS+=(--dry-run)
 fi
 
-PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH:-}" "${PY}" "${RUNNER}" "${RUNNER_ARGS[@]}"
+# pipeline 主进程日志默认同时输出到 terminal 和磁盘，便于长任务现场观察和事后复盘。
+AIR_LOG_MESSAGE="[AIR pipeline] terminal log will also be written to: ${PIPELINE_TERMINAL_LOG}"
+echo "${AIR_LOG_MESSAGE}" | tee -a "${PIPELINE_TERMINAL_LOG}"
+PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH:-}" "${PY}" "${RUNNER}" "${RUNNER_ARGS[@]}" 2>&1 | tee -a "${PIPELINE_TERMINAL_LOG}"

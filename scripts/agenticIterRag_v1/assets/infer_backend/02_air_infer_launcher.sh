@@ -93,6 +93,8 @@ RANKER_FINAL_TOP_K="${RANKER_FINAL_TOP_K:-${RECALL_FINAL_TOP_N}}"
 
 PROXY_PORT="${PROXY_PORT:-8030}"
 RETRIEVAL_SERVICE_URL="${RETRIEVAL_SERVICE_URL:-http://127.0.0.1:${PROXY_PORT}/retrieve}"
+RECALL_BACKEND_TYPE="${RECALL_BACKEND_TYPE:-npu}"
+RECALL_INSTANCE_COUNT="${RECALL_INSTANCE_COUNT:-}"
 RECALL_GPU_ID="${RECALL_GPU_ID:-5}"
 RANK_GPU_ID="${RANK_GPU_ID:-4}"
 RANKER_CUDA_VISIBLE_DEVICES="${RANKER_CUDA_VISIBLE_DEVICES:-${RANK_GPU_ID}}"
@@ -127,6 +129,18 @@ AUTO_START_RECALL_SERVICE="${AUTO_START_RECALL_SERVICE:-1}"
 AUTO_STOP_RECALL_SERVICE="${AUTO_STOP_RECALL_SERVICE:-1}"
 RECALL_SERVICE_WAIT_SECONDS="${RECALL_SERVICE_WAIT_SECONDS:-240}"
 RECALL_BACKEND_BASE_PORT="${RECALL_BACKEND_BASE_PORT:-}"
+RECALL_PROXY_STRATEGY="${RECALL_PROXY_STRATEGY:-least_inflight}"
+RECALL_PROXY_TIMEOUT="${RECALL_PROXY_TIMEOUT:-${REQUEST_TIMEOUT:-180}}"
+RECALL_PROXY_FAILURE_COOLDOWN_SECONDS="${RECALL_PROXY_FAILURE_COOLDOWN_SECONDS:-10}"
+RECALL_PROXY_LATENCY_EWMA_ALPHA="${RECALL_PROXY_LATENCY_EWMA_ALPHA:-0.2}"
+RECALL_PROXY_MAX_RETRIES_PER_REQUEST="${RECALL_PROXY_MAX_RETRIES_PER_REQUEST:-}"
+RECALL_ASSET_PRECHECK="${RECALL_ASSET_PRECHECK:-0}"
+RECALL_QUERY_PREFLIGHT="${RECALL_QUERY_PREFLIGHT:-0}"
+RECALL_CPU_THREADS_PER_INSTANCE="${RECALL_CPU_THREADS_PER_INSTANCE:-8}"
+RECALL_CPU_QUERY_BATCH_SIZE="${RECALL_CPU_QUERY_BATCH_SIZE:-8}"
+RECALL_CPU_DOC_DTYPE="${RECALL_CPU_DOC_DTYPE:-float32}"
+RECALL_ACCELERATOR_QUERY_BATCH_SIZE="${RECALL_ACCELERATOR_QUERY_BATCH_SIZE:-32}"
+RECALL_ACCELERATOR_DOC_DTYPE="${RECALL_ACCELERATOR_DOC_DTYPE:-float16}"
 RETRIEVAL_PREFLIGHT_QUERY="${RETRIEVAL_PREFLIGHT_QUERY:-who got the first nobel prize in physics?}"
 RETRIEVAL_PREFLIGHT_EXPECT="${RETRIEVAL_PREFLIGHT_EXPECT:-}"
 
@@ -238,6 +252,36 @@ check_recall_http_ready() {
   check_recall_url_ready "${RETRIEVAL_SERVICE_URL}"
 }
 
+check_recall_health_ready() {
+  local url="$1"
+  "${PY}" - "${url}" <<'PY'
+import json
+import sys
+import urllib.error
+import urllib.request
+
+url = sys.argv[1]
+try:
+    with urllib.request.urlopen(url, timeout=5) as response:
+        if response.status >= 500:
+            print(f"recall health returned HTTP {response.status}", file=sys.stderr)
+            raise SystemExit(2)
+        data = json.loads(response.read().decode("utf-8"))
+        if data.get("status") == "ok" or isinstance(data.get("doc_embeddings_shape"), list):
+            raise SystemExit(0)
+        print(f"unexpected recall health payload: {data}", file=sys.stderr)
+        raise SystemExit(1)
+except urllib.error.HTTPError as exc:
+    if exc.code >= 500:
+        body = exc.read().decode("utf-8", errors="replace")[:500]
+        print(f"recall health returned HTTP {exc.code}: {body}", file=sys.stderr)
+        raise SystemExit(2)
+    raise SystemExit(1)
+except Exception:
+    raise SystemExit(1)
+PY
+}
+
 check_recall_url_ready() {
   local url="$1"
   "${PY}" - "${url}" "${RETRIEVAL_PREFLIGHT_QUERY}" <<'PY'
@@ -299,6 +343,31 @@ wait_for_recall_url() {
   return 1
 }
 
+wait_for_recall_health_url() {
+  local url="$1"
+  local label="$2"
+  local waited=0 status
+  while [[ "${waited}" -lt "${RECALL_SERVICE_WAIT_SECONDS}" ]]; do
+    if check_recall_health_ready "${url}"; then
+      status=0
+    else
+      status=$?
+    fi
+    if (( status == 0 )); then
+      echo "recall health ${label} ready: ${url}"
+      return 0
+    fi
+    if (( status == 2 )); then
+      echo "ERROR: recall health ${label} returned a fatal readiness error: ${url}" >&2
+      return 2
+    fi
+    sleep 2
+    waited=$((waited + 2))
+  done
+  echo "ERROR: timed out waiting for recall health ${label} after ${RECALL_SERVICE_WAIT_SECONDS}s: ${url}" >&2
+  return 1
+}
+
 run_recall_preflight() {
   local output status
   if output="$("${PY}" "${ASSETS_DIR}/00_check_air_tool_retrieval.py" \
@@ -315,82 +384,78 @@ run_recall_preflight() {
   return "${status}"
 }
 
-start_single_recall_service() {
-  echo "starting recall retrieval service; accelerator=${AIR_ACCELERATOR}; device_id=${RECALL_GPU_ID}; log=${RECALL_SERVICE_LOG}"
-  PORT="${PROXY_PORT}" \
-  RECALL_GPU_ID="${RECALL_GPU_ID}" \
-  RETRIEVER_GPU_IDS="${RECALL_GPU_ID}" \
-  RETRIEVER_MODEL="${RECALL_MODEL_PATH}" \
-  RECALL_FINAL_TOP_N="${RECALL_FINAL_TOP_N}" \
-  DEVICE="${RETRIEVER_DEVICE:-$(air_accel_device_prefix)}" \
-  AIR_ACCELERATOR="${AIR_ACCELERATOR}" \
-  PY="${PY}" \
-    bash "${SCRIPT_DIR}/00_start_dense_retriever_server.sh" >"${RECALL_SERVICE_LOG}" 2>&1 &
-  RECALL_SERVICE_PID=$!
-
-  local waited=0
-  while [[ "${waited}" -lt "${RECALL_SERVICE_WAIT_SECONDS}" ]]; do
-    if check_recall_http_ready; then
-      if ! run_recall_preflight; then
-        echo "ERROR: recall retrieval semantic preflight failed; aborting instead of retrying readiness." >&2
-        exit 2
-      fi
-      echo "recall retrieval service ready: ${RETRIEVAL_SERVICE_URL}"
-      return 0
-    else
-      ready_status=$?
-      if (( ready_status == 2 )); then
-        echo "ERROR: recall retrieval service returned a fatal readiness error; aborting instead of waiting." >&2
-        tail -80 "${RECALL_SERVICE_LOG}" >&2 || true
-        exit 2
-      fi
-    fi
-    if ! kill -0 "${RECALL_SERVICE_PID}" 2>/dev/null; then
-      echo "ERROR: recall retrieval service exited before ready. Log tail:" >&2
-      tail -80 "${RECALL_SERVICE_LOG}" >&2 || true
-      exit 2
-    fi
-    sleep 2
-    waited=$((waited + 2))
-  done
-
-  echo "ERROR: timed out waiting for recall retrieval service after ${RECALL_SERVICE_WAIT_SECONDS}s. Log tail:" >&2
-  tail -80 "${RECALL_SERVICE_LOG}" >&2 || true
-  exit 2
-}
-
-start_multi_recall_service() {
-  local raw_gpu_ids="$1"
-  local -a gpu_ids backend_urls
-  local backend_base_port backend_count idx gpu_id backend_port backend_url backend_log
-  IFS=',' read -r -a gpu_ids <<< "${raw_gpu_ids}"
-  backend_count="${#gpu_ids[@]}"
+start_balanced_recall_service() {
+  local -a backend_urls gpu_ids
+  local backend_base_port backend_count idx gpu_id backend_port backend_url backend_log launcher max_retries backend_label
   backend_base_port="${RECALL_BACKEND_BASE_PORT:-$((PROXY_PORT + 1))}"
   : > "${RECALL_SERVICE_LOG}"
-  echo "starting ${backend_count} recall retrieval backends in parallel; accelerator=${AIR_ACCELERATOR}; devices=${raw_gpu_ids}; proxy_port=${PROXY_PORT}; backend_base_port=${backend_base_port}" | tee -a "${RECALL_SERVICE_LOG}"
-
-  for idx in "${!gpu_ids[@]}"; do
-    gpu_id="${gpu_ids[$idx]}"
-    gpu_id="${gpu_id//[[:space:]]/}"
-    if [[ -z "${gpu_id}" ]]; then
-      echo "ERROR: empty gpu id in RECALL_GPU_ID=${raw_gpu_ids}" >&2
+  case "${RECALL_BACKEND_TYPE}" in
+    cpu)
+      backend_count="${RECALL_INSTANCE_COUNT:-8}"
+      launcher="${SCRIPT_DIR}/00_start_cpu_dense_retriever_server.sh"
+      echo "starting ${backend_count} CPU recall retrieval backends in parallel; proxy_port=${PROXY_PORT}; backend_base_port=${backend_base_port}; threads_per_instance=${RECALL_CPU_THREADS_PER_INSTANCE}" | tee -a "${RECALL_SERVICE_LOG}"
+      ;;
+    npu|cuda)
+      IFS=',' read -r -a gpu_ids <<< "${RECALL_GPU_ID}"
+      backend_count="${RECALL_INSTANCE_COUNT:-${#gpu_ids[@]}}"
+      launcher="${SCRIPT_DIR}/00_start_dense_retriever_server.sh"
+      echo "starting ${backend_count} ${RECALL_BACKEND_TYPE} recall retrieval backends in parallel; devices=${RECALL_GPU_ID}; proxy_port=${PROXY_PORT}; backend_base_port=${backend_base_port}" | tee -a "${RECALL_SERVICE_LOG}"
+      ;;
+    *)
+      echo "ERROR: unsupported RECALL_BACKEND_TYPE=${RECALL_BACKEND_TYPE}; use cpu, npu, or cuda" >&2
       exit 2
-    fi
+      ;;
+  esac
+  if ! [[ "${backend_count}" =~ ^[0-9]+$ ]] || (( backend_count < 1 )); then
+    echo "ERROR: recall backend_count must be a positive integer; got ${backend_count}" >&2
+    exit 2
+  fi
+
+  for ((idx=0; idx<backend_count; idx++)); do
     backend_port=$((backend_base_port + idx))
     backend_url="http://127.0.0.1:${backend_port}/retrieve"
-    backend_log="${RECALL_SERVICE_LOG%.log}.gpu${gpu_id}.port${backend_port}.log"
     backend_urls+=("${backend_url}")
+    if [[ "${RECALL_BACKEND_TYPE}" == "cpu" ]]; then
+      backend_label="cpu${idx}"
+      backend_log="${RECALL_SERVICE_LOG%.log}.${backend_label}.port${backend_port}.log"
+      echo "starting recall CPU backend: index=${idx}; port=${backend_port}; url=${backend_url}; log=${backend_log}" | tee -a "${RECALL_SERVICE_LOG}"
+      PORT="${backend_port}" \
+      RETRIEVER_MODEL="${RECALL_MODEL_PATH}" \
+      RECALL_FINAL_TOP_N="${RECALL_FINAL_TOP_N}" \
+      QUERY_BATCH_SIZE="${RECALL_CPU_QUERY_BATCH_SIZE}" \
+      CPU_THREADS_PER_INSTANCE="${RECALL_CPU_THREADS_PER_INSTANCE}" \
+      DOC_DTYPE="${RECALL_CPU_DOC_DTYPE}" \
+      SKIP_RETRIEVAL_ASSET_VERIFY="$([[ "${RECALL_ASSET_PRECHECK}" == "1" && "${idx}" == "0" ]] && echo 0 || echo 1)" \
+      PY="${PY}" \
+        bash "${launcher}" >"${backend_log}" 2>&1 &
+    else
+      if (( idx >= ${#gpu_ids[@]} )); then
+        echo "ERROR: RECALL_INSTANCE_COUNT=${backend_count} exceeds RECALL_GPU_ID count=${#gpu_ids[@]}" >&2
+        exit 2
+      fi
+      gpu_id="${gpu_ids[$idx]}"
+      gpu_id="${gpu_id//[[:space:]]/}"
+      if [[ -z "${gpu_id}" ]]; then
+        echo "ERROR: empty gpu id in RECALL_GPU_ID=${RECALL_GPU_ID}" >&2
+        exit 2
+      fi
+      backend_label="${RECALL_BACKEND_TYPE}${gpu_id}"
+      backend_log="${RECALL_SERVICE_LOG%.log}.${backend_label}.port${backend_port}.log"
+      echo "starting recall accelerator backend: type=${RECALL_BACKEND_TYPE}; gpu=${gpu_id}; port=${backend_port}; url=${backend_url}; log=${backend_log}" | tee -a "${RECALL_SERVICE_LOG}"
+      PORT="${backend_port}" \
+      RECALL_GPU_ID="${gpu_id}" \
+      RETRIEVER_GPU_IDS="${gpu_id}" \
+      RETRIEVER_MODEL="${RECALL_MODEL_PATH}" \
+      RECALL_FINAL_TOP_N="${RECALL_FINAL_TOP_N}" \
+      QUERY_BATCH_SIZE="${RECALL_ACCELERATOR_QUERY_BATCH_SIZE}" \
+      DOC_DTYPE="${RECALL_ACCELERATOR_DOC_DTYPE}" \
+      SKIP_RETRIEVAL_ASSET_VERIFY="$([[ "${RECALL_ASSET_PRECHECK}" == "1" && "${idx}" == "0" ]] && echo 0 || echo 1)" \
+      DEVICE="${RETRIEVER_DEVICE:-${RECALL_BACKEND_TYPE}}" \
+      AIR_ACCELERATOR="${AIR_ACCELERATOR}" \
+      PY="${PY}" \
+        bash "${launcher}" >"${backend_log}" 2>&1 &
+    fi
     RECALL_BACKEND_LOGS+=("${backend_log}")
-    echo "starting recall backend: gpu=${gpu_id}; port=${backend_port}; url=${backend_url}; log=${backend_log}" | tee -a "${RECALL_SERVICE_LOG}"
-    PORT="${backend_port}" \
-    RECALL_GPU_ID="${gpu_id}" \
-    RETRIEVER_GPU_IDS="${gpu_id}" \
-    RETRIEVER_MODEL="${RECALL_MODEL_PATH}" \
-    RECALL_FINAL_TOP_N="${RECALL_FINAL_TOP_N}" \
-    DEVICE="${RETRIEVER_DEVICE:-$(air_accel_device_prefix)}" \
-    AIR_ACCELERATOR="${AIR_ACCELERATOR}" \
-    PY="${PY}" \
-      bash "${SCRIPT_DIR}/00_start_dense_retriever_server.sh" >"${backend_log}" 2>&1 &
     RECALL_BACKEND_PIDS+=("$!")
   done
 
@@ -403,7 +468,7 @@ start_multi_recall_service() {
         tail -80 "${RECALL_BACKEND_LOGS[$idx]}" >&2 || true
         exit 2
       fi
-      if check_recall_url_ready "${backend_urls[$idx]}"; then
+      if check_recall_health_ready "${backend_urls[$idx]%/retrieve}/gpu_status"; then
         status=0
       else
         status=$?
@@ -432,33 +497,50 @@ start_multi_recall_service() {
     exit 2
   fi
 
-  echo "starting recall round-robin proxy: port=${PROXY_PORT}; log=${RECALL_PROXY_LOG}" | tee -a "${RECALL_SERVICE_LOG}"
+  echo "starting recall load-balancing proxy: port=${PROXY_PORT}; strategy=${RECALL_PROXY_STRATEGY}; log=${RECALL_PROXY_LOG}" | tee -a "${RECALL_SERVICE_LOG}"
   local -a proxy_args
-  proxy_args=(--host 127.0.0.1 --port "${PROXY_PORT}" --timeout "${REQUEST_TIMEOUT}")
+  max_retries="${RECALL_PROXY_MAX_RETRIES_PER_REQUEST:-${#backend_urls[@]}}"
+  proxy_args=(
+    --host 127.0.0.1
+    --port "${PROXY_PORT}"
+    --timeout "${RECALL_PROXY_TIMEOUT}"
+    --strategy "${RECALL_PROXY_STRATEGY}"
+    --failure-cooldown-seconds "${RECALL_PROXY_FAILURE_COOLDOWN_SECONDS}"
+    --latency-ewma-alpha "${RECALL_PROXY_LATENCY_EWMA_ALPHA}"
+    --max-retries-per-request "${max_retries}"
+  )
   for backend_url in "${backend_urls[@]}"; do
     proxy_args+=(--backend "${backend_url}")
   done
-  "${PY}" "${ROOT}/src/retrievers/retrieval_round_robin_proxy.py" "${proxy_args[@]}" >"${RECALL_PROXY_LOG}" 2>&1 &
+  "${PY}" "${ROOT}/src/retrievers/retrieval_load_balancing_proxy.py" "${proxy_args[@]}" >"${RECALL_PROXY_LOG}" 2>&1 &
   RECALL_PROXY_PID=$!
 
-  if ! wait_for_recall_url "${RETRIEVAL_SERVICE_URL}" "proxy"; then
+  if ! wait_for_recall_health_url "${RETRIEVAL_SERVICE_URL%/retrieve}/health" "proxy"; then
     echo "ERROR: recall proxy failed to become ready. Log tail:" >&2
     tail -80 "${RECALL_PROXY_LOG}" >&2 || true
     exit 2
   fi
-  if ! run_recall_preflight; then
-    echo "ERROR: recall retrieval semantic preflight failed through proxy; aborting." >&2
-    exit 2
+  if is_truthy "${RECALL_QUERY_PREFLIGHT}"; then
+    if ! run_recall_preflight; then
+      echo "ERROR: recall retrieval semantic preflight failed through proxy; aborting." >&2
+      exit 2
+    fi
+  else
+    echo "recall retrieval semantic preflight skipped: RECALL_QUERY_PREFLIGHT=${RECALL_QUERY_PREFLIGHT}"
   fi
   echo "recall retrieval proxy ready: ${RETRIEVAL_SERVICE_URL}"
 }
 
 ensure_recall_service() {
   validate_recall_preflight_args
-  if check_recall_http_ready; then
-    if ! run_recall_preflight; then
-      echo "ERROR: recall retrieval semantic preflight failed; aborting instead of retrying readiness." >&2
-      exit 2
+  if check_recall_health_ready "${RETRIEVAL_SERVICE_URL%/retrieve}/health"; then
+    if is_truthy "${RECALL_QUERY_PREFLIGHT}"; then
+      if ! run_recall_preflight; then
+        echo "ERROR: recall retrieval semantic preflight failed; aborting instead of retrying readiness." >&2
+        exit 2
+      fi
+    else
+      echo "recall retrieval semantic preflight skipped: RECALL_QUERY_PREFLIGHT=${RECALL_QUERY_PREFLIGHT}"
     fi
     echo "recall retrieval service ready: ${RETRIEVAL_SERVICE_URL}"
     return 0
@@ -476,11 +558,7 @@ ensure_recall_service() {
     exit 2
   fi
 
-  if [[ "${RECALL_GPU_ID}" == *,* ]]; then
-    start_multi_recall_service "${RECALL_GPU_ID}"
-  else
-    start_single_recall_service
-  fi
+  start_balanced_recall_service
 }
 
 check_vllm() {

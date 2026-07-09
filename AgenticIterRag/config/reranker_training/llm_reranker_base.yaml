@@ -39,7 +39,7 @@ trainer:
   max_prompt_length: 12000
 
   # 训练 response 最大 token 长度。
-  max_response_length: 2048
+  max_response_length: 1024
 
   # checkpoint 保存间隔。
   save_freq: 100

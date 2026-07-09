@@ -1467,6 +1467,7 @@ class UniSearchR1RerankerRayTrainer(RayPPOTrainer):
         )
         with open(local_latest_checkpointed_iteration, "w") as f:
             f.write(str(self.global_steps))
+        self._last_saved_checkpoint_step = self.global_steps
 
     def _load_checkpoint(self):
         if self.config.trainer.resume_mode == "disable":
@@ -1609,6 +1610,7 @@ class UniSearchR1RerankerRayTrainer(RayPPOTrainer):
         )
 
         self.global_steps = 0
+        self._last_saved_checkpoint_step = None
 
         # load checkpoint before doing anything
         self._load_checkpoint()
@@ -1775,18 +1777,17 @@ class UniSearchR1RerankerRayTrainer(RayPPOTrainer):
                     max_steps_duration=self.max_steps_duration,
                     redundant_time=self.config.trainer.esi_redundant_time,
                 )
-                # Check if the conditions for saving a checkpoint are met.
-                # The conditions include a mandatory condition (1) and
-                # one of the following optional conditions (2/3/4):
-                # 1. The save frequency is set to a positive value.
-                # 2. It's the last training step.
-                # 3. The current step number is a multiple of the save frequency.
-                # 4. The ESI(Elastic Server Instance)/training plan is close to expiration.
-                if self.config.trainer.save_freq > 0 and (
-                    is_last_step or self.global_steps % self.config.trainer.save_freq == 0 or esi_close_to_expiration
-                ):
+                # Always save on the final training step before returning, independent of save_freq.
+                # save_freq only controls additional periodic checkpoints.
+                should_save_periodic = (
+                    self.config.trainer.save_freq > 0
+                    and self.global_steps % self.config.trainer.save_freq == 0
+                )
+                if is_last_step or should_save_periodic or esi_close_to_expiration:
                     if esi_close_to_expiration:
                         print("Force saving checkpoint: ESI instance expiration approaching.")
+                    if is_last_step:
+                        print("Force saving final checkpoint before trainer exit.")
                     with marked_timer("save_checkpoint", timing_raw, color="green"):
                         self._save_checkpoint()
 
@@ -1872,3 +1873,12 @@ class UniSearchR1RerankerRayTrainer(RayPPOTrainer):
                     self.train_dataset.on_batch_end(batch=batch)
                     raise NotImplementedError("DualAgentRayTrainer does not support dynamic dataset yet.")
 
+        final_step = max(0, self.global_steps - 1)
+        if final_step > 0 and self._last_saved_checkpoint_step != final_step:
+            print(f"Training dataloader exhausted; force saving final checkpoint at step {final_step}.")
+            next_step = self.global_steps
+            self.global_steps = final_step
+            self._save_checkpoint()
+            self.global_steps = next_step
+        progress_bar.close()
+        return

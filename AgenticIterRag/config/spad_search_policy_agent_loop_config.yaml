@@ -1,0 +1,9 @@
+# SPAD-RAG Stage 1 agent loop config.
+#
+# The loop stops at the opening <answer> tag and stores search evidence for the
+# teacher-answer reward. It is used only inside train_agent.impl=spad_rag.
+
+- name: spad_search_policy_agent
+  _target_: verl.experimental.agent_loop.spad_search_policy_agent_loop.SpadSearchPolicyAgentLoop
+
+  track_messages: false

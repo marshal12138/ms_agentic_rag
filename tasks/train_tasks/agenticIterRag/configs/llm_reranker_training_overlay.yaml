@@ -1,0 +1,119 @@
+# AIR v1 LLM reranker branch GRPO 训练任务 overlay。
+# 本 overlay 只写本次实验差异；业务参数仍然进入 final config 审计。
+
+main_run:
+  project:
+    # 本次 LLM reranker 训练实验名。
+    experiment_name: agentic_iter_rag_v1_llm_reranker_training_260703a
+
+  data_artifacts:
+    trajectory:
+      # 使用用户指定的新生产 trajectory 数据集。
+      version: 260703c_AIR_v1_traj_co_search_ablation.train_global_step_79
+
+    llm_reranker_train_set:
+      # 使用用户指定的新生产静态 reranker 数据集，用于审计和对照。
+      version: 260703c_AIR_v1_traj_co_search_ablation.train_global_step_79__input_recall50_emptylabel
+
+    llm_reranker_branch_train_set:
+      # branch dataset 版本自动从 trajectory 版本派生。
+      version: null
+
+      # 默认不覆盖已有 branch dataset，避免误删长期数据。
+      overwrite: false
+
+pipeline:
+  # reranker 训练任务默认直接从训练 stage 开始，复用已经构造好的全量 CoSearch topM branch dataset。
+  resume_from_stage: train_llm_reranker
+
+  # 默认执行到 service bundle 产出。
+  stop_after_stage: build_service_bundle
+
+  # 默认不跳过所选范围内的 stage。
+  skip_stages: []
+
+  stage_configs:
+    build_reranker_branch_dataset:
+      inputs:
+        # 指向用户指定 trajectory 数据集 manifest。
+        enhanced_trajectory_manifest: /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/data/AgenticIterRag/trajectory/260703c_AIR_v1_traj_co_search_ablation.train_global_step_79/manifest.json
+
+        # 指向用户指定 reranker 数据集 manifest，仅用于审计来源。
+        reranker_train_set_manifest: /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/data/AgenticIterRag/llm_reranker_train_set/260703c_AIR_v1_traj_co_search_ablation.train_global_step_79__input_recall50_emptylabel/manifest.json
+
+    train_llm_reranker:
+      inputs:
+        # 默认直接读取全量 CoSearch topM branch dataset，只用 total_training_steps 控制跑几个训练 step。
+        branch_dataset_manifest: /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/data/AgenticIterRag/llm_reranker_branch_train_set/260703c_AIR_v1_traj_co_search_ablation.train_global_step_79__branch_first_point_top50_top5_cosearch_rerank_topm_v1_full/manifest.json
+
+    build_service_bundle:
+      inputs:
+        # reranker_model 由 train_llm_reranker stage 写回。
+        reranker_model: null
+
+reranker_training:
+  input:
+    # 指向用户指定 trajectory 数据集 manifest。
+    enhanced_trajectory_manifest: /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/data/AgenticIterRag/trajectory/260703c_AIR_v1_traj_co_search_ablation.train_global_step_79/manifest.json
+
+    # 指向用户指定 reranker 数据集 manifest，仅用于审计来源。
+    reranker_train_set_manifest: /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/data/AgenticIterRag/llm_reranker_train_set/260703c_AIR_v1_traj_co_search_ablation.train_global_step_79__input_recall50_emptylabel/manifest.json
+
+  branch_dataset:
+    # 默认使用第一步 search 作为 reranker 介入点。
+    step_policy: first_point
+
+    # 默认不截断 branch dataset。1-step 验证也直接读全量数据，只由 total_training_steps 控制训练步数。
+    smoke_max_samples: null
+
+  trainer:
+    # 默认跑真实 VERL GRPO；如果只想做本地链路调试，可用 CLI 覆盖为 smoke。
+    backend: verl
+
+    # 公共 rollout n 默认值；phase 内显式配置时以 phase 为准。
+    n_samples_per_prompt: 16
+
+    # 首轮真实跑通只训练 1 step，避免一开始就长时间占满全节点。
+    total_training_steps: 1
+
+    # 训练 batch size 底线；phase 内显式配置时以 phase 为准。
+    train_batch_size: 64
+
+    # 默认读取全量训练数据；1-step 验证只限制 total_training_steps，不截断 dataset。
+    train_max_samples: -1
+
+    # 首轮保存第 1 step checkpoint，便于 service bundle 接后续产物。
+    save_freq: 1
+
+  training_phases:
+    stage1_format:
+      # 默认只开启 stage1，用 8 张 NPU 跑真实 1-step smoke。
+      enabled: true
+
+      # stage1 保持 batch size 底线 64。
+      train_batch_size: 64
+
+      # 1-step 验证只限制训练步数，不截断训练数据。
+      total_training_steps: 1
+
+      # 默认读取全量训练数据；不要为了 1-step 验证重建或截断 dataset。
+      train_max_samples: -1
+
+      # smoke 第 1 step 保存 checkpoint。
+      save_freq: 1
+
+      # reranker response 最大 token 数；长度 reward 阈值仍是 512。
+      max_response_length: 1024
+
+    stage2_agentic:
+      # stage2 默认关闭。
+      enabled: false
+
+  reward:
+    # 默认直接使用新 answer reward，不扣 baseline。
+    strategy: answer_reward
+
+infer_runtime:
+  models:
+    # 与 dataproduce pipeline 保持一致：reranker continuation 和 service bundle 默认使用生产该轨迹的 agent checkpoint。
+    trained_agent_model: /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/checkpoints/qwen3_4b_probe/coAgenticRetriever/260625-211826-CAR_async_npu_smaller_bs_per_gpu/global_step_79

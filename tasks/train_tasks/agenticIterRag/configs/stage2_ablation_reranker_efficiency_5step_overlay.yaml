@@ -1,0 +1,195 @@
+# AIR v1 LLM reranker stage2 训练效率消融 overlay。
+# 目标：
+#   1. 固定 train_batch_size=64、rollout_n=4，按 2026-07-07 最新消融要求控制单步样本量。
+#   2. 只跑 5 个 training step，快速比较 stage2 单步耗时和 OOM 风险。
+#   3. 先消融 reranker actor / rollout 侧效率，尽可能关闭 offload，并提高 vLLM 显存利用率。
+#   4. stage1 默认关闭，只执行 stage2_agentic，不重新构建数据集。
+#
+# 所有新增 YAML 字段都保留中文注释，风格参考现有 AIR 配置文件。
+
+main_run:
+  project:
+    # 本次 5-step stage2 训练配置名；采样参数对齐 CoSearch 训练 rollout 默认值，不再做温度消融。
+    experiment_name: agentic_iter_rag_v1_stage2_ablation_reranker_efficiency_n4_cosearch_sampling_5step
+
+pipeline:
+  # 直接从训练 stage 开始，不重跑 generate_traces / build_reranker_dataset / build_reranker_branch_dataset。
+  resume_from_stage: train_llm_reranker
+
+  # 消融只关注训练效率，先不构建 service bundle，减少无关耗时和产物。
+  stop_after_stage: train_llm_reranker
+
+  # 所选范围内不跳过 stage。
+  skip_stages: []
+
+  # 每次消融都强制重跑训练 stage，避免误复用上一次 manifest。
+  force_rerun_stages:
+    - train_llm_reranker
+
+  stage_configs:
+    train_llm_reranker:
+      inputs:
+        # 使用 fixed_example prompt 的 260704e 全量 branch dataset，避免复用旧错误示例 prompt。
+        # prompt_template_version=cosearch_rerank_topm_v1_plus_no_analyze50_fixed_example。
+        branch_dataset_manifest: /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/data/AgenticIterRag/llm_reranker_branch_train_set/260704e_AIR_v1_traj_co_search_ablation.train_global_step_79__branch_first_point_top50_top5_cosearch_rerank_topm_v1_plus_no_analyze50_fixed_example/manifest.json
+
+reranker_training:
+  continuation:
+    # stage2 continuation 使用与 dataproduce 相同的 frozen search agent checkpoint。
+    agent_model: /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/checkpoints/qwen3_4b_probe/coAgenticRetriever/260625-211826-CAR_async_npu_smaller_bs_per_gpu/global_step_79
+
+  input:
+    # train stage 直接消费固定 branch dataset，不依赖前置 builder 动态回填。
+    branch_dataset_manifest: /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/data/AgenticIterRag/llm_reranker_branch_train_set/260704e_AIR_v1_traj_co_search_ablation.train_global_step_79__branch_first_point_top50_top5_cosearch_rerank_topm_v1_plus_no_analyze50_fixed_example/manifest.json
+
+  training_phases:
+    stage1_format:
+      # 消融 stage2 时关闭 stage1，避免 stage1 checkpoint 和额外耗时干扰。
+      enabled: false
+
+    stage2_agentic:
+      # 开启 agentic rollout reward 阶段。
+      enabled: true
+
+      # 当前消融从原始 Qwen3-4B 开始，先评估 stage2 链路自身吞吐。
+      init_model: /data01/ms_wksp/agent_up_to_date/models/llm/Qwen3-4B
+
+      # batch size 固定为 64，不允许在消融中降低。
+      train_batch_size: 64
+      ppo_mini_batch_size: 64
+
+      # rollout_n 固定为 4；每 step reranker rollout 数为 64*4=256，后续效率消融不再改这个维度。
+      n_samples_per_prompt: 4
+      val_n_samples_per_prompt: 4
+
+      # 每次消融只跑 5 个真实 training step。
+      total_training_steps: 5
+      total_epochs: 1
+      train_max_samples: -1
+
+      # 消融阶段关闭训练前 validation 和周期 validation，只看真实训练 step 耗时。
+      val_before_train: false
+      val_only: false
+      test_freq: -1
+      val_max_samples: 1
+      val_batch_size: 1
+
+      # reranker prompt/response budget 与 stage1 对齐，使用新 prompt 物化数据。
+      max_prompt_length: 16384
+      max_response_length: 512
+      rollout_max_model_len: 16896
+
+      # 先尝试关闭 activation/optimizer offload，减少 CPU/NPU 传输开销；若 OOM，再单独恢复 activation offload。
+      actor_activation_offload: false
+      actor_optimizer_offload: false
+      actor_param_offload: false
+
+      # ref 参数仍 offload，给 actor update 留显存；这不影响 reranker rollout 的主耗时。
+      ref_param_offload: true
+
+      # 关闭 forward prefetch，控制峰值显存，降低无 offload 场景 OOM 风险。
+      actor_forward_prefetch: false
+      ref_forward_prefetch: false
+
+      # 保持动态 token 合批和 remove-padding，避免长 prompt padding 浪费。
+      use_dynamic_bsz: true
+      use_remove_padding: true
+      micro_batch_size_per_gpu: 1
+      log_prob_micro_batch_size_per_gpu: 1
+      ppo_max_token_len_per_gpu: 18432
+      log_prob_max_token_len_per_gpu: 18432
+
+      # 复用 rollout logprob，跳过 old_log_prob 二次 forward。
+      calculate_rollout_log_probs: true
+      use_rollout_log_probs: true
+      rollout_correction_bypass_mode: true
+      rollout_correction_use_policy_gradient: false
+
+      # stage2 使用 CoSearch 默认 KL 配置。
+      use_kl_loss: true
+      kl_loss_coef: 0.001
+      kl_loss_type: low_var_kl
+      entropy_coeff: 0.0
+
+      # 提高 reranker vLLM 显存利用率，优先打满 0-3 卡 rollout 侧吞吐。
+      rollout_gpu_memory_utilization: 0.80
+      max_num_seqs: 160
+      max_num_batched_tokens: 98304
+      enable_chunked_prefill: true
+      enable_prefix_caching: true
+      enforce_eager: false
+
+      # 采样参数对齐 CoSearch 训练 rollout 默认值；不再消融温度，避免确定性生成导致 GRPO 训练无效。
+      rollout_temperature: 1.0
+      rollout_top_p: 1.0
+      sampling_stop:
+        - "</rerank>"
+      include_stop_str_in_output: true
+
+      # 继续保留 64 个 agent loop worker，让 256 条 reranker rollout 和 continuation reward 有足够并发。
+      agent_loop_num_workers: 64
+
+      # 5-step 消融阶段不需要频繁 checkpoint；结束时仍由 trainer 产出最后可审计目录。
+      save_freq: 10
+
+resource:
+  stage_resources:
+    train_llm_reranker:
+      phase_services:
+        stage2_agentic:
+          services:
+            frozen_agent_vllm:
+              # stage2 frozen agent 使用 3 个单卡实例，通过 proxy 统一服务地址并做 least-inflight 负载均衡。
+              backend_type: multi_instance_proxy
+              served_model_name: agentic-iter-rag-frozen-agent
+              auto_start: true
+              auto_stop: true
+              proxy:
+                host: 127.0.0.1
+                port: 8140
+                strategy: least_inflight
+                timeout: 300
+                failure_cooldown_seconds: 10
+                latency_ewma_alpha: 0.2
+                max_retries_per_request: 3
+              instances:
+                - name: frozen_agent_0
+                  gpu_ids: [4]
+                  tensor_parallel_size: 1
+                  port: 8141
+                  # 小模型单卡实例优先提高 KV cache 利用率；如 OOM 再降 max_num_seqs。
+                  max_num_seqs: 24
+                  gpu_memory_utilization: 0.90
+                - name: frozen_agent_1
+                  gpu_ids: [5]
+                  tensor_parallel_size: 1
+                  port: 8142
+                  max_num_seqs: 24
+                  gpu_memory_utilization: 0.90
+                - name: frozen_agent_2
+                  gpu_ids: [6]
+                  tensor_parallel_size: 1
+                  port: 8143
+                  max_num_seqs: 24
+                  gpu_memory_utilization: 0.90
+
+            recall:
+              # stage2 retriever 固定单 NPU 实例，占用 7；本轮先不让 retriever 抢 4-6 的 frozen agent 并发资源。
+              backend_type: npu
+              instance_count: 1
+              port: 8130
+              backend_base_port: 8131
+              retrieval_service_url: http://127.0.0.1:8130/retrieve
+              auto_start: true
+              auto_stop: true
+              wait_seconds: 360
+              proxy:
+                strategy: least_inflight
+                timeout: 180
+                failure_cooldown_seconds: 10
+                latency_ewma_alpha: 0.2
+                max_retries_per_request: 1
+              accelerator_backend:
+                gpu_ids: [7]
+                query_batch_size: 32
+                doc_dtype: float16

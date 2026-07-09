@@ -19,9 +19,99 @@ defaults:
 
 stage_resources:
   train_agent:
-    note: real AIR trainer integration is not implemented yet; this reserves the whole node for planning.
+    note: train_agent may run different implementations; SPAD-RAG resources are scoped by internal sub-stage.
     trainer:
       gpu_ids: [0, 1, 2, 3, 4, 5, 6, 7]
+    impls:
+      spad_rag:
+        sub_stages:
+          search_policy_rl:
+            trainer:
+              gpu_ids: [0, 1, 2, 3]
+              n_gpus_per_node: 4
+              tensor_parallel_size: 4
+            services:
+              teacher_answerer:
+                profile: glm47_single_vllm
+                gpu_ids: [4, 5]
+                tensor_parallel_size: 2
+                port: 8067
+                endpoint: http://127.0.0.1:8067/v1/chat/completions
+                served_model_name: GLM-4.7-Flash
+                auto_start: true
+                auto_stop: true
+                preflight: true
+                wait_seconds: 600
+              recall:
+                backend_type: npu
+                instance_count: 2
+                port: 8130
+                backend_base_port: 8131
+                retrieval_service_url: http://127.0.0.1:8130/retrieve
+                auto_start: true
+                auto_stop: true
+                wait_seconds: 360
+                proxy:
+                  strategy: least_inflight
+                  timeout: 180
+                  failure_cooldown_seconds: 10
+                  latency_ewma_alpha: 0.2
+                  max_retries_per_request: 2
+                accelerator_backend:
+                  gpu_ids: [6, 7]
+                  query_batch_size: 32
+                  doc_dtype: float16
+
+          answer_refresh_data:
+            services:
+              actor_vllm:
+                gpu_ids: [0, 1, 2, 3]
+                tensor_parallel_size: 4
+                port: 8340
+                served_model_name: spad-refresh-actor
+                auto_start: true
+                auto_stop: true
+              teacher_answerer:
+                profile: glm47_single_vllm
+                gpu_ids: [4, 5]
+                tensor_parallel_size: 2
+                port: 8067
+                endpoint: http://127.0.0.1:8067/v1/chat/completions
+                served_model_name: GLM-4.7-Flash
+                auto_start: true
+                auto_stop: true
+                preflight: true
+                wait_seconds: 600
+              recall:
+                backend_type: npu
+                instance_count: 2
+                port: 8130
+                backend_base_port: 8131
+                retrieval_service_url: http://127.0.0.1:8130/retrieve
+                auto_start: true
+                auto_stop: true
+                wait_seconds: 360
+                proxy:
+                  strategy: least_inflight
+                  timeout: 180
+                  failure_cooldown_seconds: 10
+                  latency_ewma_alpha: 0.2
+                  max_retries_per_request: 2
+                accelerator_backend:
+                  gpu_ids: [6, 7]
+                  query_batch_size: 32
+                  doc_dtype: float16
+
+          answer_distillation:
+            phases:
+              sft:
+                trainer:
+                  gpu_ids: [0, 1, 2, 3, 4, 5, 6, 7]
+                  n_gpus_per_node: 8
+              dpo:
+                trainer:
+                  gpu_ids: [0, 1, 2, 3, 4, 5, 6, 7]
+                  n_gpus_per_node: 8
 
   generate_traces:
     services:
@@ -36,13 +126,41 @@ stage_resources:
         auto_stop: true
 
       recall:
-        gpu_ids: [6, 7]
+        # recall backend 类型：cpu / npu / cuda。
+        # CPU 模式不读取 accelerator_backend，也不会占用 NPU/GPU。
+        backend_type: cpu
+
+        # CPU retriever 默认启动 8 个 backend 实例，统一挂到下面的 proxy 端口。
+        instance_count: 8
+
         port: 8130
         backend_base_port: 8131
         retrieval_service_url: http://127.0.0.1:8130/retrieve
         auto_start: true
         auto_stop: true
         wait_seconds: 360
+        proxy:
+          # 所有 backend_type 都使用 least-inflight 负载均衡。
+          strategy: least_inflight
+          timeout: 180
+          failure_cooldown_seconds: 10
+          latency_ewma_alpha: 0.2
+          max_retries_per_request: 8
+        cpu_backend:
+          # 只有 backend_type=cpu 时读取；当前机器 192 核，8*16=128 线程，约 66.7%，低于 70% 阈值。
+          cpu_threads_per_instance: 16
+          query_batch_size: 8
+          doc_dtype: float32
+        accelerator_backend:
+          # 只有 backend_type=npu/cuda 时读取；保留 6-7 作为显式切换模板。
+          gpu_ids: [6, 7]
+          query_batch_size: 32
+          doc_dtype: float16
+        # 是否启动前跑 index/corpus 离线资产 verifier；默认关闭，避免多实例重复扫描大文件。
+        asset_precheck: false
+        # 是否服务 ready 后发真实 retrieval 预检 query；默认关闭，只用 /gpu_status 和 /health 判断服务可用。
+        query_preflight: false
+        # 仅当 query_preflight=true 时使用。
         preflight_query: who got the first nobel prize in physics?
         preflight_expect: null
 
@@ -64,9 +182,84 @@ stage_resources:
     local_cpu:
       workers: 1
 
+  build_reranker_branch_dataset:
+    local_cpu:
+      workers: 1
+
+  filter_reranker_branch_dataset:
+    local_cpu:
+      workers: 1
+
   train_llm_reranker:
-    trainer:
-      gpu_ids: [0, 1, 2, 3, 4, 5, 6, 7]
+    # train_llm_reranker 内部有 stage1/stage2 两个 phase，这些服务不会同时全部启动。
+    # 资源按 phase_services 分层，避免 stage1/stage2 的 actor、frozen agent、retriever 混在同一层看不清。
+    allow_gpu_overlap: true
+
+    phase_services:
+      stage1_format:
+        # stage1 只训练 reranker 格式和长度，不启动 frozen agent/retriever，因此 8 张卡都给 reranker。
+        services:
+          reranker_actor:
+            gpu_ids: [0, 1, 2, 3, 4, 5, 6, 7]
+            # Qwen3-4B rollout 不适合 TP8 单副本；TP1 会在 8 张卡上形成 8 个 rollout replica，提高请求并发和 NPU 利用率。
+            tensor_parallel_size: 1
+            port: 8241
+
+      stage2_agentic:
+        # stage2 会把 reranker 输出接回 frozen agent 继续 rollout，所以需要同时启动三类服务。
+        services:
+          reranker_actor:
+            # stage2 需要给 frozen agent 和 retriever 留卡，所以 reranker actor 使用 0-3。
+            gpu_ids: [0, 1, 2, 3]
+            tensor_parallel_size: 4
+            port: 8242
+
+          frozen_agent_vllm:
+            # stage2 专用 frozen search agent，默认使用 4 张 NPU；CPU retriever 不再占用 6-7。
+            gpu_ids: [4, 5, 6, 7]
+            tensor_parallel_size: 4
+            port: 8140
+            served_model_name: agentic-iter-rag-frozen-agent
+            auto_start: true
+            auto_stop: true
+
+          recall:
+            # stage2 专用 retriever 默认使用 CPU backend，避免和 reranker/frozen agent 抢 NPU。
+            backend_type: cpu
+            instance_count: 8
+            port: 8130
+            backend_base_port: 8131
+            retrieval_service_url: http://127.0.0.1:8130/retrieve
+            auto_start: true
+            auto_stop: true
+            wait_seconds: 360
+            proxy:
+              # CPU/NPU/CUDA retriever 都统一走 least-inflight proxy。
+              strategy: least_inflight
+              timeout: 180
+              failure_cooldown_seconds: 10
+              latency_ewma_alpha: 0.2
+              max_retries_per_request: 8
+            cpu_backend:
+              # 只有 backend_type=cpu 时读取；当前机器 192 核，8*16=128 线程，约 66.7%，低于 70% 阈值。
+              cpu_threads_per_instance: 16
+              query_batch_size: 8
+              doc_dtype: float32
+            accelerator_backend:
+              # 只有 backend_type=npu/cuda 时读取；CPU 默认模式下不会生效。
+              gpu_ids: [6, 7]
+              query_batch_size: 32
+              doc_dtype: float16
+            # 是否启动前跑 index/corpus 离线资产 verifier；LLM reranker 训练默认关闭。
+            asset_precheck: false
+            # 是否服务 ready 后发真实 retrieval 预检 query；默认关闭，减少训练启动耗时。
+            query_preflight: false
+            # 仅当 query_preflight=true 时使用。
+            preflight_query: who got the first nobel prize in physics?
+
+  build_service_bundle:
+    local_cpu:
+      workers: 1
 
   infer_matrix:
     # Baselines are planned as sequential service groups; repeated GPU ids are intentional here.

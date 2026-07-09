@@ -61,6 +61,20 @@ class SingleTurnAgentLoop(AgentLoopBase):
                     messages, add_generation_prompt=True, tokenize=True, **self.apply_chat_template_kwargs
                 ),
             )
+        if len(prompt_ids) > self.prompt_length:
+            truncation = self.config.data.get("truncation", "right")
+            if truncation == "left":
+                prompt_ids = prompt_ids[-self.prompt_length :]
+            elif truncation == "right":
+                prompt_ids = prompt_ids[: self.prompt_length]
+            elif truncation == "middle":
+                left_half = self.prompt_length // 2
+                right_half = self.prompt_length - left_half
+                prompt_ids = prompt_ids[:left_half] + prompt_ids[-right_half:]
+            elif truncation == "error":
+                raise RuntimeError(f"Prompt length {len(prompt_ids)} is longer than {self.prompt_length}.")
+            else:
+                raise NotImplementedError(f"Unknown truncation method {truncation}")
 
         with simple_timer("generate_sequences", metrics):
             output = await self.server_manager.generate(

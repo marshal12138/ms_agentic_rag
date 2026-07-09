@@ -28,6 +28,7 @@ GROUP_DIRS = {
     "infer_runtime": "infer_runtime",
     "infer_budget": "infer_budget",
     "reranker_training": "reranker_training",
+    "agent_training": "agent_training",
     "model": "model",
     "rollout": "rollout",
 }
@@ -39,6 +40,7 @@ GROUP_ARG_DESTS = {
     "infer_runtime_config": "infer_runtime",
     "infer_budget_config": "infer_budget",
     "reranker_training_config": "reranker_training",
+    "agent_training_config": "agent_training",
     "model_config": "model",
     "rollout_config": "rollout",
 }
@@ -56,6 +58,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--INFER_RUNTIME_CONFIG", "--infer-runtime-config", dest="infer_runtime_config")
     parser.add_argument("--INFER_BUDGET_CONFIG", "--infer-budget-config", dest="infer_budget_config")
     parser.add_argument("--RERANKER_TRAINING_CONFIG", "--reranker-training-config", dest="reranker_training_config")
+    parser.add_argument("--AGENT_TRAINING_CONFIG", "--agent-training-config", dest="agent_training_config")
     parser.add_argument("--MODEL_CONFIG", "--model-config", dest="model_config")
     parser.add_argument("--ROLLOUT_CONFIG", "--rollout-config", dest="rollout_config")
     parser.add_argument("--OVERLAY_YAML", "--overlay-yaml", dest="overlay_yaml", action="append", default=[])
@@ -169,12 +172,41 @@ def require_path(cfg: dict[str, Any], dotted: str) -> Any:
     return value
 
 
+def as_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [str(item) for item in value]
+    return [str(value)]
+
+
+def selected_stages(pipeline: dict[str, Any]) -> list[str]:
+    """按 pipeline resume/stop/skip 推导本次会执行的 stage。
+
+    compiler 的字段校验必须尊重 selected stages。比如 dataproduce 不会执行 branch reranker 训练，
+    就不能强制要求 llm_reranker_grpo_branch 独有字段。
+    """
+
+    stages = as_list(pipeline.get("stages"))
+    resume_from = pipeline.get("resume_from_stage")
+    stop_after = pipeline.get("stop_after_stage")
+    skip = set(as_list(pipeline.get("skip_stages")))
+    if resume_from:
+        if resume_from not in stages:
+            raise ValueError(f"pipeline.resume_from_stage is not in stages: {resume_from}")
+        stages = stages[stages.index(resume_from) :]
+    if stop_after:
+        if stop_after not in stages:
+            raise ValueError(f"pipeline.stop_after_stage is not in selected stages: {stop_after}")
+        stages = stages[: stages.index(stop_after) + 1]
+    return [stage for stage in stages if stage not in skip]
+
+
 def validate_current_config(cfg: dict[str, Any]) -> None:
     """拒绝旧字段，校验 v1 data produce 需要的新配置结构。"""
 
     unsupported_paths = [
         "reranker_training.label_policy",
-        "reranker_training.candidate_top_n",
         "reranker_training.positive_top_k",
         "reranker_training.prompt",
         "resource.agent",
@@ -188,6 +220,17 @@ def validate_current_config(cfg: dict[str, Any]) -> None:
         sentinel = object()
         if deep_get(cfg, old_path, sentinel) is not sentinel:
             raise ValueError(f"unsupported config field in AgenticIterRag v1: {old_path}")
+
+    active_stages = set(selected_stages(cfg["pipeline"]))
+    uses_branch_reranker_training = bool(
+        active_stages
+        & {
+            "build_reranker_branch_dataset",
+            "filter_reranker_branch_dataset",
+            "train_llm_reranker",
+            "build_service_bundle",
+        }
+    )
 
     required_paths = [
         "main_run.data_artifacts.root",
@@ -226,6 +269,9 @@ def validate_current_config(cfg: dict[str, Any]) -> None:
         "pipeline.stage_configs.build_reranker_dataset.sub_stages.build_train_dataset.output_schema",
         "pipeline.stage_configs.build_reranker_dataset.sub_stages.build_train_dataset.reranker_top_m",
         "pipeline.stage_configs.build_reranker_dataset.sub_stages.build_train_dataset.max_doc_chars",
+        "main_run.config_groups.reranker_training",
+        "reranker_training.base_model",
+        "reranker_training.trainer.method",
         "infer_runtime.artifacts.flush_every_n",
         "infer_runtime.agent.max_retries",
         "infer_runtime.agent.retry_delay",
@@ -237,16 +283,150 @@ def validate_current_config(cfg: dict[str, Any]) -> None:
         "resource.stage_resources.generate_traces.services.agent_vllm.tensor_parallel_size",
         "resource.stage_resources.generate_traces.services.agent_vllm.port",
         "resource.stage_resources.generate_traces.services.agent_vllm.served_model_name",
-        "resource.stage_resources.generate_traces.services.recall.gpu_ids",
+        "resource.stage_resources.generate_traces.services.recall.backend_type",
         "resource.stage_resources.generate_traces.services.recall.port",
         "resource.stage_resources.generate_traces.services.recall.retrieval_service_url",
         "resource.stage_resources.build_reranker_dataset",
         "resource.stage_resources.train_agent",
-        "resource.stage_resources.train_llm_reranker",
         "resource.stage_resources.infer_matrix",
+    ]
+    if uses_branch_reranker_training:
+        required_paths.extend(
+            [
+                "pipeline.stage_configs.build_reranker_branch_dataset.inputs.enhanced_trajectory_manifest",
+                "pipeline.stage_configs.build_reranker_branch_dataset.outputs.branch_dataset_manifest",
+                "pipeline.stage_configs.filter_reranker_branch_dataset.inputs.source_branch_dataset_manifest",
+                "pipeline.stage_configs.filter_reranker_branch_dataset.outputs.filtered_branch_dataset_manifest",
+                "pipeline.stage_configs.train_llm_reranker.inputs.branch_dataset_manifest",
+                "pipeline.stage_configs.build_service_bundle.outputs.service_bundle_dir",
+                "main_run.data_artifacts.llm_reranker_branch_train_set.version",
+                "main_run.data_artifacts.llm_reranker_branch_train_set.overwrite",
+                "main_run.data_artifacts.llm_reranker_branch_train_set.derive_version_from_trajectory",
+                "reranker_training.input.enhanced_trajectory_manifest",
+                "reranker_training.input.branch_dataset_manifest",
+                "reranker_training.input.reranker_train_set_manifest",
+                "reranker_training.branch_dataset.enabled",
+                "reranker_training.branch_dataset.version",
+                "reranker_training.branch_dataset.overwrite",
+                "reranker_training.branch_dataset.step_policy",
+                "reranker_training.branch_dataset.random_seed",
+                "reranker_training.branch_dataset.allow_no_search",
+                "reranker_training.branch_dataset.candidate_top_n",
+                "reranker_training.branch_dataset.visible_top_m",
+                "reranker_training.branch_dataset.prompt_template_version",
+                "reranker_training.branch_dataset.formatter",
+                "reranker_training.branch_dataset.max_doc_chars",
+                "reranker_training.branch_filter.enabled",
+                "reranker_training.branch_filter.version",
+                "reranker_training.branch_filter.overwrite",
+                "reranker_training.branch_filter.max_samples",
+                "reranker_training.branch_filter.sample_mode",
+                "reranker_training.branch_filter.random_seed",
+                "reranker_training.branch_filter.strategy.kind",
+                "reranker_training.branch_filter.strategy.name",
+                "reranker_training.branch_filter.strategy.builtin_name",
+                "reranker_training.branch_filter.strategy.callable",
+                "reranker_training.branch_filter.strategy.script_path",
+                "reranker_training.branch_filter.strategy.kwargs",
+                "reranker_training.continuation.agent_model",
+                "reranker_training.continuation.use_frozen_agent",
+                "reranker_training.continuation.search_tool_mode",
+                "reranker_training.reward.strategy",
+                "reranker_training.reward.format_penalty",
+                "reranker_training.reward.answer_reward_function.path",
+                "reranker_training.reward.answer_reward_function.name",
+                "reranker_training.trainer.backend",
+                "resource.stage_resources.build_reranker_branch_dataset",
+                "resource.stage_resources.filter_reranker_branch_dataset",
+                "resource.stage_resources.train_llm_reranker",
+                "resource.stage_resources.build_service_bundle",
+            ]
+        )
+    for path in required_paths:
+        require_path(cfg, path)
+
+    if not uses_branch_reranker_training:
+        if "train_agent" in active_stages and deep_get(cfg, "pipeline.stage_configs.train_agent.impl") == "spad_rag":
+            validate_spad_train_agent_config(cfg)
+        return
+
+    # AIR branch reranker 训练是主 pipeline 的一个配置组，不能绕过 main_run 单独运行。
+    if deep_get(cfg, "main_run.config_groups.reranker_training") != "llm_reranker_grpo_branch":
+        raise ValueError("main_run.config_groups.reranker_training must be llm_reranker_grpo_branch")
+
+    # step policy 使用明确枚举，避免旧 type0/type1 这类难以读懂的值继续进入数据 manifest。
+    step_policy = str(deep_get(cfg, "reranker_training.branch_dataset.step_policy"))
+    allowed_step_policies = {"first_point", "end_point", "random_point", "all_steps"}
+    if step_policy not in allowed_step_policies:
+        raise ValueError(
+            "reranker_training.branch_dataset.step_policy must be one of "
+            f"{sorted(allowed_step_policies)}; got {step_policy!r}"
+        )
+    if step_policy == "all_steps":
+        raise ValueError("reranker_training.branch_dataset.step_policy=all_steps is not supported in AIR v1")
+
+    candidate_top_n = int(deep_get(cfg, "reranker_training.branch_dataset.candidate_top_n"))
+    visible_top_m = int(deep_get(cfg, "reranker_training.branch_dataset.visible_top_m"))
+    if visible_top_m > candidate_top_n:
+        raise ValueError("reranker_training.branch_dataset.visible_top_m must be <= candidate_top_n")
+    filter_kind = str(deep_get(cfg, "reranker_training.branch_filter.strategy.kind"))
+    allowed_filter_kinds = {"builtin", "python_callable", "script"}
+    if filter_kind not in allowed_filter_kinds:
+        raise ValueError(
+            "reranker_training.branch_filter.strategy.kind must be one of "
+            f"{sorted(allowed_filter_kinds)}; got {filter_kind!r}"
+        )
+    sample_mode = str(deep_get(cfg, "reranker_training.branch_filter.sample_mode"))
+    allowed_sample_modes = {"none", "first", "random"}
+    if sample_mode not in allowed_sample_modes:
+        raise ValueError(
+            "reranker_training.branch_filter.sample_mode must be one of "
+            f"{sorted(allowed_sample_modes)}; got {sample_mode!r}"
+        )
+    if str(deep_get(cfg, "reranker_training.continuation.search_tool_mode")) != "retriever_only":
+        raise ValueError("reranker_training.continuation.search_tool_mode must be retriever_only")
+    if not bool(deep_get(cfg, "reranker_training.continuation.use_frozen_agent")):
+        raise ValueError("reranker_training.continuation.use_frozen_agent must be true")
+    if str(deep_get(cfg, "reranker_training.trainer.method")) != "grpo":
+        raise ValueError("reranker_training.trainer.method must be grpo")
+    if "train_agent" in active_stages and deep_get(cfg, "pipeline.stage_configs.train_agent.impl") == "spad_rag":
+        validate_spad_train_agent_config(cfg)
+
+
+def validate_spad_train_agent_config(cfg: dict[str, Any]) -> None:
+    """校验 SPAD-RAG 作为 train_agent impl 时必须存在的配置骨架。"""
+
+    required_paths = [
+        "main_run.config_groups.agent_training",
+        "pipeline.stage_configs.train_agent.impl",
+        "pipeline.stage_configs.train_agent.impl_config_ref",
+        "pipeline.stage_configs.train_agent.inputs.train_files",
+        "pipeline.stage_configs.train_agent.inputs.val_files",
+        "pipeline.stage_configs.train_agent.inputs.init_actor_model",
+        "pipeline.stage_configs.train_agent.outputs.agent_checkpoint",
+        "pipeline.stage_configs.train_agent.outputs.agent_training_manifest",
+        "agent_training.impl",
+        "agent_training.sub_stage_order",
+        "agent_training.sub_stages.search_policy_rl",
+        "agent_training.sub_stages.answer_refresh_data",
+        "agent_training.sub_stages.answer_distillation",
+        "agent_training.teacher_answerer.default_service_profile",
+        "agent_training.teacher_answerer.service_profiles",
+        "resource.stage_resources.train_agent.impls.spad_rag",
     ]
     for path in required_paths:
         require_path(cfg, path)
+
+    if deep_get(cfg, "agent_training.impl") != "spad_rag":
+        raise ValueError("agent_training.impl must be spad_rag when train_agent.impl=spad_rag")
+    if deep_get(cfg, "pipeline.stage_configs.train_agent.impl_config_ref") != "agent_training":
+        raise ValueError("train_agent.impl_config_ref must be agent_training for SPAD-RAG")
+
+    sub_stage_order = as_list(deep_get(cfg, "agent_training.sub_stage_order"))
+    expected = {"search_policy_rl", "answer_refresh_data", "answer_distillation"}
+    missing = sorted(expected - set(sub_stage_order))
+    if missing:
+        raise ValueError(f"agent_training.sub_stage_order is missing SPAD sub-stages: {missing}")
 
 
 def build_runtime(args: argparse.Namespace, cfg: dict[str, Any]) -> tuple[dict[str, str], dict[str, Path]]:
@@ -254,13 +434,18 @@ def build_runtime(args: argparse.Namespace, cfg: dict[str, Any]) -> tuple[dict[s
     group = str(cfg["main_run"]["project"].get("group_name") or "agenticIterRag")
     exp = os.environ.get("EXP_NAME") or str(cfg["main_run"]["project"].get("experiment_name") or "agentic_iter_rag_v1")
     run_name = slugify(f"{timestamp}-pipeline-{exp}")
-    run_root = Path(str(cfg["main_run"]["runtime"]["run_root"])) / group / run_name
+    runtime_cfg = cfg["main_run"]["runtime"]
+    outputs_leaf = Path(str(runtime_cfg.get("outputs_dir") or "outputs"))
+    if outputs_leaf.is_absolute() or ".." in outputs_leaf.parts:
+        raise ValueError("main_run.runtime.outputs_dir must be a run-local relative directory name")
+    run_root = Path(str(runtime_cfg["run_root"])) / run_name
     report_root = Path(str(cfg["main_run"]["runtime"]["report_root"])) / group
-    artifact_root = Path(str(cfg["main_run"]["runtime"]["artifact_root"])) / group / run_name
+    artifact_root = run_root / outputs_leaf
     log_dir = run_root / "runtime_logs"
     files = {
         "run_root": run_root,
         "report_root": report_root,
+        "outputs_dir": artifact_root,
         "artifact_root": artifact_root,
         "log_dir": log_dir,
         "final_yaml": log_dir / "pipeline.final_config.yaml",
@@ -315,6 +500,7 @@ def main() -> None:
             "final_config_yaml": str(files["final_yaml"]),
             "final_config_json": str(files["final_json"]),
             "env_path": str(files["env_file"]),
+            "outputs_dir": str(files["outputs_dir"]),
             "execution_plan": str(files["execution_plan"]),
             "dry_run": args.dry_run,
         },

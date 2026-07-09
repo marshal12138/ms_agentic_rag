@@ -1,0 +1,102 @@
+# SPAD-RAG Stage 2 answer refresh small-sample efficiency ablation.
+#
+# This overlay consumes a completed Stage 1 actor checkpoint and materializes
+# on-policy chosen/rejected answer pairs for Stage 3.
+
+main_run:
+  project:
+    experiment_name: agentic_iter_rag_v1_spad_qwen3_1_7b_glm47_stage2_refresh_smoke
+  config_groups:
+    pipeline: offline_two_stage
+    agent_training: spad_rag_base
+    model: qwen3_1_7b
+    rollout: air_async_qwen3_1_7b
+
+pipeline:
+  resume_from_stage: train_agent
+  stop_after_stage: train_agent
+  skip_stages: []
+  force_rerun_stages: [train_agent]
+  stage_configs:
+    train_agent:
+      enabled: true
+      impl: spad_rag
+      impl_config_ref: agent_training
+
+agent_training:
+  default_backend: smoke
+  resume_from_sub_stage: answer_refresh_data
+  stop_after_sub_stage: answer_refresh_data
+  skip_sub_stages: []
+  force_rerun_sub_stages: [answer_refresh_data]
+  sub_stages:
+    search_policy_rl:
+      enabled: false
+    answer_refresh_data:
+      enabled: true
+      backend: rollout
+      auto_stop_services: true
+      inputs:
+        actor_checkpoint: /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/outputs/agenticIterRag/agenticIterRag/260709-043941-277568-pipeline-agentic_iter_rag_v1_spad_qwen3_1_7b_glm47_stage1_5step/stages/train_agent/spad_rag/search_policy_rl/actor_model_verl/global_step_5
+        max_samples: 8
+      rollout:
+        temperature: 1.0
+        top_p: 1.0
+        max_response_tokens: 1024
+        max_assistant_turns: 3
+        max_user_turns: 3
+        visible_top_m: 5
+        max_doc_chars: 1536
+        max_model_len: 13024
+        gpu_memory_utilization: 0.45
+        actor_timeout_seconds: 180
+        search_timeout: 120
+      filter:
+        require_teacher_format_valid: true
+        require_evidence_sufficient: true
+        min_teacher_f1: 0.0
+    answer_distillation:
+      enabled: false
+
+resource:
+  stage_resources:
+    train_agent:
+      impls:
+        spad_rag:
+          sub_stages:
+            answer_refresh_data:
+              services:
+                actor_vllm:
+                  gpu_ids: [0, 1, 2, 3]
+                  tensor_parallel_size: 4
+                  port: 8340
+                  served_model_name: spad-refresh-actor
+                  auto_start: true
+                  auto_stop: true
+                  wait_seconds: 600
+                  gpu_memory_utilization: 0.45
+                  max_model_len: 13024
+                teacher_answerer:
+                  profile: glm47_single_vllm
+                  gpu_ids: [4, 5]
+                  tensor_parallel_size: 2
+                  port: 8067
+                  endpoint: http://127.0.0.1:8067/v1/chat/completions
+                  served_model_name: GLM-4.7-Flash
+                  auto_start: true
+                  auto_stop: true
+                  preflight: true
+                  wait_seconds: 600
+                recall:
+                  backend_type: npu
+                  instance_count: 2
+                  port: 8130
+                  backend_base_port: 8131
+                  retrieval_service_url: http://127.0.0.1:8130/retrieve
+                  auto_start: true
+                  auto_stop: true
+                  wait_seconds: 360
+                  accelerator_backend:
+                    gpu_ids: [6, 7]
+                    query_batch_size: 32
+                    doc_dtype: float16

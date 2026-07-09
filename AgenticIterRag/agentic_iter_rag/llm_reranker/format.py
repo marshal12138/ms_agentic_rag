@@ -34,22 +34,15 @@ In particular:
 Anything outside these two tags or in a different order is invalid.
 
 # === BLOCK 1: <reason> ... </reason>
-Explain your ranking decisions clearly and concretely.
+Explain the decision briefly.
 
-Follow these steps:
-1. Identify what the Initial Query is ultimately asking.
-2. Identify what specific information the Current Sub-Query is seeking.
-3. Explain how the selected passages either:
-   - directly help answer the Initial Query, or
-   - provide the most relevant information for the Sub-Query
-     without drifting away from the Initial Query.
-4. If a passage matches the Sub-Query but is off-topic or irrelevant
-   to the Initial Query, explain why it is ranked lower.
-5. When multiple passages are similar, break ties using factuality,
-   entity specificity, and usefulness for later steps.
-
-Write 5-8 short sentences.
-Do NOT include passage indices here.
+Hard constraints:
+- Write at most 2 short sentences.
+- Use at most 60 English words.
+- Summarize only the evidence type you selected.
+- Do NOT analyze candidate passages one by one.
+- Do NOT mention unselected passages.
+- Do NOT include passage indices here.
 
 # === BLOCK 2: <rerank> ... </rerank>
 Purpose: output the final ranking of EXACTLY {M} passages you judge are MOST USEFUL at this step.
@@ -61,8 +54,12 @@ Format requirements:
 - No commas, no scores, no extra text.
 - Order by usefulness: the FIRST passage listed is the MOST useful, and usefulness decreases left to right.
 
-Example (structure only, M=5):
-<rerank>[27] > [233] > [105] > [729] > [688]</rerank>
+Example:
+<reason>
+The selected passages directly support the current search step while staying within the initial question.
+They provide the most specific evidence needed for the next answer step.
+</reason>
+<rerank>[27] > [23] > [10] > [7] > [6]</rerank>
 
 # === DECISION GUIDELINES
 0. Final-Answer Priority:
@@ -90,20 +87,23 @@ Passages ({N} total):
 # === INPUT ENDS ===
 """
 
-
 def format_air_passages(
     docs: list[dict[str, Any]],
     *,
     max_doc_chars: int,
 ) -> tuple[str, dict[str, str]]:
-    """按 AIR reranker 候选序号格式渲染文档，并返回序号到真实 doc_id 的映射。"""
+    """按 CoSearch reranker 候选序号格式渲染文档，并返回序号到真实 doc_id 的映射。"""
 
     passages: list[str] = []
     index_to_doc_id: dict[str, str] = {}
     for idx, doc in enumerate(docs, start=1):
         doc_id = str(doc.get("doc_id") or doc.get("id") or idx)
         title = str(doc.get("title") or "")
-        text = str(doc.get("text") or doc.get("contents") or doc.get("passage") or "")[:max_doc_chars]
+        # 和 CoSearch runtime reranker 对齐：内容字段优先级必须是 contents -> text -> passage。
+        # 这里的可见输入仍是 top50，模型只需要从这 50 篇里输出 top5 index。
+        text = str(doc.get("contents") or doc.get("text") or doc.get("passage") or "")
+        if len(text) > max_doc_chars:
+            text = text[:max_doc_chars] + "..."
         if title:
             passages.append(f"[{idx}] Title: {title}\n{text}")
         else:
@@ -120,8 +120,9 @@ def render_air_rerank_tags_prompt(
     top_m: int,
     max_doc_chars: int,
 ) -> tuple[list[dict[str, str]], dict[str, str]]:
-    """渲染 AIR reranker prompt，输出 VERL chat message 和 doc_id 映射。"""
+    """渲染 CoSearch 对齐的 AIR reranker prompt，输出 VERL chat message 和 doc_id 映射。"""
 
+    # AIR 训练输入保持 retriever top50，但输出协议对齐 CoSearch：只要求模型返回 topM，默认 top5。
     passages_block, index_to_doc_id = format_air_passages(docs, max_doc_chars=max_doc_chars)
     prompt_text = AIR_RERANK_PROMPT_WITH_INITIAL_QUERY.format(
         N=len(docs),

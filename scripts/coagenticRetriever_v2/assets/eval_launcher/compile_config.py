@@ -587,7 +587,7 @@ def compile_config(ctx: CompilerContext, launcher_args: list[str], environ: Mapp
     ranker_top_k = str(ranker_cfg.get("top_k") or recall_top_k)
     ranker_device = normalize_device(str(deep_get(config, "ranker.device") or ctx.device_spec(0)), ctx=ctx)
     ranker_max_query = str(deep_get(config, "ranker.max_query_length") or ranker_cfg.get("max_query_length") or "256")
-    ranker_max_doc = str(deep_get(config, "ranker.max_doc_length") or ranker_cfg.get("max_doc_length") or "512")
+    ranker_max_doc = str(deep_get(config, "ranker.max_doc_length") or ranker_cfg.get("max_doc_length") or "2000")
 
     wait_for_gpus = resource_env.get("WAIT_FOR_GPUS") or ""
     if not wait_for_gpus:

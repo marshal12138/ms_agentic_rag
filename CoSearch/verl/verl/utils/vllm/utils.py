@@ -15,7 +15,12 @@
 
 from msgspec import field
 from packaging import version as vs
-from vllm.lora.models import LoRAModel
+# vLLM 0.13 将 LoRAModel 从 vllm.lora.models 迁移到了 vllm.lora.lora_model；
+# 这里保留 fallback，避免 AIR reranker 训练在非 LoRA 路径上被旧 import 卡住。
+try:
+    from vllm.lora.lora_model import LoRAModel
+except ModuleNotFoundError:  # pragma: no cover - 兼容旧版 vLLM
+    from vllm.lora.models import LoRAModel
 from vllm.lora.request import LoRARequest
 from vllm.lora.utils import get_adapter_absolute_path
 from vllm.lora.worker_manager import LRUCacheWorkerLoRAManager

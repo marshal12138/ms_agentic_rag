@@ -417,6 +417,11 @@ class AgentLoopWorkerBase:
             repetition_penalty=1.0,
             logprobs=config.calculate_log_probs,
         )
+        if getattr(config, "stop", None):
+            sampling_params["stop"] = list(config.stop)
+            sampling_params["include_stop_str_in_output"] = bool(
+                getattr(config, "include_stop_str_in_output", False)
+            )
 
         # override sampling params for validation
         if batch.meta_info.get("validate", False):

@@ -13,10 +13,13 @@
 # limitations under the License.
 import asyncio
 import heapq
+import json
 import logging
 import os
 import random
+import re
 from abc import ABC, abstractmethod
+from pathlib import Path
 from typing import Any, Optional, List
 from uuid import uuid4
 import time
@@ -107,6 +110,208 @@ def _wait_with_progress(futures, *, label: str, total_items: int, step: int, rol
             )
             last_log = now
     return outputs
+
+
+def _json_safe(value: Any) -> Any:
+    """Convert tensors/numpy values to JSON-safe objects for rollout detail logs."""
+
+    if isinstance(value, torch.Tensor):
+        return value.detach().cpu().tolist()
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    if isinstance(value, np.generic):
+        return value.item()
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    if isinstance(value, dict):
+        return {str(k): _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    return str(value)
+
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, str(default)))
+    except ValueError:
+        return default
+
+
+def _air_reranker_detail_log_file(pid: int) -> Path | None:
+    """Resolve per-worker AIR reranker detail log file.
+
+    The environment variable may point either to a directory or to a .jsonl file.
+    We still split by worker pid to avoid multi-process large-line write
+    interleaving when full prompts/outputs are logged.
+    """
+
+    raw = os.getenv("AIR_RERANKER_ROLLOUT_DETAIL_LOG")
+    if not raw:
+        return None
+    base = Path(raw)
+    if base.suffix == ".jsonl":
+        path = base.with_name(f"{base.stem}.worker_{pid}{base.suffix}")
+    else:
+        path = base / f"worker_{pid}.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _parse_air_reranker_output_for_log(text: str, expected_count: int, max_index: int) -> dict[str, Any]:
+    """Lightweight AIR reranker parser for logging only.
+
+    This mirrors the stage1 parser contract without importing AIR modules into
+    VERL workers. The real reward function remains the source of truth; this
+    copy only makes in-flight validation/debug logs actionable before the full
+    batch reward finishes.
+    """
+
+    result: dict[str, Any] = {
+        "format_valid": False,
+        "format_error_code": None,
+        "format_error_message": None,
+        "ranked_indices": [],
+        "expected_count": expected_count,
+        "max_index": max_index,
+    }
+    if text.count("<reason>") > 1 or text.count("</reason>") > 1:
+        result.update(format_error_code="duplicate_reason_tag", format_error_message="duplicate <reason> tag")
+        return result
+    if text.count("<rerank>") > 1 or text.count("</rerank>") > 1:
+        result.update(format_error_code="duplicate_rerank_tag", format_error_message="duplicate <rerank> tag")
+        return result
+
+    reason_start = text.find("<reason>")
+    reason_end = text.find("</reason>")
+    rerank_start = text.find("<rerank>")
+    rerank_end = text.find("</rerank>")
+    if reason_start < 0 or reason_end < 0:
+        result.update(format_error_code="missing_reason_tag", format_error_message="missing <reason>...</reason>")
+        return result
+    if rerank_start < 0 or rerank_end < 0:
+        result.update(format_error_code="missing_rerank_tag", format_error_message="missing <rerank>...</rerank>")
+        return result
+    if not (reason_start < reason_end < rerank_start < rerank_end):
+        result.update(format_error_code="tag_order_error", format_error_message="tags must be <reason> then <rerank>")
+        return result
+    suffix_start = rerank_end + len("</rerank>")
+    outside = (text[:reason_start] + text[suffix_start:]).strip()
+    if outside:
+        result.update(format_error_code="extra_text_outside_tags", format_error_message="extra text outside tags")
+        return result
+    reason = text[reason_start + len("<reason>") : reason_end].strip()
+    if not reason:
+        result.update(format_error_code="empty_reason", format_error_message="<reason> block is empty")
+        return result
+    rerank_body = text[rerank_start + len("<rerank>") : rerank_end].strip()
+    if not rerank_body:
+        result.update(format_error_code="empty_rerank", format_error_message="<rerank> block is empty")
+        return result
+
+    leftovers = re.sub(r"\[\d+\]|\s|>", "", rerank_body)
+    if leftovers:
+        result.update(
+            format_error_code="invalid_rerank_text",
+            format_error_message=f"invalid token in rerank: {leftovers[:40]}",
+        )
+        return result
+    indices = [int(item) for item in re.findall(r"\[(\d+)\]", rerank_body)]
+    result["ranked_indices"] = indices
+    if len(indices) != expected_count:
+        result.update(format_error_code="wrong_index_count", format_error_message=f"expected {expected_count}, got {len(indices)}")
+        return result
+    if any(idx < 1 or idx > max_index for idx in indices):
+        result.update(format_error_code="index_out_of_range", format_error_message=f"indices must be in [1,{max_index}]")
+        return result
+    if len(set(indices)) != len(indices):
+        result.update(format_error_code="duplicate_index", format_error_message="indices must be distinct")
+        return result
+    result["format_valid"] = True
+    return result
+
+
+def _append_air_reranker_rollout_detail(
+    *,
+    tokenizer,
+    output: "_InternalAgentLoopOutput",
+    kwargs: dict[str, Any],
+    trajectory: dict[str, Any],
+    local_index: int,
+    batch_size: int,
+    done_count: int,
+    rollout_elapsed_s: float,
+    batch_elapsed_s: float,
+    sampling_params: dict[str, Any],
+) -> None:
+    """Append one completed AIR reranker rollout to JSONL and print its timing.
+
+    This is intentionally gated by AIR_RERANKER_ROLLOUT_DETAIL_LOG because full
+    prompt/output logging is large. When disabled, normal VERL/CAR/AIR pipelines
+    keep their previous behavior.
+    """
+
+    path = _air_reranker_detail_log_file(os.getpid())
+    if path is None:
+        return
+    try:
+        prompt_width = int(output.prompt_ids.shape[-1])
+        prompt_attention = output.attention_mask[0, :prompt_width].bool()
+        response_attention = output.attention_mask[0, prompt_width:].bool()
+        prompt_token_count = int(prompt_attention.sum().item())
+        response_token_count = int(response_attention.sum().item())
+        prompt_token_ids = output.prompt_ids[0][prompt_attention].detach().cpu().tolist()
+        response_token_ids = output.response_ids[0, :response_token_count].detach().cpu().tolist()
+        prompt_text = tokenizer.decode(prompt_token_ids, skip_special_tokens=True)
+        output_text = tokenizer.decode(response_token_ids, skip_special_tokens=True)
+        expected_count = _env_int("AIR_RERANKER_EXPECTED_COUNT", 5)
+        max_index = _env_int("AIR_RERANKER_MAX_INDEX", 50)
+        parse = _parse_air_reranker_output_for_log(output_text, expected_count=expected_count, max_index=max_index)
+
+        record = {
+            "event": "air_reranker_rollout_completed",
+            "worker_pid": os.getpid(),
+            "step": trajectory.get("step"),
+            "validate": trajectory.get("validate"),
+            "sample_index": trajectory.get("sample_index"),
+            "rollout_index": trajectory.get("rollout_n"),
+            "local_index": local_index,
+            "batch_size": batch_size,
+            "done_count": done_count,
+            "rollout_elapsed_s": round(float(rollout_elapsed_s), 6),
+            "batch_elapsed_s": round(float(batch_elapsed_s), 6),
+            "prompt_token_count": prompt_token_count,
+            "response_token_count": response_token_count,
+            "format_valid": parse["format_valid"],
+            "format_error_code": parse["format_error_code"],
+            "ranked_indices": parse["ranked_indices"],
+            "sampling_params": _json_safe(sampling_params),
+            "metadata": {
+                "uid": _json_safe(kwargs.get("uid")),
+                "index": _json_safe(kwargs.get("index")),
+                "sample_id": _json_safe(kwargs.get("sample_id")),
+                "data_source": _json_safe(kwargs.get("data_source")),
+                "agent_name": _json_safe(kwargs.get("agent_name")),
+            },
+            "raw_prompt": _json_safe(kwargs.get("raw_prompt", output.extra_fields.get("raw_prompt"))),
+            "prompt_text": prompt_text,
+            "output_text": output_text,
+            "parse": parse,
+        }
+        with path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+        print(
+            f"[air-reranker-rollout-detail][worker:{os.getpid()}] "
+            f"step={trajectory.get('step')} validate={trajectory.get('validate')} "
+            f"local_index={local_index} done={done_count}/{batch_size} "
+            f"rollout_elapsed_s={rollout_elapsed_s:.2f} batch_elapsed_s={batch_elapsed_s:.2f} "
+            f"response_tokens={response_token_count} format_valid={parse['format_valid']} "
+            f"format_error={parse['format_error_code']} log={path}",
+            flush=True,
+        )
+    except Exception as exc:
+        print(f"[air-reranker-rollout-detail][worker:{os.getpid()}] failed error={exc!r}", flush=True)
 
 
 def random_subsample_dataproto(data: DataProto, max_size: int) -> DataProto:
@@ -372,12 +577,19 @@ class AgentLoopWorkerBase:
                 self.processor.chat_template = self.config.actor_rollout_ref.model.custom_chat_template
             self.tokenizer.chat_template = self.config.actor_rollout_ref.model.custom_chat_template
 
-        self.reward_manager_worker = RewardManagerWorker.options(
-            scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
-                node_id=ray.get_runtime_context().get_node_id(),
-                soft=False,
-            ),
-        ).remote(self.config, self.reward_router_address)
+        # 只有 reward loop 或独立 reward resource pool 开启时才创建 RewardManagerWorker。
+        # AIR reranker stage1 是 format-only reward，sync 路径不需要这些 worker；async 回退时也避免无效 CPU/Ray 开销。
+        self.reward_manager_worker = None
+        self.enable_async_reward = (
+            self.reward_router_address is not None and self.config.reward_model.enable_resource_pool
+        ) or bool(self.config.reward_model.get("use_reward_loop", False))
+        if self.enable_async_reward:
+            self.reward_manager_worker = RewardManagerWorker.options(
+                scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
+                    node_id=ray.get_runtime_context().get_node_id(),
+                    soft=False,
+                ),
+            ).remote(self.config, self.reward_router_address)
 
         trace_config = self.config.actor_rollout_ref.rollout.get("trace", {})
         RolloutTraceConfig.init(
@@ -417,6 +629,13 @@ class AgentLoopWorkerBase:
             repetition_penalty=1.0,
             logprobs=config.calculate_log_probs,
         )
+        # AIR reranker 这类结构化输出在 </rerank> 后已经完成动作；
+        # 透传 stop 可以在不降低 max_response_length 的前提下减少无效 decode，提高 rollout 吞吐。
+        if getattr(config, "stop", None):
+            sampling_params["stop"] = list(config.stop)
+            sampling_params["include_stop_str_in_output"] = bool(
+                getattr(config, "include_stop_str_in_output", False)
+            )
 
         # override sampling params for validation
         if batch.meta_info.get("validate", False):
@@ -454,14 +673,17 @@ class AgentLoopWorkerBase:
         )
 
         tasks = []
+        task_kwargs: dict[asyncio.Task, dict[str, Any]] = {}
+        task_started_at: dict[asyncio.Task, float] = {}
         for i in range(len(batch)):
             trace_this_sample = i in traced_indices
             kwargs = {k: v[i] for k, v in batch.non_tensor_batch.items()}
-            tasks.append(
-                asyncio.create_task(
-                    self._run_agent_loop(sampling_params, trajectory_info[i], trace=trace_this_sample, **kwargs)
-                )
+            task = asyncio.create_task(
+                self._run_agent_loop(sampling_params, trajectory_info[i], trace=trace_this_sample, **kwargs)
             )
+            tasks.append(task)
+            task_kwargs[task] = kwargs
+            task_started_at[task] = time.time()
         task_to_idx = {task: idx for idx, task in enumerate(tasks)}
         pending = set(tasks)
         outputs = [None] * len(tasks)
@@ -485,9 +707,25 @@ class AgentLoopWorkerBase:
                 return_when=asyncio.FIRST_COMPLETED,
             )
             for task in done:
-                outputs[task_to_idx[task]] = task.result()
+                idx = task_to_idx[task]
+                result = task.result()
+                outputs[idx] = result
                 done_count += 1
             now = time.time()
+            for task in done:
+                idx = task_to_idx[task]
+                _append_air_reranker_rollout_detail(
+                    tokenizer=self.tokenizer,
+                    output=outputs[idx],
+                    kwargs=task_kwargs.get(task, {}),
+                    trajectory=trajectory_info[idx],
+                    local_index=idx,
+                    batch_size=len(batch),
+                    done_count=done_count,
+                    rollout_elapsed_s=now - task_started_at.get(task, start),
+                    batch_elapsed_s=now - start,
+                    sampling_params=sampling_params,
+                )
             if done and (done_count == len(batch) or done_count - last_done_logged >= item_interval):
                 print(
                     f"[rollout-progress][worker:{os.getpid()}] step={global_steps} "
@@ -645,15 +883,8 @@ class AgentLoopWorkerBase:
             else:
                 position_ids = compute_position_id_with_mask(attention_mask)  # (1, seq_len)
             
-            # Enable async reward computation if:
-            # 1. Reward router is available (enable_resource_pool=True), OR
-            # 2. Reward model is disabled (let ray_trainer handle it instead)
-            enable_async_reward = (
-                self.reward_router_address is not None and self.config.reward_model.enable_resource_pool
-            )  or self.config.reward_model.use_reward_loop # modify based on https://github.com/volcengine/verl/issues/4346
-        
-            
-            if output.reward_score is None and enable_async_reward:
+            # 只有明确启用 async reward 时才在 agent loop 内打分；否则交回 ray_trainer 的同步 reward 逻辑。
+            if output.reward_score is None and self.enable_async_reward:
                 batch = TensorDict(
                     {
                         "prompts": prompt_output["input_ids"],  # [1, prompt_length]
