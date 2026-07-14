@@ -1,0 +1,24 @@
+# Compare the frozen 0710 per-rollout teacher-F1 reward on the new 512t data.
+# Stack this after spad_qwen3_1_7b_glm47_512_scale_overlay.yaml.
+main_run:
+  project:
+    experiment_name: agentic_iter_rag_v1_spad_qwen3_1_7b_newdata_512_reward_0710
+
+agent_training:
+  reward:
+    type: spad_teacher_f1_0710
+    teacher_f1_weight: 1.0
+    search_cost: 0.02
+    free_search_count: 1
+    max_search_turns: 5
+    invalid_format_penalty: -0.5
+    missing_reason_penalty: -0.02
+    invalid_action_penalty: -0.5
+    duplicate_query_penalty: -0.1
+    no_finish_penalty: -0.5
+    bad_stop:
+      enabled: true
+      insufficient_answer: 证据不足无法作答
+      penalty: -0.35
+      max_budget_failed_penalty: -0.15
+      teacher_format_error_penalty: -0.1

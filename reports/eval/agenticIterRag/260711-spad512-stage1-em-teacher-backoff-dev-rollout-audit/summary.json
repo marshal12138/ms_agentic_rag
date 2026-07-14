@@ -1,0 +1,242 @@
+{
+  "errors": [],
+  "manifest_path": "log/agenticIterRag/260711-220950-337984-pipeline-agentic_iter_rag_v1_spad_qwen3_1_7b_newdata_512_em_teacher_backoff_dev/outputs/stages/train_agent/spad_rag/search_policy_rl/rollout_data/manifest.json",
+  "manifest_sha256": "f0b98a8f01db4550123889dd2ed6ab894620aa07d9bc38e64a0146eb9735f8c3",
+  "passed": true,
+  "shards": [
+    {
+      "all_zero_group_count": 45,
+      "complete_answer_count": 349,
+      "em_positive_rollout_count": 49,
+      "evidence_rollout_count": 504,
+      "final_nonconstant_group_count": 35,
+      "formula_errors": [],
+      "group_count": 64,
+      "partial_constant_group_count": 28,
+      "partial_nonconstant_group_count": 17,
+      "path": "/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/log/agenticIterRag/260711-220950-337984-pipeline-agentic_iter_rag_v1_spad_qwen3_1_7b_newdata_512_em_teacher_backoff_dev/outputs/stages/train_agent/spad_rag/search_policy_rl/rollout_data/1.jsonl",
+      "record_count": 512,
+      "sha256": "ce3318ea0dcb3e41ea3ca80c9a2e405f8195601e9a4770c84a9cef19bf009e29",
+      "teacher_called_group_count": 45,
+      "teacher_called_rollout_count": 352,
+      "teacher_format_error_count": 1,
+      "teacher_parse_status_counts": {
+        "missing_reason_tag": 1,
+        "not_called": 160,
+        "parsed": 351
+      },
+      "teacher_status_counts": {
+        "ambiguous_evidence": 24,
+        "insufficient_evidence": 223,
+        "not_called": 161,
+        "supported_answer": 104
+      }
+    },
+    {
+      "all_zero_group_count": 53,
+      "complete_answer_count": 339,
+      "em_positive_rollout_count": 42,
+      "evidence_rollout_count": 507,
+      "final_nonconstant_group_count": 35,
+      "formula_errors": [],
+      "group_count": 64,
+      "partial_constant_group_count": 29,
+      "partial_nonconstant_group_count": 24,
+      "path": "/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/log/agenticIterRag/260711-220950-337984-pipeline-agentic_iter_rag_v1_spad_qwen3_1_7b_newdata_512_em_teacher_backoff_dev/outputs/stages/train_agent/spad_rag/search_policy_rl/rollout_data/2.jsonl",
+      "record_count": 512,
+      "sha256": "596cf8ed9eb083da77ef67aa5bb96bb315cb060a3e24e0422aeaf6d726405976",
+      "teacher_called_group_count": 53,
+      "teacher_called_rollout_count": 422,
+      "teacher_format_error_count": 0,
+      "teacher_parse_status_counts": {
+        "not_called": 90,
+        "parsed": 422
+      },
+      "teacher_status_counts": {
+        "ambiguous_evidence": 8,
+        "insufficient_evidence": 306,
+        "not_called": 90,
+        "supported_answer": 108
+      }
+    },
+    {
+      "all_zero_group_count": 49,
+      "complete_answer_count": 379,
+      "em_positive_rollout_count": 39,
+      "evidence_rollout_count": 506,
+      "final_nonconstant_group_count": 33,
+      "formula_errors": [],
+      "group_count": 64,
+      "partial_constant_group_count": 31,
+      "partial_nonconstant_group_count": 18,
+      "path": "/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/log/agenticIterRag/260711-220950-337984-pipeline-agentic_iter_rag_v1_spad_qwen3_1_7b_newdata_512_em_teacher_backoff_dev/outputs/stages/train_agent/spad_rag/search_policy_rl/rollout_data/3.jsonl",
+      "record_count": 512,
+      "sha256": "3dafef38e33b68be2ec4e50532eef5f1053e1df38e3f0e06ae32877fc63b829c",
+      "teacher_called_group_count": 49,
+      "teacher_called_rollout_count": 387,
+      "teacher_format_error_count": 0,
+      "teacher_parse_status_counts": {
+        "not_called": 125,
+        "parsed": 387
+      },
+      "teacher_status_counts": {
+        "ambiguous_evidence": 22,
+        "insufficient_evidence": 218,
+        "not_called": 125,
+        "supported_answer": 147
+      }
+    },
+    {
+      "all_zero_group_count": 42,
+      "complete_answer_count": 397,
+      "em_positive_rollout_count": 72,
+      "evidence_rollout_count": 512,
+      "final_nonconstant_group_count": 39,
+      "formula_errors": [],
+      "group_count": 64,
+      "partial_constant_group_count": 23,
+      "partial_nonconstant_group_count": 19,
+      "path": "/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/log/agenticIterRag/260711-220950-337984-pipeline-agentic_iter_rag_v1_spad_qwen3_1_7b_newdata_512_em_teacher_backoff_dev/outputs/stages/train_agent/spad_rag/search_policy_rl/rollout_data/4.jsonl",
+      "record_count": 512,
+      "sha256": "31dc3b2ef40cdba4ca444785fd626c3bf86801924c03cee2b36ced93e3f4a8c3",
+      "teacher_called_group_count": 42,
+      "teacher_called_rollout_count": 336,
+      "teacher_format_error_count": 0,
+      "teacher_parse_status_counts": {
+        "not_called": 176,
+        "parsed": 336
+      },
+      "teacher_status_counts": {
+        "ambiguous_evidence": 20,
+        "insufficient_evidence": 191,
+        "not_called": 176,
+        "supported_answer": 125
+      }
+    },
+    {
+      "all_zero_group_count": 44,
+      "complete_answer_count": 398,
+      "em_positive_rollout_count": 78,
+      "evidence_rollout_count": 509,
+      "final_nonconstant_group_count": 33,
+      "formula_errors": [],
+      "group_count": 64,
+      "partial_constant_group_count": 29,
+      "partial_nonconstant_group_count": 15,
+      "path": "/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/log/agenticIterRag/260711-220950-337984-pipeline-agentic_iter_rag_v1_spad_qwen3_1_7b_newdata_512_em_teacher_backoff_dev/outputs/stages/train_agent/spad_rag/search_policy_rl/rollout_data/5.jsonl",
+      "record_count": 512,
+      "sha256": "b8c99e5251b0fbb806bfddff71a8aa4f8cc4ee779efb8383d7376e6a27bd431c",
+      "teacher_called_group_count": 44,
+      "teacher_called_rollout_count": 352,
+      "teacher_format_error_count": 1,
+      "teacher_parse_status_counts": {
+        "missing_reason_tag": 1,
+        "not_called": 160,
+        "parsed": 351
+      },
+      "teacher_status_counts": {
+        "ambiguous_evidence": 30,
+        "insufficient_evidence": 188,
+        "not_called": 161,
+        "supported_answer": 133
+      }
+    },
+    {
+      "all_zero_group_count": 44,
+      "complete_answer_count": 381,
+      "em_positive_rollout_count": 94,
+      "evidence_rollout_count": 511,
+      "final_nonconstant_group_count": 31,
+      "formula_errors": [],
+      "group_count": 64,
+      "partial_constant_group_count": 28,
+      "partial_nonconstant_group_count": 16,
+      "path": "/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/log/agenticIterRag/260711-220950-337984-pipeline-agentic_iter_rag_v1_spad_qwen3_1_7b_newdata_512_em_teacher_backoff_dev/outputs/stages/train_agent/spad_rag/search_policy_rl/rollout_data/6.jsonl",
+      "record_count": 512,
+      "sha256": "ec41ef5b10168c4b1b54f1fc147a169597f52d3c3d0d48682723d2c64c54887d",
+      "teacher_called_group_count": 44,
+      "teacher_called_rollout_count": 351,
+      "teacher_format_error_count": 1,
+      "teacher_parse_status_counts": {
+        "missing_reason_tag": 1,
+        "not_called": 161,
+        "parsed": 350
+      },
+      "teacher_status_counts": {
+        "ambiguous_evidence": 23,
+        "insufficient_evidence": 215,
+        "not_called": 162,
+        "supported_answer": 112
+      }
+    },
+    {
+      "all_zero_group_count": 48,
+      "complete_answer_count": 353,
+      "em_positive_rollout_count": 68,
+      "evidence_rollout_count": 510,
+      "final_nonconstant_group_count": 26,
+      "formula_errors": [],
+      "group_count": 64,
+      "partial_constant_group_count": 35,
+      "partial_nonconstant_group_count": 13,
+      "path": "/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/log/agenticIterRag/260711-220950-337984-pipeline-agentic_iter_rag_v1_spad_qwen3_1_7b_newdata_512_em_teacher_backoff_dev/outputs/stages/train_agent/spad_rag/search_policy_rl/rollout_data/7.jsonl",
+      "record_count": 512,
+      "sha256": "9eaad37b9cdd1f46cc86443f2a9378e51da0fa2b58b89a016522f984e927069c",
+      "teacher_called_group_count": 48,
+      "teacher_called_rollout_count": 383,
+      "teacher_format_error_count": 0,
+      "teacher_parse_status_counts": {
+        "not_called": 129,
+        "parsed": 383
+      },
+      "teacher_status_counts": {
+        "ambiguous_evidence": 16,
+        "insufficient_evidence": 259,
+        "not_called": 129,
+        "supported_answer": 108
+      }
+    },
+    {
+      "all_zero_group_count": 48,
+      "complete_answer_count": 347,
+      "em_positive_rollout_count": 73,
+      "evidence_rollout_count": 511,
+      "final_nonconstant_group_count": 30,
+      "formula_errors": [],
+      "group_count": 64,
+      "partial_constant_group_count": 32,
+      "partial_nonconstant_group_count": 16,
+      "path": "/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/log/agenticIterRag/260711-220950-337984-pipeline-agentic_iter_rag_v1_spad_qwen3_1_7b_newdata_512_em_teacher_backoff_dev/outputs/stages/train_agent/spad_rag/search_policy_rl/rollout_data/8.jsonl",
+      "record_count": 512,
+      "sha256": "b5311eb81b70ee5869a811e75c8c8679a0c0788242e8d051a41382a2013430f1",
+      "teacher_called_group_count": 48,
+      "teacher_called_rollout_count": 384,
+      "teacher_format_error_count": 0,
+      "teacher_parse_status_counts": {
+        "not_called": 128,
+        "parsed": 384
+      },
+      "teacher_status_counts": {
+        "ambiguous_evidence": 16,
+        "insufficient_evidence": 257,
+        "not_called": 128,
+        "supported_answer": 111
+      }
+    }
+  ],
+  "total": {
+    "all_zero_group_count": 373,
+    "complete_answer_count": 2943,
+    "em_positive_rollout_count": 515,
+    "evidence_rollout_count": 4070,
+    "final_nonconstant_group_count": 262,
+    "group_count": 512,
+    "partial_constant_group_count": 235,
+    "partial_nonconstant_group_count": 138,
+    "record_count": 4096,
+    "teacher_called_group_count": 373,
+    "teacher_called_rollout_count": 2967,
+    "teacher_format_error_count": 3
+  },
+  "version": "spad-stage1-rollout-audit-v1"
+}

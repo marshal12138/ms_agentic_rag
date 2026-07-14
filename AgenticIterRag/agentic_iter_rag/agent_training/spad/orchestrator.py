@@ -6,7 +6,12 @@ from pathlib import Path
 from typing import Any
 
 from agentic_iter_rag.agent_training.spad.answer_distillation import run_answer_distillation
-from agentic_iter_rag.agent_training.spad.config import selected_sub_stages, spad_runtime_root
+from agentic_iter_rag.agent_training.spad.config import (
+    selected_sub_stages,
+    spad_checkpoint_root,
+    spad_runtime_log_root,
+    spad_runtime_root,
+)
 from agentic_iter_rag.agent_training.spad.manifest import write_spad_manifest
 from agentic_iter_rag.agent_training.spad.refresh_rollout import run_answer_refresh_data
 from agentic_iter_rag.agent_training.spad.resource import resolve_sub_stage_resource
@@ -24,7 +29,11 @@ def run_spad_rag(
 
     del train_agent_stage_cfg
     root = spad_runtime_root(config)
+    log_root = spad_runtime_log_root(config)
+    checkpoint_root = spad_checkpoint_root(config)
     root.mkdir(parents=True, exist_ok=True)
+    log_root.mkdir(parents=True, exist_ok=True)
+    checkpoint_root.mkdir(parents=True, exist_ok=True)
     selected = selected_sub_stages(spad_cfg)
     sub_stage_outputs: dict[str, Any] = {}
     search_policy_checkpoint: str | None = None
@@ -35,22 +44,30 @@ def run_spad_rag(
     for sub_stage in selected:
         resource_plan = resolve_sub_stage_resource(config, sub_stage)
         stage_dir = root / sub_stage
+        stage_log_dir = log_root / sub_stage
+        stage_checkpoint_dir = checkpoint_root / sub_stage
         if sub_stage == "search_policy_rl":
             outputs = run_search_policy_rl(
                 config=config,
                 spad_cfg=spad_cfg,
                 stage_dir=stage_dir,
+                log_dir=stage_log_dir,
+                checkpoint_dir=stage_checkpoint_dir,
                 resource_plan=resource_plan,
                 dry_run=dry_run,
             )
             search_policy_checkpoint = outputs.get("actor_checkpoint")
-            answer_actor_checkpoint = search_policy_checkpoint
-            final_checkpoint = search_policy_checkpoint
+            answer_actor_checkpoint = outputs.get("hf_actor_checkpoint")
+            if not dry_run and not answer_actor_checkpoint:
+                raise RuntimeError("SPAD Stage1 completed without hf_actor_checkpoint")
+            final_checkpoint = answer_actor_checkpoint or search_policy_checkpoint
         elif sub_stage == "answer_refresh_data":
             outputs = run_answer_refresh_data(
                 config=config,
                 spad_cfg=spad_cfg,
                 stage_dir=stage_dir,
+                log_dir=stage_log_dir,
+                checkpoint_dir=stage_checkpoint_dir,
                 resource_plan=resource_plan,
                 dry_run=dry_run,
                 actor_checkpoint=search_policy_checkpoint,
@@ -61,6 +78,8 @@ def run_spad_rag(
             outputs = run_answer_distillation(
                 spad_cfg=spad_cfg,
                 stage_dir=stage_dir,
+                log_dir=stage_log_dir,
+                checkpoint_dir=stage_checkpoint_dir,
                 resource_plan=resource_plan,
                 dry_run=dry_run,
                 init_actor_checkpoint=answer_actor_checkpoint,

@@ -1,0 +1,14 @@
+main_run:
+  project:
+    experiment_name: agentic_iter_rag_v1_spad_qwen3_1_7b_newdata_512_stable_stage1_inflight2_ablation
+
+agent_training:
+  stop_after_sub_stage: search_policy_rl
+  force_rerun_sub_stages: [search_policy_rl]
+  reward:
+    type: spad_em_teacher_backoff
+  sub_stages:
+    search_policy_rl:
+      trainer:
+        # Strict ablation against the stable repeat: only this scheduling knob changes.
+        stream_group_max_inflight: 2

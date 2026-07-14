@@ -440,19 +440,24 @@ def build_runtime(args: argparse.Namespace, cfg: dict[str, Any]) -> tuple[dict[s
         raise ValueError("main_run.runtime.outputs_dir must be a run-local relative directory name")
     run_root = Path(str(runtime_cfg["run_root"])) / run_name
     report_root = Path(str(cfg["main_run"]["runtime"]["report_root"])) / group
+    checkpoint_base = Path(str(runtime_cfg.get("checkpoint_root") or (args.repo_root / "checkpoints" / "AIR")))
+    checkpoint_root = checkpoint_base / run_name
     artifact_root = run_root / outputs_leaf
     log_dir = run_root / "runtime_logs"
+    pipeline_log_dir = log_dir / "pipeline"
     files = {
         "run_root": run_root,
         "report_root": report_root,
         "outputs_dir": artifact_root,
         "artifact_root": artifact_root,
+        "checkpoint_root": checkpoint_root,
         "log_dir": log_dir,
-        "final_yaml": log_dir / "pipeline.final_config.yaml",
-        "final_json": log_dir / "pipeline.final_config.json",
-        "env_file": log_dir / "pipeline.env",
-        "runtime_env": log_dir / "pipeline.runtime_env.sh",
-        "args_file": log_dir / "pipeline.args.txt",
+        "pipeline_log_dir": pipeline_log_dir,
+        "final_yaml": pipeline_log_dir / "pipeline.final_config.yaml",
+        "final_json": pipeline_log_dir / "pipeline.final_config.json",
+        "env_file": pipeline_log_dir / "pipeline.env",
+        "runtime_env": pipeline_log_dir / "pipeline.runtime_env.sh",
+        "args_file": pipeline_log_dir / "pipeline.args.txt",
         "manifest": artifact_root / "pipeline.manifest.json",
         "execution_plan": artifact_root / "execution_plan.yaml",
     }
@@ -470,7 +475,10 @@ def build_runtime(args: argparse.Namespace, cfg: dict[str, Any]) -> tuple[dict[s
         "RUN_NAME": run_name,
         "RUN_ROOT": str(run_root),
         "LOG_DIR": str(log_dir),
+        "RUNTIME_LOG_ROOT": str(log_dir),
+        "PIPELINE_LOG_DIR": str(pipeline_log_dir),
         "ARTIFACT_ROOT": str(artifact_root),
+        "CHECKPOINT_ROOT": str(checkpoint_root),
         "REPORT_ROOT": str(report_root),
         "FINAL_CONFIG_YAML": str(files["final_yaml"]),
         "FINAL_CONFIG_JSON": str(files["final_json"]),
@@ -501,6 +509,7 @@ def main() -> None:
             "final_config_json": str(files["final_json"]),
             "env_path": str(files["env_file"]),
             "outputs_dir": str(files["outputs_dir"]),
+            "checkpoint_root": str(files["checkpoint_root"]),
             "execution_plan": str(files["execution_plan"]),
             "dry_run": args.dry_run,
         },

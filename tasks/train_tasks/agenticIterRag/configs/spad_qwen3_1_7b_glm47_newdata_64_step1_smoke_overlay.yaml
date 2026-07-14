@@ -1,0 +1,22 @@
+main_run:
+  project:
+    experiment_name: agentic_iter_rag_v1_spad_qwen3_1_7b_newdata_64_step1_smoke
+
+data:
+  train_files:
+    - /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/data/global_train_eval_data/512t/co_search_ablation.train.parquet
+  val_files:
+    - /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/data/global_train_eval_data/350e/co_search_ablation.eval.parquet
+  train_max_samples: 64
+  val_max_samples: 8
+
+agent_training:
+  stop_after_sub_stage: search_policy_rl
+  force_rerun_sub_stages: [search_policy_rl]
+  sub_stages:
+    search_policy_rl:
+      trainer:
+        total_training_steps: 1
+        train_max_samples: 64
+        save_freq: 1
+        data_seed: 42

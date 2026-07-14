@@ -1,0 +1,67 @@
+{
+  "version": "newdata-model-eval-run-spec-v1",
+  "models": {
+    "spad_512_stable_historical_inflight1": {
+      "role": "spad_em_teacher_backoff",
+      "scale": 512,
+      "stage": "stage1_step8",
+      "runs": [
+        "260712-newdata3500-fastio-spad-512-stage1-run1"
+      ]
+    },
+    "spad_512_stable_repeat_inflight2": {
+      "role": "spad_em_teacher_backoff",
+      "scale": 512,
+      "stage": "stage1_step8",
+      "runs": [
+        "260712-newdata3500-fastio-spad-512-stage1-stable-inflight2-ablation-run1"
+      ]
+    },
+    "spad_5100_stable_inflight2": {
+      "role": "spad_em_teacher_backoff",
+      "scale": 5100,
+      "stage": "stage1_step79",
+      "runs": [
+        "260712-newdata3500-fastio-spad-5100-stage1-run1"
+      ]
+    },
+    "spad_512_gold_token_f1_bonus_inflight2": {
+      "role": "spad_em_teacher_backoff_gold_token_f1_bonus",
+      "scale": 512,
+      "stage": "stage1_step8",
+      "runs": [
+        "260713-newdata3500-spad-512-gold-token-f1-bonus-stage1-run1"
+      ]
+    },
+    "spad_5100_gold_token_f1_bonus_inflight2": {
+      "role": "spad_em_teacher_backoff_gold_token_f1_bonus",
+      "scale": 5100,
+      "stage": "stage1_step79",
+      "runs": [
+        "260713-newdata3500-spad-5100-gold-token-f1-bonus-stage1-run1"
+      ]
+    }
+  },
+  "comparisons": [
+    [
+      "spad_512_stable_historical_inflight1",
+      "spad_512_gold_token_f1_bonus_inflight2"
+    ],
+    [
+      "spad_512_stable_repeat_inflight2",
+      "spad_512_gold_token_f1_bonus_inflight2"
+    ],
+    [
+      "spad_5100_stable_inflight2",
+      "spad_5100_gold_token_f1_bonus_inflight2"
+    ],
+    [
+      "spad_512_gold_token_f1_bonus_inflight2",
+      "spad_5100_gold_token_f1_bonus_inflight2"
+    ],
+    [
+      "spad_512_stable_historical_inflight1",
+      "spad_5100_stable_inflight2"
+    ]
+  ]
+}

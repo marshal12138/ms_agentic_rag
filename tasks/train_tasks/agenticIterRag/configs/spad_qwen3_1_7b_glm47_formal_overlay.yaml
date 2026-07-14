@@ -1,115 +1,386 @@
-# SPAD-RAG Qwen3-1.7B + GLM4.7 formal three-stage training overlay.
+# SPAD-RAG Qwen3-1.7B + GLM4.7 正式三阶段训练 overlay。
 #
-# This keeps SPAD-RAG under pipeline.offline_two_stage -> train_agent and runs
-# the internal sub-stages in order: search_policy_rl -> answer_refresh_data ->
-# answer_distillation.
+# 这份 overlay 只描述本次正式实验相对 base 配置的覆盖项。
+# 顶层 AIR pipeline 仍然只执行 offline_two_stage -> train_agent；
+# train_agent 内部由 spad_rag 依次执行：
+#   1. search_policy_rl：搜索策略 RL。
+#   2. answer_refresh_data：用 Stage 1 actor 重新 rollout，并由 GLM4.7 生成 chosen answer。
+#   3. answer_distillation：基于 Stage 2 chosen/rejected pair 做 answer DPO。
 
+# 实验名和本次运行选择的配置组。
 main_run:
   project:
+    # run 目录和审计文件会使用该实验名。
     experiment_name: agentic_iter_rag_v1_spad_qwen3_1_7b_glm47_formal
   config_groups:
+    # AIR 顶层 pipeline DAG。
     pipeline: offline_two_stage
+
+    # SPAD-RAG 内部训练策略 base；本 overlay 只覆盖正式训练差异。
     agent_training: spad_rag_base
+
+    # 初始 actor 模型：Qwen3-1.7B。
     model: qwen3_1_7b
+
+    # rollout/agent loop 运行时配置。
     rollout: air_async_qwen3_1_7b
 
+# 顶层 pipeline 只跑 train_agent，避免误触发数据生产、reranker 训练或 bundle 等其它 stage。
 pipeline:
+  # 从 train_agent 开始执行。
   resume_from_stage: train_agent
+
+  # train_agent 完成后立即停止。
   stop_after_stage: train_agent
+
+  # 不跳过任何顶层 stage；实际可执行范围已由 resume/stop 限定。
   skip_stages: []
+
+  # 正式训练每次显式重跑 train_agent，避免复用旧产物。
   force_rerun_stages: [train_agent]
+
   stage_configs:
     train_agent:
+      # 启用 train_agent stage。
       enabled: true
+
+      # 使用 SPAD-RAG implementation。
       impl: spad_rag
+
+      # implementation 配置从 agent_training 节读取。
       impl_config_ref: agent_training
 
+# SPAD-RAG 内部训练覆盖项。
 agent_training:
-  default_backend: smoke
+  # 默认后端切到真实训练；各 sub-stage 仍可单独覆盖后端。
+  default_backend: verl
+
+  # 正式三阶段从 Stage 1 开始。
   resume_from_sub_stage: search_policy_rl
+
+  # null 表示执行到最后一个 SPAD 子阶段。
   stop_after_sub_stage: null
+
+  # 不跳过任何 SPAD 子阶段。
   skip_sub_stages: []
+
+  # 三个子阶段都强制重跑，保证正式 run 的数据和 checkpoint 同源。
   force_rerun_sub_stages: [search_policy_rl, answer_refresh_data, answer_distillation]
+
+  reward:
+    type: spad_em_teacher_backoff
+    spad_em_teacher_backoff:
+      partial_reward: 0.1
+
   teacher_answerer:
+    # Teacher answerer 使用 GLM4.7 service profile；具体卡号在 resource 中指定。
     default_service_profile: glm47_single_vllm
+
+  # SPAD-RAG 内部三阶段配置。
   sub_stages:
     search_policy_rl:
+      # Stage 1：训练 search policy。
       enabled: true
+
+      # 使用 VERL 后端做真实 RL。
       backend: verl
+
+      # Stage 1 GRPO/VERL 训练参数。
       trainer:
+        # 跑 1 个 epoch；正式全量步数由 total_training_steps=-1 表达。
         total_epochs: 1
-        total_training_steps: 50
-        train_batch_size: 8
-        ppo_mini_batch_size: 8
-        actor_micro_batch_size_per_gpu: 1
-        log_prob_micro_batch_size_per_gpu: 1
-        n_samples_per_prompt: 2
-        train_max_samples: 400
+
+        # -1 表示 full run，不提前按 step 截断。
+        total_training_steps: -1
+
+        # prompt 级训练 batch；保持 base 的 64，避免小 batch 稀释 GRPO 组内信号。
+        train_batch_size: 64
+
+        # PPO/GRPO mini-batch size。
+        ppo_mini_batch_size: 64
+
+        # actor 更新 micro batch，按单卡计。
+        actor_micro_batch_size_per_gpu: 2
+
+        # log-prob 计算 micro batch，按单卡计。
+        log_prob_micro_batch_size_per_gpu: 4
+
+        # 每个 prompt 采样 8 条轨迹，用于组内相对 reward。
+        n_samples_per_prompt: 8
+
+        # 固定抽取 512 条，恰好覆盖 8 个 64-prompt batch，避免 drop_last 丢样本。
+        train_max_samples: 512
+
+        # 正式 run 保留 8 条验证样本做轻量 sanity check。
         val_max_samples: 8
-        val_batch_size: 4
+
+        # 验证 batch size。
+        val_batch_size: 8
+
+        # 每 10 个训练 step 保存一次 actor。
         save_freq: 10
+
+        # -1 表示不在训练中额外跑 test。
         test_freq: -1
-        agent_loop_num_workers: 4
-        teacher_batch_workers: 4
+
+        # agent loop 并发 worker 数。
+        agent_loop_num_workers: 8
+
+        # teacher 批处理 worker 数，用于提升 reward/判据吞吐。
+        teacher_batch_workers: 16
+
+        # rollout vLLM 显存占用上限。
         rollout_gpu_memory_utilization: 0.55
-        max_num_seqs: 8
+
+        # rollout engine 最大并发序列数。
+        max_num_seqs: 32
+
+        # prompt token 上限，需与模型上下文和检索文档预算共同约束。
         max_prompt_length: 12000
-        max_response_length: 1536
-        rollout_max_model_len: 13536
-        max_num_batched_tokens: 13536
+
+        # Stage 1 单条 trajectory response token 上限；与 CoSearch/CAR 对齐。
+        max_response_length: 4096
+
+        # rollout engine 最大上下文长度，约等于 prompt + response。
+        rollout_max_model_len: 16096
+
+        # vLLM 单批最大 token 数。
+        max_num_batched_tokens: 24576
+
+        # 关闭 StatefulDataLoader 多进程 worker，避免 checkpoint 后 worker 被 kill。
+        dataloader_num_workers: 0
+
+        # 启用 chunked prefill，降低长 prompt prefill 峰值压力。
+        enable_chunked_prefill: true
+
+        # 启用 prefix caching，复用相同系统 prompt/历史前缀。
+        enable_prefix_caching: true
+
+        # 不强制 eager，让后端按默认图优化路径运行。
+        enforce_eager: false
+
+        # 正式配置暂不启用 torch compile，避免额外编译不确定性。
         use_torch_compile: false
+
+        # 子阶段完成后自动释放本阶段启动的服务。
         auto_stop_services: true
-        ray_num_cpus: 24
+
+        # Ray 预留 CPU 数。
+        ray_num_cpus: 48
+
+        # rollout 进度日志间隔，单位秒。
         rollout_progress_interval: 30
+
+        # 单条轨迹超时，单位秒；正式 run 给到 900 秒以覆盖慢检索/慢 teacher。
+        trajectory_timeout_seconds: 900
+
+        # 整体训练超时，单位秒。
         timeout_seconds: 86400
+
+        # 训练日志后端。
         logger: ["console"]
+
+        # 稳定版 EM/teacher backoff 继续使用完整 UID 组奖励。
+        reward_manager: batch
+
+        # UID 的 8 条 rollout 齐备后立即提交组奖励，与其余 rollout 重叠。
+        stream_group_reward: true
+
+        # 每个 agent-loop worker 同时处理 2 个 UID 组；8 个 worker 下最多
+        # 对齐 teacher vLLM max_num_seqs=128，不引入 teacher 结果缓存。
+        stream_group_max_inflight: 2
+
+        preserve_full_rollout_logs: true
+
       rollout:
-        max_assistant_turns: 3
-        max_user_turns: 3
-        max_tool_response_length: 1536
+        stop_sequences: ["</tool_call>", "</answer>"]
+        include_stop_str_in_output: true
+        # Stage 1 最多 6 轮 assistant action，与 CoSearch/CAR 对齐。
+        max_assistant_turns: 6
+
+        # Stage 1 最多 6 轮 user/tool observation，与 CoSearch/CAR 对齐。
+        max_user_turns: 6
+
+        # 单次 tool observation 写回模型上下文的最大字符/token预算。
+        max_tool_response_length: 4096
+
     answer_refresh_data:
+      # Stage 2：使用 Stage 1 actor 重新 rollout，并刷新 answer distillation 数据。
       enabled: true
+
+      # 使用 rollout 后端真实生成 actor answer，再由 teacher 生成 chosen answer。
       backend: rollout
+
+      # 子阶段结束后释放本阶段启动的 actor/teacher/recall 服务。
       auto_stop_services: true
-      inputs:
-        max_samples: 400
-      rollout:
-        temperature: 1.0
-        top_p: 1.0
-        max_response_tokens: 1024
-        max_assistant_turns: 3
-        max_user_turns: 3
-        visible_top_m: 5
-        max_doc_chars: 1536
-        max_model_len: 13024
-        gpu_memory_utilization: 0.45
-        actor_timeout_seconds: 180
-        search_timeout: 120
-      filter:
-        require_teacher_format_valid: true
-        require_evidence_sufficient: true
-        min_teacher_f1: 0.0
-    answer_distillation:
-      enabled: true
-      phase_order: [sft, dpo]
+
+      phase_order: [trajectory_rollout, teacher_labeling]
+      resume_from_phase: null
+      stop_after_phase: null
+      resume_existing: true
+
       phases:
-        sft:
-          enabled: false
-        dpo:
+        trajectory_rollout:
+          scheduler:
+            trajectory_submit_batch_size: 96
+            inflight_per_actor: 16
+            max_inflight_per_actor: 24
+            retrieval_query_batch_size: 32
+            retrieval_flush_interval_ms: 50
+            progress_log_interval: 20
+            request_timeout_s: 180
+        teacher_labeling:
+          backend: offline_vllm_batch
+          scheduler:
+            offline_shard_count: 4
+            offline_batch_size: 64
+            max_num_seqs: 128
+            max_num_batched_tokens: 65536
+            enable_prefix_caching: true
+            enable_chunked_prefill: true
+            enforce_eager: false
+            progress_log_interval: 20
+            offline_poll_interval_s: 5
+
+      inputs:
+        # 与 Stage 1 对齐，默认处理同样规模的 512 条输入。
+        max_samples: 512
+
+      # Stage 2 actor rollout 参数。
+      rollout:
+        # actor answer 采样温度。
+        temperature: 1.0
+
+        # nucleus sampling 参数。
+        top_p: 1.0
+
+        # Stage 2 answer 最大生成 token 数。
+        max_response_tokens: 1024
+
+        # Stage 2 最多 6 轮 assistant，与 Stage 1 搜索预算对齐。
+        max_assistant_turns: 6
+
+        # Stage 2 最多 6 轮 user/tool observation，与 Stage 1 搜索预算对齐。
+        max_user_turns: 6
+
+        # 每轮检索只向模型展示 top-5 文档。
+        visible_top_m: 5
+
+        # 单篇文档写入上下文的最大长度。
+        max_doc_chars: 1536
+
+        # actor vLLM 最大上下文长度。
+        max_model_len: 16096
+
+        # actor vLLM 显存占用上限。
+        gpu_memory_utilization: 0.80
+
+        # actor vLLM 最大并发序列数。
+        max_num_seqs: 32
+
+        # actor vLLM 单批最大 token 数。
+        max_num_batched_tokens: 32768
+
+        # actor vLLM 启用 prefix caching。
+        enable_prefix_caching: true
+
+        # actor vLLM 启用 chunked prefill。
+        enable_chunked_prefill: true
+
+        # 不强制 eager，沿用后端默认执行路径。
+        enforce_eager: false
+
+        # actor 单次生成调用超时，单位秒。
+        actor_timeout_seconds: 180
+
+        # 单次检索调用超时，单位秒。
+        search_timeout: 120
+
+      # Stage 2 数据过滤条件，决定哪些 pair 进入 DPO 数据集。
+      filter:
+        # teacher 输出必须满足约定格式。
+        require_teacher_format_valid: true
+
+        # teacher 必须判断证据充分，避免把“证据不足”样本作为 chosen。
+        require_evidence_sufficient: true
+
+        # teacher answer 与参考答案的 F1 下限；0.0 表示只做非负基础检查。
+        min_teacher_f1: 0.0
+
+    answer_distillation:
+      # Stage 3：对 Stage 2 数据做 answer distillation。
+      enabled: true
+
+      # 默认执行 Gold-answer F1 GRPO；DPO block 保留供消融使用。
+      phase_order: [grpo]
+
+      phases:
+        grpo:
           enabled: true
-          backend: local_dpo
-          train_batch_size: 1
-          total_training_steps: 50
-          max_samples: 400
-          max_length: 4096
+          backend: verl
+          reward_type: gold_answer_f1
+          train_batch_size: 64
+          ppo_mini_batch_size: 64
+          actor_micro_batch_size_per_gpu: 2
+          log_prob_micro_batch_size_per_gpu: 4
+          n_samples_per_prompt: 8
           learning_rate: 1.0e-6
-          beta: 0.1
-          pairwise_loss_weight: 1.0
-          chosen_sft_loss_weight: 0.2
-          clip_grad_norm: 1.0
+          total_epochs: 1
+          total_training_steps: -1
+          save_freq: 1000000
+          max_prompt_length: 12000
+          max_response_length: 1024
+          rollout_max_model_len: 13024
+          stop_sequences: ["</answer>"]
           apply_chat_template_kwargs:
             enable_thinking: false
 
+        sft:
+          # 当前正式 run 不做 SFT warmup。
+          enabled: false
+
+        dpo:
+          # 启用 DPO phase。
+          enabled: true
+
+          # 使用 VERL SPAD offline DPO trainer；Qwen3-1.7B 使用 TP=1，多卡只做数据并行。
+          backend: verl
+
+          # DPO 全局 batch size。
+          train_batch_size: 64
+
+          # DPO 单卡 micro batch。
+          micro_batch_size_per_gpu: 4
+
+          # -1 表示按 epoch/数据集完整训练，不按 step 提前截断。
+          total_training_steps: -1
+
+          # -1 表示使用完整 Stage 2 distillation 数据集。
+          max_samples: -1
+
+          # DPO 样本最大 token 长度。
+          max_length: 4096
+
+          # DPO 学习率。
+          learning_rate: 1.0e-6
+
+          # DPO beta，控制偏好 margin 的温度。
+          beta: 0.1
+
+          # pairwise DPO loss 权重。
+          pairwise_loss_weight: 1.0
+
+          # chosen answer 的辅助 SFT loss 权重。
+          chosen_sft_loss_weight: 0.2
+
+          # 梯度裁剪阈值。
+          clip_grad_norm: 1.0
+
+          apply_chat_template_kwargs:
+            # Qwen3 使用 non-thinking 模板训练 answer。
+            enable_thinking: false
+
+# 本 overlay 只覆盖正式三阶段需要固定的资源放置；未写字段继续继承 resource base。
 resource:
   stage_resources:
     train_agent:
@@ -117,44 +388,129 @@ resource:
         spad_rag:
           sub_stages:
             answer_refresh_data:
+              # Stage 2 需要 actor vLLM、teacher answerer 和 recall 三类服务。
               services:
                 actor_vllm:
-                  gpu_ids: [0, 1, 2, 3]
-                  tensor_parallel_size: 4
-                  port: 8340
-                  served_model_name: spad-refresh-actor
-                  auto_start: true
-                  auto_stop: true
-                  wait_seconds: 600
-                  gpu_memory_utilization: 0.45
-                  max_model_len: 13024
+                  # Phase A 启动 6 个 Qwen3-1.7B actor replica；每个 replica 单卡 TP=1。
+                  common:
+                    auto_start: true
+                    auto_stop: true
+                    wait_seconds: 600
+                    tensor_parallel_size: 1
+                    gpu_memory_utilization: 0.80
+                    max_model_len: 16096
+                    max_num_seqs: 32
+                    max_num_batched_tokens: 32768
+                    enable_prefix_caching: true
+                    enable_chunked_prefill: true
+                    enforce_eager: false
+                  replicas:
+                    - name: spad-refresh-actor-0
+                      gpu_ids: [0]
+                      port: 8340
+                      served_model_name: spad-refresh-actor-0
+                    - name: spad-refresh-actor-1
+                      gpu_ids: [1]
+                      port: 8341
+                      served_model_name: spad-refresh-actor-1
+                    - name: spad-refresh-actor-2
+                      gpu_ids: [2]
+                      port: 8342
+                      served_model_name: spad-refresh-actor-2
+                    - name: spad-refresh-actor-3
+                      gpu_ids: [3]
+                      port: 8343
+                      served_model_name: spad-refresh-actor-3
+                    - name: spad-refresh-actor-4
+                      gpu_ids: [4]
+                      port: 8344
+                      served_model_name: spad-refresh-actor-4
+                    - name: spad-refresh-actor-5
+                      gpu_ids: [5]
+                      port: 8345
+                      served_model_name: spad-refresh-actor-5
+
                 teacher_answerer:
+                  # Phase B 单独启动 4 个 GLM4.7 TP=2 teacher replica。
                   profile: glm47_single_vllm
-                  gpu_ids: [4, 5]
-                  tensor_parallel_size: 2
-                  port: 8067
-                  endpoint: http://127.0.0.1:8067/v1/chat/completions
-                  served_model_name: GLM-4.7-Flash
-                  auto_start: true
-                  auto_stop: true
-                  preflight: true
-                  wait_seconds: 600
+                  common:
+                    tensor_parallel_size: 2
+                    served_model_name: GLM-4.7-Flash
+                    auto_start: true
+                    auto_stop: true
+                    preflight: true
+                    wait_seconds: 600
+                    max_num_seqs: 128
+                    max_num_batched_tokens: 65536
+                    enable_prefix_caching: true
+                    enable_chunked_prefill: true
+                    enforce_eager: false
+                  replicas:
+                    - name: spad_glm47_vllm_8067
+                      container_name: spad_glm47_vllm_8067
+                      gpu_ids: [0, 1]
+                      port: 8067
+                      endpoint: http://127.0.0.1:8067/v1/chat/completions
+                    - name: spad_glm47_vllm_8068
+                      container_name: spad_glm47_vllm_8068
+                      gpu_ids: [2, 3]
+                      port: 8068
+                      endpoint: http://127.0.0.1:8068/v1/chat/completions
+                    - name: spad_glm47_vllm_8069
+                      container_name: spad_glm47_vllm_8069
+                      gpu_ids: [4, 5]
+                      port: 8069
+                      endpoint: http://127.0.0.1:8069/v1/chat/completions
+                    - name: spad_glm47_vllm_8070
+                      container_name: spad_glm47_vllm_8070
+                      gpu_ids: [6, 7]
+                      port: 8070
+                      endpoint: http://127.0.0.1:8070/v1/chat/completions
+
                 recall:
+                  # recall 使用 NPU/GPU 加速后端。
                   backend_type: npu
+
+                  # 启动 2 个 recall backend 实例。
                   instance_count: 2
+
+                  # recall proxy 端口和 backend 起始端口。
                   port: 8130
                   backend_base_port: 8131
+
+                  # agent loop 调用的 retrieval endpoint。
                   retrieval_service_url: http://127.0.0.1:8130/retrieve
+
+                  # 由框架自动拉起/停止 recall 服务。
                   auto_start: true
                   auto_stop: true
+
+                  # 等待 recall ready 的最长时间，单位秒。
                   wait_seconds: 360
+
                   accelerator_backend:
+                    # recall backend 放在 6、7 号卡。
                     gpu_ids: [6, 7]
+
+                    # recall query batch size。
                     query_batch_size: 32
+
+                    # 文档向量 dtype。
                     doc_dtype: float16
+
             answer_distillation:
+              # Stage 3 GRPO/DPO 都只使用数据并行，TP 固定为 1。
               phases:
+                grpo:
+                  trainer:
+                    gpu_ids: [0, 1, 2, 3, 4, 5, 6, 7]
+                    n_gpus_per_node: 8
+                    tensor_parallel_size: 1
                 dpo:
                   trainer:
-                    gpu_ids: [0]
-                    n_gpus_per_node: 1
+                    # Qwen3-1.7B 不做参数并行；8 卡只做数据并行。
+                    gpu_ids: [0, 1, 2, 3, 4, 5, 6, 7]
+
+                    # 单机 8 卡 DDP，tensor_parallel_size 固定为 1。
+                    n_gpus_per_node: 8
+                    tensor_parallel_size: 1

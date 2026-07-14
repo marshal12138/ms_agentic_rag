@@ -36,12 +36,20 @@ log/agenticIterRag/<RUN_NAME>/runtime_logs
 
 ```text
 runtime_logs/
-  pipeline.terminal.log
-  pipeline.final_config.yaml
-  pipeline.final_config.json
-  pipeline.args.txt
-  pipeline.env
-  pipeline.runtime_env.sh
+  pipeline/
+    pipeline.terminal.log
+    pipeline.final_config.yaml
+    pipeline.final_config.json
+    pipeline.args.txt
+    pipeline.env
+    pipeline.runtime_env.sh
+  stages/
+    train_llm_reranker/
+      <phase>/
+        runtime_services/
+        rollout_data/
+        validation_data/
+        training_reports/
 ```
 
 文件含义：
@@ -72,6 +80,7 @@ pipeline.runtime_env.sh
 
 本次 run 的动态环境变量，包含 `LOG_DIR`、`ARTIFACT_ROOT`、`RUN_NAME`、`FINAL_CONFIG_YAML` 等。
 其中 `ARTIFACT_ROOT` 是兼容变量名，实际指向本次 run 内部的 `outputs/` 目录。
+`CHECKPOINT_ROOT` 指向本次 run 的模型 checkpoint 根目录，即 `checkpoints/AIR/<RUN_NAME>/`。
 
 ## 2. LLM Reranker Phase 日志目录
 
@@ -80,7 +89,7 @@ LLM reranker 训练日志挂在 run 级 `runtime_logs` 下面。
 目录规则：
 
 ```text
-runtime_logs/train_llm_reranker/<phase>/
+runtime_logs/stages/train_llm_reranker/<phase>/
 ```
 
 当前 phase：
@@ -94,13 +103,18 @@ stage2_agentic
 
 ```text
 runtime_logs/
-  train_llm_reranker/
-    stage1_format/
-      rollout_data/
-      validation_data/
-    stage2_agentic/
-      rollout_data/
-      validation_data/
+  stages/
+    train_llm_reranker/
+      stage1_format/
+        runtime_services/
+        rollout_data/
+        validation_data/
+        training_reports/
+      stage2_agentic/
+        runtime_services/
+        rollout_data/
+        validation_data/
+        training_reports/
 ```
 
 `stage1_format` 是格式奖励训练阶段，reward 是 `reranker_format_reward`，主要检查 `<reason>/<rerank>` 格式和长度。
@@ -112,7 +126,7 @@ runtime_logs/
 目录规则：
 
 ```text
-runtime_logs/train_llm_reranker/<phase>/rollout_data/
+runtime_logs/stages/train_llm_reranker/<phase>/rollout_data/
 ```
 
 VERL 会按 step 写 JSONL。
@@ -187,7 +201,7 @@ step
 目录规则：
 
 ```text
-runtime_logs/train_llm_reranker/<phase>/validation_data/
+runtime_logs/stages/train_llm_reranker/<phase>/validation_data/
 ```
 
 内容结构和 `rollout_data` 类似，也是按 step 写 JSONL。
@@ -203,9 +217,9 @@ val_before_train: false
 
 ## 5. Train Stage Artifact 目录
 
-除 `runtime_logs` 外，训练 stage 还有 artifact 目录。
+除 `runtime_logs` 外，训练 stage 还有 artifact 目录和 checkpoint 目录。
 
-目录规则：
+artifact 目录规则：
 
 ```text
 log/agenticIterRag/<RUN_NAME>/outputs/stages/train_llm_reranker/
@@ -214,26 +228,20 @@ log/agenticIterRag/<RUN_NAME>/outputs/stages/train_llm_reranker/
 结构示例：
 
 ```text
-stages/train_llm_reranker/
+outputs/stages/train_llm_reranker/
   manifest.json
-  runtime_services/
-    stage1_format/
-      run_verl_reranker_grpo.sh
-      verl_command.argv
-      verl_command_plan.json
-      verl_train.log
-      air_reranker_reporter.log
-      air_reranker_reporter.stop
-  training_reports/
-    stage1_format/
-      air_llm_reranker.metrics.jsonl
-      air_llm_reranker.training_metrics_report.latest.md
-      air_llm_reranker.detailed_metrics_report.latest.md
-      air_llm_reranker.report_manifest.json
-      air_llm_reranker.metrics.latest_reranker_rewards.png
-      air_llm_reranker.metrics.latest_reranker_losses.png
-      air_llm_reranker.metrics.latest_reranker_lengths.png
-      air_llm_reranker.metrics.latest_reranker_performance.png
+```
+
+checkpoint 目录规则：
+
+```text
+checkpoints/AIR/<RUN_NAME>/stages/train_llm_reranker/
+```
+
+结构示例：
+
+```text
+stages/train_llm_reranker/
   reranker_model_verl/
     stage1_format/
       global_step_10/
@@ -244,37 +252,37 @@ stages/train_llm_reranker/
 重点文件：
 
 ```text
-runtime_services/<phase>/run_verl_reranker_grpo.sh
+runtime_logs/stages/train_llm_reranker/<phase>/runtime_services/run_verl_reranker_grpo.sh
 ```
 
 实际启动 VERL 的 shell 脚本。
 
 ```text
-runtime_services/<phase>/verl_command.argv
+runtime_logs/stages/train_llm_reranker/<phase>/runtime_services/verl_command.argv
 ```
 
 最终传给 `python -m verl.trainer.main_ppo` 的参数，一行一个 override。这里可以确认 batch size、rollout n、response length、rollout data dir 等真实生效配置。
 
 ```text
-runtime_services/<phase>/verl_command_plan.json
+runtime_logs/stages/train_llm_reranker/<phase>/runtime_services/verl_command_plan.json
 ```
 
 结构化命令计划，包含资源、模型路径、dataset、reward 和日志路径。
 
 ```text
-runtime_services/<phase>/verl_train.log
+runtime_logs/stages/train_llm_reranker/<phase>/runtime_services/verl_train.log
 ```
 
 VERL stdout/stderr 训练日志。周期 reporter 会解析这个文件来生成 metrics 和曲线。
 
 ```text
-training_reports/<phase>/air_llm_reranker.metrics.jsonl
+runtime_logs/stages/train_llm_reranker/<phase>/training_reports/air_llm_reranker.metrics.jsonl
 ```
 
 从训练日志解析出来的指标序列。
 
 ```text
-training_reports/<phase>/*.png
+runtime_logs/stages/train_llm_reranker/<phase>/training_reports/*.png
 ```
 
 周期刷新的训练曲线图。
@@ -285,14 +293,14 @@ reranker_model_verl/<phase>/global_step_<N>/
 
 VERL checkpoint 目录。
 
-## 6. 全局 Metrics JSONL
+## 6. VERL File Logger Metrics JSONL
 
-AIR LLM reranker 训练还会写一个公共 metrics 文件。
+AIR LLM reranker 训练启用 VERL `file` logger 时，会把 VERL 原生聚合 metrics 写入当前 run、当前 phase 的日志目录。
 
 示例路径：
 
 ```text
-/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/agentic_iter_rag_reranker/agentic_iter_rag_v1_dataprod_to_llm_reranker_training_260703b.jsonl
+runtime_logs/stages/train_llm_reranker/<phase>/training_reports/verl_file_logger.metrics.jsonl
 ```
 
 内容是每个 step 的聚合 metrics，例如：
@@ -311,12 +319,13 @@ AIR LLM reranker 训练还会写一个公共 metrics 文件。
 }
 ```
 
-这个文件适合看整体训练状态，但不保存逐条 input/output。
+这个文件适合看 VERL 原生整体训练状态，但不保存逐条 input/output。
+历史版本曾写到仓库顶层 `agentic_iter_rag_reranker/<experiment_name>.jsonl`；新 run 不应再写这个顶层目录。
 
 逐条 input/output 应该看：
 
 ```text
-runtime_logs/train_llm_reranker/<phase>/rollout_data/<step>.jsonl
+runtime_logs/stages/train_llm_reranker/<phase>/rollout_data/<step>.jsonl
 ```
 
 ## 7. 默认日志配置规则
@@ -326,7 +335,7 @@ runtime_logs/train_llm_reranker/<phase>/rollout_data/<step>.jsonl
 为空时自动解析为：
 
 ```text
-${runtime_compiled.LOG_DIR}/train_llm_reranker/<phase>/rollout_data
+${runtime_compiled.LOG_DIR}/stages/train_llm_reranker/<phase>/rollout_data
 ```
 
 `reranker_training.trainer.validation_data_dir` 默认是 `null`。
@@ -334,13 +343,13 @@ ${runtime_compiled.LOG_DIR}/train_llm_reranker/<phase>/rollout_data
 为空时自动解析为：
 
 ```text
-${runtime_compiled.LOG_DIR}/train_llm_reranker/<phase>/validation_data
+${runtime_compiled.LOG_DIR}/stages/train_llm_reranker/<phase>/validation_data
 ```
 
 如果用户显式配置相对路径，则相对以下目录解析：
 
 ```text
-${runtime_compiled.LOG_DIR}/train_llm_reranker
+${runtime_compiled.LOG_DIR}/stages/train_llm_reranker
 ```
 
 如果用户显式配置绝对路径，则以该绝对路径为 dump 根目录。
@@ -361,35 +370,35 @@ ${runtime_compiled.LOG_DIR}/train_llm_reranker
 1. 看最终配置：
 
 ```text
-runtime_logs/pipeline.final_config.yaml
+runtime_logs/pipeline/pipeline.final_config.yaml
 ```
 
 2. 看 VERL 实际命令：
 
 ```text
-outputs/stages/train_llm_reranker/runtime_services/<phase>/verl_command.argv
+runtime_logs/stages/train_llm_reranker/<phase>/runtime_services/verl_command.argv
 ```
 
 3. 看训练过程：
 
 ```text
-outputs/stages/train_llm_reranker/runtime_services/<phase>/verl_train.log
+runtime_logs/stages/train_llm_reranker/<phase>/runtime_services/verl_train.log
 ```
 
 4. 看曲线和指标：
 
 ```text
-outputs/stages/train_llm_reranker/training_reports/<phase>/
+runtime_logs/stages/train_llm_reranker/<phase>/training_reports/
 ```
 
 5. 看 LLM reranker 真实输入输出：
 
 ```text
-runtime_logs/train_llm_reranker/<phase>/rollout_data/<step>.jsonl
+runtime_logs/stages/train_llm_reranker/<phase>/rollout_data/<step>.jsonl
 ```
 
 6. 看 checkpoint：
 
 ```text
-outputs/stages/train_llm_reranker/reranker_model_verl/<phase>/global_step_<N>/
+checkpoints/AIR/<RUN_NAME>/stages/train_llm_reranker/reranker_model_verl/<phase>/global_step_<N>/
 ```

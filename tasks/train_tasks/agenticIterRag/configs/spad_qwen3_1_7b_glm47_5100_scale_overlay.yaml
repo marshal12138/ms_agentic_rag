@@ -1,0 +1,30 @@
+main_run:
+  project:
+    experiment_name: agentic_iter_rag_v1_spad_qwen3_1_7b_newdata_5100
+
+data:
+  train_files:
+    - /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/data/global_train_eval_data/5100t/co_search_ablation.train.parquet
+  val_files:
+    - /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/data/global_train_eval_data/350e/co_search_ablation.eval.parquet
+  train_max_samples: 5100
+  val_max_samples: 8
+
+agent_training:
+  reward:
+    type: spad_em_teacher_backoff
+  sub_stages:
+    search_policy_rl:
+      trainer:
+        total_training_steps: 79
+        train_max_samples: 5100
+        save_freq: 79
+        data_seed: 42
+    answer_refresh_data:
+      inputs:
+        max_samples: 5100
+    answer_distillation:
+      phases:
+        grpo:
+          experiment_name: spad_newdata_5100_stage3_grpo
+          data_seed: 42

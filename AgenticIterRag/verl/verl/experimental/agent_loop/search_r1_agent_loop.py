@@ -35,6 +35,12 @@ logger = logging.getLogger(__file__)
 logger.setLevel(os.getenv("VERL_LOGGING_LEVEL", "WARN"))
 
 
+def _fatal_tool_error(exc: Exception) -> bool:
+    if os.getenv("AGENTIC_ITER_RAG_FAIL_FAST_TOOL_ERROR", "").strip().lower() in {"1", "true", "yes", "y", "on"}:
+        return True
+    return "fatal_recall_error:" in str(exc)
+
+
 class AgentState(Enum):
     PENDING = "pending"
     GENERATING = "generating"
@@ -431,6 +437,8 @@ class SearchR1AgentLoop(AgentLoopBase):
           
         except Exception as e:
             logger.warning(f"[W{worker_id}-TOOL-{tool_name}] ERROR: {e}")
+            if _fatal_tool_error(e):
+                raise
             return (
                 ToolResponse(
                     text=f"Error when executing tool: {e}",
@@ -523,6 +531,8 @@ class SearchR1AgentLoop(AgentLoopBase):
           
         except Exception as e:
             logger.warning(f"[W{worker_id}-TOOL-{tool_name}] ERROR: {e}")
+            if _fatal_tool_error(e):
+                raise
             return (
                 AgentToolResponse(
                     text=f"Error when executing tool: {e}",

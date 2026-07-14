@@ -35,6 +35,12 @@ On the first assistant turn for every question, you MUST call search.
 Do NOT output <answer> until after a tool result has been provided by the environment.
 Do NOT output <tool_call> and <answer> in the same assistant turn.
 
+After every search result:
+- If the evidence is sufficient, answer immediately.
+- Otherwise identify the missing fact or bridge entity and issue a NEW query targeting it.
+- Never repeat or paraphrase a previous query unless the previous search failed.
+- A follow-up query should use newly discovered entities or relations.
+
 When calling the tool, the <tool_call> block MUST contain ONLY this JSON shape:
 <tool_call>
 {{

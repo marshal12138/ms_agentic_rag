@@ -6,7 +6,7 @@
 
 main_run:
   project:
-    experiment_name: agentic_iter_rag_v1_stage2_hard_answer_evidence_w02_n4_3step
+    experiment_name: agentic_iter_rag_v1_stage2_hard_answer_evidence_w02_n8_3step
 
 pipeline:
   # 直接从 train_llm_reranker 开始，不重建数据集。
@@ -52,8 +52,8 @@ reranker_training:
 
       train_batch_size: 64
       ppo_mini_batch_size: 64
-      n_samples_per_prompt: 4
-      val_n_samples_per_prompt: 4
+      n_samples_per_prompt: 8
+      val_n_samples_per_prompt: 8
 
       # hard 子集 396 条，3 step 约覆盖 192 个 prompt；足够先看 reward 分布和格式稳定性。
       total_training_steps: 3

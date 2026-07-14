@@ -614,6 +614,7 @@ def air_infer_runtime_env(
     stage_cfg: dict[str, Any],
     resource_plan: dict[str, Any],
     infer_trace_dir: Path,
+    infer_runtime_log_dir: Path,
     infer_report_path: Path,
 ) -> dict[str, str]:
     """把 AIR 推理配置翻译为 AIR infer launcher 使用的运行时环境变量。"""
@@ -683,11 +684,11 @@ def air_infer_runtime_env(
         "EXP_NAME": str(os.environ.get("EXP_NAME", run_name)),
         "TRACE_DIR": str(infer_trace_dir),
         "OUT_DIR": str(infer_trace_dir),
-        "RUNTIME_LOG_DIR": str(infer_trace_dir / "runtime_logs"),
-        "LOG_DIR": str(infer_trace_dir / "runtime_logs"),
+        "RUNTIME_LOG_DIR": str(infer_runtime_log_dir),
+        "LOG_DIR": str(infer_runtime_log_dir),
         "REPORT_PATH": str(infer_report_path),
-        "AGENT_TIMING_JSONL": str(infer_trace_dir / "runtime_logs" / f"{run_name}.agent_timing.jsonl"),
-        "AGENTIC_ITER_RAG_SEARCH_TIMING_JSONL": str(infer_trace_dir / "runtime_logs" / f"{run_name}.search_timing.jsonl"),
+        "AGENT_TIMING_JSONL": str(infer_runtime_log_dir / f"{run_name}.agent_timing.jsonl"),
+        "AGENTIC_ITER_RAG_SEARCH_TIMING_JSONL": str(infer_runtime_log_dir / f"{run_name}.search_timing.jsonl"),
     }
     attention_backend = infer_budget.get("vllm", {}).get("attention_backend")
     if attention_backend is not None:
@@ -829,6 +830,7 @@ def run_generate_traces(config: dict[str, Any], manifest: Path, dry_run: bool, c
     repo_root = Path(os.environ.get("REPO_ROOT", Path.cwd()))
     stage_work_dir = artifact_root / "stages" / "generate_traces"
     infer_trace_dir = stage_work_dir / "air_infer_trace"
+    infer_runtime_log_dir = Path(os.environ["LOG_DIR"]) / "stages" / "generate_traces" / "air_infer"
     infer_report_path = stage_work_dir / "air_infer_report.md"
     version, trajectory_dir = prepare_trajectory_dir(config, stage_cfg)
     trajectory_jsonl = trajectory_dir / "trajectory.jsonl"
@@ -846,6 +848,7 @@ def run_generate_traces(config: dict[str, Any], manifest: Path, dry_run: bool, c
         repo_root=repo_root,
         stage_cfg=stage_cfg,
     )
+    infer_runtime_log_dir.mkdir(parents=True, exist_ok=True)
     if dry_run:
         infer_env_preview = air_infer_runtime_env(
             repo_root=repo_root,
@@ -853,6 +856,7 @@ def run_generate_traces(config: dict[str, Any], manifest: Path, dry_run: bool, c
             stage_cfg=stage_cfg,
             resource_plan=resource_plan,
             infer_trace_dir=infer_trace_dir,
+            infer_runtime_log_dir=infer_runtime_log_dir,
             infer_report_path=infer_report_path,
         )
         infer_env_preview.update(air_resource_env(config, "generate_traces", resource_plan))
@@ -924,6 +928,7 @@ def run_generate_traces(config: dict[str, Any], manifest: Path, dry_run: bool, c
                     stage_cfg=stage_cfg,
                     resource_plan=resource_plan,
                     infer_trace_dir=infer_trace_dir,
+                    infer_runtime_log_dir=infer_runtime_log_dir,
                     infer_report_path=infer_report_path,
                 )
             )
@@ -1329,6 +1334,7 @@ def main() -> None:
     config = read_yaml(args.config)
     pipeline = config["pipeline"]
     artifact_root = Path(os.environ.get("ARTIFACT_ROOT", args.manifest.parent))
+    checkpoint_root = os.environ.get("CHECKPOINT_ROOT")
     stages = selected_stages(pipeline)
     stage_resource_plans = validate_selected_resource_plan(config, stages)
     plan = {
@@ -1336,6 +1342,7 @@ def main() -> None:
         "created_at": utc_now(),
         "dry_run": args.dry_run,
         "selected_stages": stages,
+        "checkpoint_root": str(checkpoint_root) if checkpoint_root else None,
         "resume_from_stage": pipeline.get("resume_from_stage"),
         "stop_after_stage": pipeline.get("stop_after_stage"),
         "skip_stages": as_list(pipeline.get("skip_stages")),
@@ -1365,6 +1372,9 @@ def main() -> None:
             "created_at": utc_now(),
             "dry_run": args.dry_run,
             "final_config_yaml": str(args.config),
+            "outputs_dir": str(artifact_root),
+            "artifact_root": str(artifact_root),
+            "checkpoint_root": str(checkpoint_root) if checkpoint_root else None,
             "execution_plan": str(args.execution_plan),
             "selected_stages": stages,
             "completed_stages": completed,

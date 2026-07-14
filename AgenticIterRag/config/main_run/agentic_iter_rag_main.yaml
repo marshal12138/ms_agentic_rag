@@ -56,6 +56,9 @@ runtime:
   # 单次 run 内部产物目录名；实际路径为 ${run_root}/<RUN_NAME>/outputs。
   outputs_dir: outputs
 
+  # pipeline checkpoint 根目录；compiler 会在该目录下创建 <RUN_NAME>/。
+  checkpoint_root: /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/checkpoints/AIR
+
   # 运行名由 compiler 在 runtime 构建；这里保留字段用于审计。
   run_name: null
 

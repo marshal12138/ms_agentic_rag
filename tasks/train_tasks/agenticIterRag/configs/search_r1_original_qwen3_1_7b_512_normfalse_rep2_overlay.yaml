@@ -1,0 +1,15 @@
+main_run:
+  project:
+    experiment_name: agentic_iter_rag_v1_search_r1_qwen3_1_7b_newdata_512_normfalse_rep2
+
+agent_training:
+  stop_after_sub_stage: search_policy_rl
+  force_rerun_sub_stages: [search_policy_rl]
+  reward:
+    type: search_r1_original
+  sub_stages:
+    search_policy_rl:
+      trainer:
+        norm_adv_by_std_in_grpo: false
+        stream_group_max_inflight: 2
+        data_seed: 42

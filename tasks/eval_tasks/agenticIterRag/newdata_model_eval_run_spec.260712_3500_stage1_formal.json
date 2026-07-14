@@ -1,0 +1,43 @@
+{
+  "version": "newdata-model-eval-run-spec-v1",
+  "models": {
+    "search_r1_512": {
+      "role": "search_r1",
+      "scale": 512,
+      "stage": "step8",
+      "runs": [
+        "260712-newdata3500-fastio-search-r1-512-run1"
+      ]
+    },
+    "search_r1_5100": {
+      "role": "search_r1",
+      "scale": 5100,
+      "stage": "step79",
+      "runs": [
+        "260712-newdata3500-fastio-search-r1-5100-run1"
+      ]
+    },
+    "spad_512_stage1": {
+      "role": "spad",
+      "scale": 512,
+      "stage": "stage1_step8",
+      "runs": [
+        "260712-newdata3500-fastio-spad-512-stage1-run1"
+      ]
+    },
+    "spad_5100_stage1": {
+      "role": "spad",
+      "scale": 5100,
+      "stage": "stage1_step79",
+      "runs": [
+        "260712-newdata3500-fastio-spad-5100-stage1-run1"
+      ]
+    }
+  },
+  "comparisons": [
+    ["search_r1_512", "search_r1_5100"],
+    ["spad_512_stage1", "spad_5100_stage1"],
+    ["search_r1_512", "spad_512_stage1"],
+    ["search_r1_5100", "spad_5100_stage1"]
+  ]
+}

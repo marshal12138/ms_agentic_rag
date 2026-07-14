@@ -1,0 +1,36 @@
+{
+  "version": "newdata-model-eval-run-spec-v1",
+  "models": {
+    "base": {
+      "role": "base",
+      "scale": "base",
+      "stage": "base",
+      "runs": ["BASE_RUN_1", "BASE_RUN_2", "BASE_RUN_3"]
+    },
+    "search_r1_512": {
+      "role": "search_r1",
+      "scale": 512,
+      "stage": "step8",
+      "runs": ["SEARCH_R1_512_RUN_1", "SEARCH_R1_512_RUN_2", "SEARCH_R1_512_RUN_3"]
+    },
+    "spad_512_stage1": {
+      "role": "spad",
+      "scale": 512,
+      "stage": "stage1_step8",
+      "runs": ["SPAD_512_STAGE1_RUN_1", "SPAD_512_STAGE1_RUN_2", "SPAD_512_STAGE1_RUN_3"]
+    },
+    "spad_512_stage3": {
+      "role": "spad",
+      "scale": 512,
+      "stage": "stage3_grpo_final",
+      "runs": ["SPAD_512_STAGE3_RUN_1", "SPAD_512_STAGE3_RUN_2", "SPAD_512_STAGE3_RUN_3"]
+    }
+  },
+  "comparisons": [
+    ["base", "search_r1_512"],
+    ["base", "spad_512_stage1"],
+    ["base", "spad_512_stage3"],
+    ["search_r1_512", "spad_512_stage1"],
+    ["spad_512_stage1", "spad_512_stage3"]
+  ]
+}

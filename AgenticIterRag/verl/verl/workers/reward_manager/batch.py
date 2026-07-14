@@ -22,6 +22,23 @@ from verl.workers.reward_manager import register
 from verl.workers.reward_manager.abstract import AbstractRewardManager, RawRewardFn
 
 
+ROLLOUT_EXTRA_KEYS = (
+    "tool_call_details",
+    "messages",
+    "initial_query",
+    "answers",
+    "raw_prompt",
+    "request_id",
+    "trajectory_failure_reason",
+    "trajectory_timeout_s",
+    "turn_scores",
+    "tool_rewards",
+    "json_correct",
+    "one_tool_call_per_assistant",
+    "spad_dev_prefetched_teacher_detail",
+)
+
+
 @register("batch")
 class BatchRewardManager(AbstractRewardManager):
     """
@@ -62,10 +79,26 @@ class BatchRewardManager(AbstractRewardManager):
         ground_truths = [item.non_tensor_batch["reward_model"].get("ground_truth", None) for item in data]
         data_sources = data.non_tensor_batch[self.reward_fn_key]
         rollout_reward_scores = data.non_tensor_batch.get("reward_scores", [{} for _ in range(len(data))])
-        extras = data.non_tensor_batch.get("extra_info", [{} for _ in range(len(data))])
+        raw_extras = data.non_tensor_batch.get("extra_info", [{} for _ in range(len(data))])
+        tool_extra_fields = data.non_tensor_batch.get("tool_extra_fields", [{} for _ in range(len(data))])
+        uids = data.non_tensor_batch.get("uid", [None for _ in range(len(data))])
+        num_turns = data.non_tensor_batch.get("__num_turns__", [None for _ in range(len(data))])
+        extras = []
 
         for i in range(len(data)):
-            extras[i]["rollout_reward_scores"] = rollout_reward_scores[i]
+            extra = dict(raw_extras[i] or {})
+            extra.update(dict(tool_extra_fields[i] or {}))
+            # AgentLoopWorker flattens AgentLoopOutput.extra_fields into the
+            # generated DataProto. Preserve those per-rollout fields for batch
+            # reward functions instead of assuming a nested container exists.
+            for key in ROLLOUT_EXTRA_KEYS:
+                values = data.non_tensor_batch.get(key)
+                if values is not None:
+                    extra[key] = values[i]
+            extra["uid"] = str(uids[i]) if uids[i] is not None else ""
+            extra["num_turns"] = num_turns[i]
+            extra["rollout_reward_scores"] = rollout_reward_scores[i]
+            extras.append(extra)
 
         scores = self.compute_score(
             data_sources=data_sources,

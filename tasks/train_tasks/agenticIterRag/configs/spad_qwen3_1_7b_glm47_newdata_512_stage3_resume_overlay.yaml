@@ -1,0 +1,22 @@
+main_run:
+  project:
+    experiment_name: agentic_iter_rag_v1_spad_qwen3_1_7b_newdata_512_stage3_resume
+
+pipeline:
+  resume_from_stage: train_agent
+  stop_after_stage: train_agent
+  force_rerun_stages: [train_agent]
+
+agent_training:
+  resume_from_sub_stage: answer_distillation
+  stop_after_sub_stage: answer_distillation
+  skip_sub_stages: []
+  force_rerun_sub_stages: [answer_distillation]
+  sub_stages:
+    answer_distillation:
+      inputs:
+        init_actor_checkpoint: /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/checkpoints/AIR/260711-103304-616277-pipeline-agentic_iter_rag_v1_spad_qwen3_1_7b_newdata_512/stages/train_agent/spad_rag/answer_refresh_data/actor_model_hf/global_step_8
+        dataset_manifest: /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/log/agenticIterRag/260711-103304-616277-pipeline-agentic_iter_rag_v1_spad_qwen3_1_7b_newdata_512/outputs/stages/train_agent/spad_rag/answer_refresh_data/answer_distill_dataset_manifest.json
+      phase_order: [grpo]
+      resume_from_phase: grpo
+      stop_after_phase: grpo

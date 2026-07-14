@@ -2,11 +2,11 @@
 # 基于 hard 子集消融结论：
 #   - A2(answer_reward_plus_evidence_hit, w=0.2) 明显优于 answer-only。
 #   - n=8 formal 在 step 1 后 wake_up vLLM rollout 时 NPU OOM。
-#   - 因此正式训练采用已验证稳定的 rollout.n=4，跑完整 hard 子集 1 epoch。
+#   - 因此正式训练采用已验证稳定的 rollout.n=8，跑完整 hard 子集 1 epoch。
 
 main_run:
   project:
-    experiment_name: agentic_iter_rag_v1_stage2_hard_answer_evidence_w02_n4_1epoch
+    experiment_name: agentic_iter_rag_v1_stage2_hard_answer_evidence_w02_n8_1epoch
 
 pipeline:
   resume_from_stage: train_llm_reranker
@@ -40,8 +40,8 @@ reranker_training:
 
       train_batch_size: 64
       ppo_mini_batch_size: 64
-      n_samples_per_prompt: 4
-      val_n_samples_per_prompt: 4
+      n_samples_per_prompt: 8
+      val_n_samples_per_prompt: 8
 
       # hard 子集 396 条，batch=64，drop_last=true，6 step 约等于完整 1 epoch。
       total_training_steps: 6

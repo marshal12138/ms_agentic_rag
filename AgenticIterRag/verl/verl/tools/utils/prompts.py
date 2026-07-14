@@ -113,14 +113,18 @@ GENERAL TOOL USAGE
 Use the search tool whenever additional evidence would help you determine the correct answer.
 If you believe you already have sufficient information to answer correctly, answer directly.
 
+On the first assistant turn for every question, you MUST call search.
+Do NOT answer until after at least one tool result has been provided by the environment.
 You may use multiple search calls across turns.
 
 ============================================================
 SEARCH GUIDELINES
 ============================================================
 
-- Write search queries that are clear and specific to what you want to confirm or find.
-- After receiving evidence, reassess whether you can answer; if not, search again with a refined query.
+- If the evidence is sufficient, answer immediately.
+- Otherwise identify the missing fact or bridge entity and issue a NEW query targeting it.
+- Never repeat or paraphrase a previous query unless the previous search failed.
+- A follow-up query should use newly discovered entities or relations.
 
 ============================================================
 REASONING CONTENT REQUIREMENTS
@@ -317,14 +321,18 @@ GENERAL TOOL USAGE
 Use the search tool whenever additional evidence would help you determine the correct answer.
 If you believe you already have sufficient information to answer correctly, answer directly.
 
+On the first assistant turn for every question, you MUST call search.
+Do NOT answer until after at least one tool result has been provided by the environment.
 You may use multiple search calls across turns.
 
 ============================================================
 SEARCH GUIDELINES
 ============================================================
 
-- Write search queries that are clear and specific to what you want to confirm or find.
-- After receiving evidence, reassess whether you can answer; if not, search again with a refined query.
+- If the evidence is sufficient, answer immediately.
+- Otherwise identify the missing fact or bridge entity and issue a NEW query targeting it.
+- Never repeat or paraphrase a previous query unless the previous search failed.
+- A follow-up query should use newly discovered entities or relations.
 
 ============================================================
 REASONING CONTENT REQUIREMENTS

@@ -4,16 +4,23 @@ from __future__ import annotations
 
 import os
 import json
+import hashlib
 import shlex
 import shutil
 import subprocess
 import time
+from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
 from agentic_iter_rag.agent_training.spad.config import init_actor_model, input_train_files
+from agentic_iter_rag.agent_training.spad.checkpoint_finalizer import finalize_actor_checkpoint
 from agentic_iter_rag.agent_training.spad.data import load_rl_rows, row_gold_answers, row_question
 from agentic_iter_rag.agent_training.spad.manifest import write_records, write_sub_stage_manifest
+from agentic_iter_rag.agent_training.spad.prompts import (
+    DEFAULT_TEACHER_STATUS_PROMPT_VERSION,
+    resolve_teacher_prompt,
+)
 from agentic_iter_rag.agent_training.spad.reward import compute_search_policy_reward
 from agentic_iter_rag.agent_training.spad.service_manager import SpadServiceManager, as_int_list, csv_ids, project_root, repo_root, tail_text
 from agentic_iter_rag.utils.io import write_json, write_yaml
@@ -56,6 +63,79 @@ def _dict_field_overrides(prefix: str, value: dict[str, Any]) -> list[str]:
     return overrides
 
 
+def _reward_type(spad_cfg: dict[str, Any]) -> str:
+    return str((spad_cfg.get("reward") or {}).get("type") or "spad_teacher_f1")
+
+
+def _uses_teacher_reward(spad_cfg: dict[str, Any]) -> bool:
+    return _reward_type(spad_cfg) not in {"search_r1_original", "search_r1_structured"}
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _validate_rollout_manifest(
+    rollout_data_dir: Path,
+    *,
+    require_teacher_audit: bool,
+) -> dict[str, Any]:
+    manifest_path = rollout_data_dir / "manifest.json"
+    if not manifest_path.is_file():
+        raise FileNotFoundError(f"completed training is missing rollout manifest: {manifest_path}")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if not bool(manifest.get("completed")):
+        raise ValueError(f"rollout manifest is incomplete: {manifest_path}")
+    for actual_key, expected_key in (
+        ("actual_step_count", "expected_steps"),
+        ("actual_prompt_count", "expected_prompt_count"),
+        ("actual_group_count", "expected_group_count"),
+        ("actual_rollout_count", "expected_rollout_count"),
+    ):
+        if int(manifest.get(actual_key, -1)) != int(manifest.get(expected_key, -2)):
+            raise ValueError(
+                f"rollout manifest count mismatch {actual_key}={manifest.get(actual_key)} "
+                f"!= {expected_key}={manifest.get(expected_key)}"
+            )
+    field_counts: dict[str, int] = defaultdict(int)
+    for shard in manifest.get("shards") or []:
+        shard_path = Path(str(shard["path"]))
+        if not shard_path.is_file():
+            raise FileNotFoundError(f"rollout shard is missing: {shard_path}")
+        if _sha256_file(shard_path) != str(shard["sha256"]):
+            raise ValueError(f"rollout shard hash mismatch: {shard_path}")
+        with shard_path.open(encoding="utf-8") as handle:
+            line_count = sum(1 for line in handle if line.strip())
+        if line_count != int(shard["record_count"]):
+            raise ValueError(f"rollout shard line count mismatch: {shard_path}")
+        for key, value in (shard.get("field_nonempty_counts") or {}).items():
+            field_counts[str(key)] += int(value)
+    expected_rollouts = int(manifest["expected_rollout_count"])
+    for key in ("input", "output", "gts", "raw_prompt", "assistant_turn_records"):
+        if field_counts.get(key, 0) != expected_rollouts:
+            raise ValueError(
+                f"rollout audit field {key!r} is non-empty for {field_counts.get(key, 0)} "
+                f"of {expected_rollouts} records"
+            )
+    if require_teacher_audit:
+        evidence_records = field_counts.get("search_count", 0)
+        if field_counts.get("tool_call_details", 0) != evidence_records:
+            raise ValueError("tool_call_details are not aligned with non-zero search_count records")
+        if field_counts.get("teacher_messages", 0) != evidence_records:
+            raise ValueError("teacher_messages are not materialized for every rollout with evidence")
+        if int(manifest.get("teacher_called_count", 0)) > field_counts.get("teacher_messages", 0):
+            raise ValueError("teacher calls exceed materialized teacher message records")
+    return {
+        "path": str(manifest_path),
+        "sha256": _sha256_file(manifest_path),
+        "summary": manifest,
+    }
+
+
 def _env_export_overrides(env_vars: dict[str, str]) -> dict[str, str]:
     return {f"+ray_kwargs.ray_init.runtime_env.env_vars.{key}": value for key, value in env_vars.items()}
 
@@ -72,14 +152,40 @@ def _find_latest_checkpoint(output_dir: Path) -> Path:
     return sorted(candidates, key=lambda item: (step_num(item), str(item)))[-1]
 
 
-def _run_shell_script(script_path: Path, log_path: Path, timeout_s: int | None = None) -> dict[str, Any]:
+def _run_shell_script(
+    script_path: Path,
+    log_path: Path,
+    timeout_s: int | None = None,
+    monitored_processes: list[Any] | None = None,
+) -> dict[str, Any]:
     started = time.time()
     log_path.parent.mkdir(parents=True, exist_ok=True)
     command = f"set -o pipefail; bash {_quote(script_path)} 2>&1 | tee {_quote(log_path)}"
     process = subprocess.Popen(["bash", "-lc", command], cwd=str(repo_root()), start_new_session=True)
-    try:
-        return_code = process.wait(timeout=timeout_s)
-    except subprocess.TimeoutExpired:
+    service_error = ""
+    timed_out = False
+    while True:
+        return_code = process.poll()
+        if return_code is not None:
+            break
+        if timeout_s is not None and time.time() - started > float(timeout_s):
+            timed_out = True
+            service_error = f"VERL command timed out after {timeout_s}s"
+            break
+        for managed in monitored_processes or []:
+            managed_rc = managed.poll()
+            if managed_rc is None:
+                continue
+            service_error = (
+                f"monitored service exited during VERL run: {managed.name} "
+                f"return_code={managed_rc} log={managed.log_path}\n{tail_text(managed.log_path)}"
+            )
+            break
+        if service_error:
+            break
+        time.sleep(2.0)
+
+    if process.poll() is None:
         import signal
 
         os.killpg(process.pid, signal.SIGTERM)
@@ -88,7 +194,13 @@ def _run_shell_script(script_path: Path, log_path: Path, timeout_s: int | None =
         except subprocess.TimeoutExpired:
             os.killpg(process.pid, signal.SIGKILL)
             return_code = process.wait(timeout=30)
-    return {"return_code": return_code, "elapsed_s": time.time() - started, "log": str(log_path)}
+    return {
+        "return_code": return_code,
+        "elapsed_s": time.time() - started,
+        "log": str(log_path),
+        "service_error": service_error,
+        "timed_out": timed_out,
+    }
 
 
 def _write_runtime_tool_config(path: Path, *, retrieval_url: str, top_n: int, top_m: int, timeout: int) -> Path:
@@ -104,6 +216,7 @@ def _write_runtime_tool_config(path: Path, *, retrieval_url: str, top_n: int, to
                     "max_retries": 3,
                     "retry_delay": 1.0,
                     "retry_backoff": 2.0,
+                    "fail_fast_on_recall_error": True,
                     "searchTool_final_top_m": top_m,
                     "hit_cutoffs": [1, 3, 5],
                     "tool_score_metric": "hit",
@@ -168,6 +281,8 @@ def _build_verl_plan(
     config: dict[str, Any],
     spad_cfg: dict[str, Any],
     stage_dir: Path,
+    log_dir: Path,
+    checkpoint_dir: Path,
     resource_plan: dict[str, Any],
     teacher_output: dict[str, Any],
     recall_output: dict[str, Any],
@@ -175,16 +290,21 @@ def _build_verl_plan(
     sub_cfg = spad_cfg["sub_stages"]["search_policy_rl"]
     trainer_cfg = dict(sub_cfg.get("trainer") or {})
     rollout_cfg = dict(sub_cfg.get("rollout") or {})
+    teacher_cfg = dict(spad_cfg.get("teacher_answerer") or {})
+    teacher_prompt_version, _ = resolve_teacher_prompt(
+        str(teacher_cfg.get("prompt_version") or DEFAULT_TEACHER_STATUS_PROMPT_VERSION),
+        include_status=True,
+    )
     actor_resource = resource_plan["trainer"]
     actor_gpu_ids = as_int_list(actor_resource["gpu_ids"])
     actor_tp = int(actor_resource.get("tensor_parallel_size") or actor_resource.get("n_gpus_per_node") or len(actor_gpu_ids))
-    output_dir = stage_dir / "actor_model_verl"
+    output_dir = checkpoint_dir / "actor_model_verl"
     if output_dir.exists():
         shutil.rmtree(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     rollout_data_dir = stage_dir / "rollout_data"
     validation_data_dir = stage_dir / "validation_data"
-    runtime_dir = stage_dir / "runtime"
+    runtime_dir = log_dir
     tool_config_path = _write_runtime_tool_config(
         runtime_dir / "spad_search_tool_config.yaml",
         retrieval_url=str(recall_output["retrieval_url"]),
@@ -201,19 +321,51 @@ def _build_verl_plan(
     rollout_n = int(trainer_cfg.get("n_samples_per_prompt", 8))
     train_batch_size = int(trainer_cfg.get("train_batch_size", 64))
     max_model_len = int(trainer_cfg.get("rollout_max_model_len") or (max_prompt_length + max_response_length))
-    total_training_steps = trainer_cfg.get("total_training_steps")
-    if total_training_steps is not None:
-        total_training_steps = int(total_training_steps)
-    teacher_request = dict(spad_cfg.get("teacher_answerer", {}).get("request") or {})
+    configured_total_training_steps = trainer_cfg.get("total_training_steps")
+    total_training_steps = None
+    if configured_total_training_steps is not None:
+        total_training_steps = int(configured_total_training_steps)
+        # SPAD overlays use -1 to mean "formal/full run". VERL expects null for
+        # that behavior; a negative trainer.total_training_steps would skip work.
+        if total_training_steps < 0:
+            total_training_steps = None
+    teacher_request = dict(teacher_cfg.get("request") or {})
     teacher_request["endpoint"] = teacher_output["endpoint"]
     teacher_request["model"] = teacher_output["model"]
     reward_kwargs = {
         "reward_cfg": spad_cfg.get("reward", {}),
         "teacher_request": teacher_request,
+        "teacher_prompt_version": teacher_prompt_version,
         "visible_top_m": int(rollout_cfg.get("visible_top_m", 5)),
         "batch_workers": int(trainer_cfg.get("teacher_batch_workers", 16)),
+        "n_samples_per_prompt": rollout_n,
     }
-    reward_path = project_root() / "agentic_iter_rag" / "agent_training" / "spad" / "rewards" / "search_policy_teacher_reward.py"
+    reward_type = str(spad_cfg.get("reward", {}).get("type") or "")
+    legacy_0710_reward = reward_type == "spad_teacher_f1_0710"
+    current_group_reward = reward_type == "spad_em_teacher_backoff"
+    gold_token_f1_bonus_reward = reward_type == "spad_em_teacher_backoff_gold_token_f1_bonus"
+    dev_group_reward = reward_type == "spad_em_teacher_backoff_dev"
+    reward_module_name = (
+        "search_policy_teacher_reward_0710.py"
+        if legacy_0710_reward
+        else (
+            "search_policy_teacher_reward_gold_match_bonus.py"
+            if gold_token_f1_bonus_reward
+            else (
+                "search_policy_teacher_reward_dev.py"
+                if dev_group_reward
+                else "search_policy_teacher_reward.py"
+            )
+        )
+    )
+    reward_path = (
+        project_root()
+        / "agentic_iter_rag"
+        / "agent_training"
+        / "spad"
+        / "rewards"
+        / reward_module_name
+    )
     agent_loop_config = project_root() / "config" / "spad_search_policy_agent_loop_config.yaml"
     env_vars = {
         "SPAD_TEACHER_ENDPOINT": str(teacher_output["endpoint"]),
@@ -221,25 +373,91 @@ def _build_verl_plan(
         "SPAD_TEACHER_BATCH_WORKERS": str(trainer_cfg.get("teacher_batch_workers", 16)),
         "COSEARCH_ROLLOUT_PROGRESS_INTERVAL": str(trainer_cfg.get("rollout_progress_interval", 60)),
         "COSEARCH_ACTOR_PROGRESS_INTERVAL": str(trainer_cfg.get("actor_progress_interval", 8)),
+        "COSEARCH_TRAJECTORY_TIMEOUT_SECONDS": str(trainer_cfg.get("trajectory_timeout_seconds", "")),
+        "COSEARCH_TURN_MAX_TOKENS": str(rollout_cfg.get("turn_max_tokens", max_response_length)),
     }
+    if legacy_0710_reward:
+        reward_manager = "naive"
+    elif current_group_reward or gold_token_f1_bonus_reward or dev_group_reward:
+        reward_manager = "batch"
+    else:
+        reward_manager = str(trainer_cfg.get("reward_manager") or "naive")
+    stream_group_reward = (
+        False
+        if legacy_0710_reward
+        else bool(trainer_cfg.get("stream_group_reward", reward_manager == "batch"))
+    )
+    if legacy_0710_reward:
+        reward_function_name = "compute_spad_teacher_f1_0710_details"
+        stop_sequences = ["</tool_call>", "<answer>"]
+    elif current_group_reward:
+        reward_function_name = "compute_spad_em_teacher_backoff_batch"
+        stop_sequences = [
+            str(item)
+            for item in rollout_cfg.get("stop_sequences", ["</tool_call>", "</answer>"])
+        ]
+    elif gold_token_f1_bonus_reward:
+        reward_function_name = "compute_spad_em_teacher_backoff_gold_token_f1_bonus_batch"
+        stop_sequences = [
+            str(item)
+            for item in rollout_cfg.get("stop_sequences", ["</tool_call>", "</answer>"])
+        ]
+    elif dev_group_reward:
+        reward_function_name = "compute_spad_em_teacher_backoff_dev"
+        stop_sequences = [
+            str(item)
+            for item in rollout_cfg.get("stop_sequences", ["</tool_call>", "</answer>"])
+        ]
+    else:
+        reward_function_name = (
+            "compute_spad_search_policy_reward_batch"
+            if reward_manager == "batch"
+            else "compute_spad_search_policy_reward_details"
+        )
+        stop_sequences = [
+            str(item)
+            for item in rollout_cfg.get("stop_sequences", ["</tool_call>", "</answer>"])
+        ]
     hydra_overrides: list[str] = [
         _scalar_override("algorithm.adv_estimator", "grpo"),
+        _scalar_override(
+            "algorithm.norm_adv_by_std_in_grpo",
+            bool(trainer_cfg.get("norm_adv_by_std_in_grpo", False)),
+        ),
         _scalar_override("algorithm.use_kl_in_reward", False),
         _scalar_override("critic.enable", False),
         _scalar_override("reward_model.enable", False),
-        _scalar_override("+reward_model.use_reward_loop", True),
-        _scalar_override("reward_model.reward_manager", str(trainer_cfg.get("reward_manager") or "naive")),
+        _scalar_override(
+            "+reward_model.use_reward_loop",
+            dev_group_reward or reward_manager != "batch",
+        ),
+        _scalar_override(
+            "+reward_model.reward_loop_manager",
+            "naive" if dev_group_reward else reward_manager,
+        ),
+        _scalar_override(
+            "+reward_model.stream_group_reward",
+            stream_group_reward,
+        ),
+        _scalar_override(
+            "+reward_model.stream_group_max_inflight",
+            int(trainer_cfg.get("stream_group_max_inflight", 1)),
+        ),
+        _scalar_override("reward_model.reward_manager", reward_manager),
         _list_override("data.train_files", [str(item) for item in train_files]),
         _list_override("data.val_files", [str(item) for item in val_files]),
         _scalar_override("data.train_batch_size", train_batch_size),
         _scalar_override("data.val_batch_size", int(trainer_cfg.get("val_batch_size", config.get("data", {}).get("val_batch_size", 8)))),
         _scalar_override("data.train_max_samples", int(trainer_cfg.get("train_max_samples", config.get("data", {}).get("train_max_samples", -1)))),
         _scalar_override("data.val_max_samples", int(trainer_cfg.get("val_max_samples", config.get("data", {}).get("val_max_samples", 8)))),
+        _scalar_override("data.shuffle", bool(trainer_cfg.get("data_shuffle", True))),
+        _scalar_override("data.seed", int(trainer_cfg.get("data_seed", 42))),
         _scalar_override("data.max_prompt_length", max_prompt_length),
         _scalar_override("data.max_response_length", max_response_length),
         _scalar_override("data.truncation", str(config.get("data", {}).get("truncation", "error"))),
         _scalar_override("data.return_raw_chat", True),
         _scalar_override("data.trust_remote_code", True),
+        _scalar_override("data.dataloader_num_workers", int(trainer_cfg.get("dataloader_num_workers", 0))),
         _scalar_override("+data.apply_chat_template_kwargs.enable_thinking", False),
         _scalar_override("actor_rollout_ref.model.path", init_actor_model(config, spad_cfg)),
         _scalar_override("actor_rollout_ref.model.trust_remote_code", True),
@@ -289,12 +507,20 @@ def _build_verl_plan(
         _scalar_override("actor_rollout_ref.rollout.agent.num_workers", int(trainer_cfg.get("agent_loop_num_workers", 8))),
         _scalar_override("actor_rollout_ref.rollout.agent.default_agent_loop", "spad_search_policy_agent"),
         _scalar_override("actor_rollout_ref.rollout.agent.agent_loop_config_path", str(agent_loop_config)),
-        _list_override("+actor_rollout_ref.rollout.stop", [str(item) for item in rollout_cfg.get("stop_sequences", ["<answer>"])]),
+        _list_override("+actor_rollout_ref.rollout.stop", stop_sequences),
         _scalar_override("+actor_rollout_ref.rollout.include_stop_str_in_output", bool(rollout_cfg.get("include_stop_str_in_output", True))),
         _scalar_override("custom_reward_function.path", str(reward_path)),
-        _scalar_override("custom_reward_function.name", "compute_spad_search_policy_reward_details"),
+        _scalar_override("custom_reward_function.name", reward_function_name),
         _scalar_override("+custom_reward_function.reward_kwargs.visible_top_m", reward_kwargs["visible_top_m"]),
         _scalar_override("+custom_reward_function.reward_kwargs.batch_workers", reward_kwargs["batch_workers"]),
+        _scalar_override(
+            "+custom_reward_function.reward_kwargs.n_samples_per_prompt",
+            reward_kwargs["n_samples_per_prompt"],
+        ),
+        _scalar_override(
+            "+custom_reward_function.reward_kwargs.teacher_prompt_version",
+            reward_kwargs["teacher_prompt_version"],
+        ),
         _scalar_override("trainer.n_gpus_per_node", len(actor_gpu_ids)),
         _scalar_override("trainer.nnodes", int(trainer_cfg.get("nnodes", 1))),
         _scalar_override("trainer.device", str(trainer_cfg.get("device", "npu"))),
@@ -347,26 +573,47 @@ def _run_verl_backend(
     config: dict[str, Any],
     spad_cfg: dict[str, Any],
     stage_dir: Path,
+    log_dir: Path,
+    checkpoint_dir: Path,
     resource_plan: dict[str, Any],
     dry_run: bool,
 ) -> dict[str, Any]:
     sub_cfg = spad_cfg["sub_stages"]["search_policy_rl"]
-    runtime_dir = stage_dir / "runtime"
+    runtime_dir = log_dir
     trainer_cfg = dict(sub_cfg.get("trainer") or {})
     manager = SpadServiceManager(runtime_dir=runtime_dir / "services", verl_root=Path(str(trainer_cfg.get("verl_root") or project_root() / "verl")))
     service_outputs: dict[str, Any] = {}
     try:
+        uses_teacher_reward = _uses_teacher_reward(spad_cfg)
         teacher_resource = resource_plan.get("services", {}).get("teacher_answerer", {})
         recall_resource = resource_plan.get("services", {}).get("recall", {})
+        skipped_teacher_output = {"status": "skipped", "reason": f"reward_type={_reward_type(spad_cfg)}", "endpoint": "", "model": ""}
         if dry_run:
-            service_outputs = {"teacher": {"status": "planned"}, "recall": {"status": "planned"}}
-            teacher_output = {"endpoint": teacher_resource.get("endpoint", "http://127.0.0.1:8067/v1/chat/completions"), "model": teacher_resource.get("served_model_name", "GLM-4.7-Flash")}
+            service_outputs = {
+                "teacher": (
+                    {"status": "planned"}
+                    if uses_teacher_reward
+                    else {"status": "skipped", "reason": f"reward_type={_reward_type(spad_cfg)}"}
+                ),
+                "recall": {"status": "planned"},
+            }
+            teacher_output = (
+                {
+                    "endpoint": teacher_resource.get("endpoint", "http://127.0.0.1:8067/v1/chat/completions"),
+                    "model": teacher_resource.get("served_model_name", "GLM-4.7-Flash"),
+                }
+                if uses_teacher_reward
+                else skipped_teacher_output
+            )
             recall_output = {"retrieval_url": recall_resource.get("retrieval_service_url", "http://127.0.0.1:8130/retrieve")}
         else:
-            service_outputs["teacher"] = manager.start_teacher(
-                teacher_cfg=spad_cfg["teacher_answerer"],
-                resource_cfg=teacher_resource,
-            )
+            if uses_teacher_reward:
+                service_outputs["teacher"] = manager.start_teacher(
+                    teacher_cfg=spad_cfg["teacher_answerer"],
+                    resource_cfg=teacher_resource,
+                )
+            else:
+                service_outputs["teacher"] = skipped_teacher_output
             service_outputs["recall"] = manager.start_recall(
                 recall_cfg=recall_resource,
                 final_top_n=int(config.get("infer_runtime", {}).get("retriever", {}).get("recall_final_top_n") or 50),
@@ -378,6 +625,8 @@ def _run_verl_backend(
             config=config,
             spad_cfg=spad_cfg,
             stage_dir=stage_dir,
+            log_dir=log_dir,
+            checkpoint_dir=checkpoint_dir,
             resource_plan=resource_plan,
             teacher_output=teacher_output,
             recall_output=recall_output,
@@ -390,25 +639,62 @@ def _run_verl_backend(
         )
         if dry_run:
             checkpoint = str(Path(plan["output_dir"]))
+            rollout_manifest = {
+                "status": "planned",
+                "path": str(Path(plan["rollout_data_dir"]) / "manifest.json"),
+            }
+            finalizer = finalize_actor_checkpoint(
+                checkpoint,
+                hf_root=checkpoint_dir / "actor_model_hf",
+                log_dir=runtime_dir,
+                dry_run=True,
+            )
             status = "planned"
             run_info = None
         else:
             log_path = runtime_dir / "verl_train.log"
-            run_info = _run_shell_script(script_path, log_path, timeout_s=trainer_cfg.get("timeout_seconds"))
+            run_info = _run_shell_script(
+                script_path,
+                log_path,
+                timeout_s=trainer_cfg.get("timeout_seconds"),
+                monitored_processes=manager.processes,
+            )
             if int(run_info["return_code"]) != 0:
-                raise RuntimeError(f"SPAD Stage 1 VERL exited with code {run_info['return_code']}; log={log_path}\n{tail_text(log_path)}")
+                service_error = str(run_info.get("service_error") or "")
+                service_context = f"\n{service_error}" if service_error else ""
+                raise RuntimeError(
+                    f"SPAD Stage 1 VERL exited with code {run_info['return_code']}; log={log_path}"
+                    f"{service_context}\n{tail_text(log_path)}"
+                )
+            rollout_manifest = _validate_rollout_manifest(
+                Path(plan["rollout_data_dir"]),
+                require_teacher_audit=_reward_type(spad_cfg)
+                in {
+                    "spad_em_teacher_backoff",
+                    "spad_em_teacher_backoff_gold_token_f1_bonus",
+                },
+            )
             checkpoint = str(_find_latest_checkpoint(Path(plan["output_dir"])))
+            finalizer = finalize_actor_checkpoint(
+                checkpoint,
+                hf_root=checkpoint_dir / "actor_model_hf",
+                log_dir=runtime_dir,
+            )
             status = "completed"
         outputs = {
             "status": status,
             "backend": "verl",
             "init_actor_model": init_actor_model(config, spad_cfg),
             "actor_checkpoint": checkpoint,
+            "raw_actor_checkpoint": checkpoint,
+            "hf_actor_checkpoint": finalizer["hf_actor_checkpoint"],
+            "checkpoint_finalizer": finalizer,
             "verl_command_plan": str(runtime_dir / "verl_command_plan.json"),
             "verl_launch_script": str(script_path),
             "runtime_dir": str(runtime_dir),
             "rollout_jsonl": str(Path(plan["rollout_data_dir"])),
             "reward_jsonl": str(Path(plan["rollout_data_dir"])),
+            "rollout_manifest": rollout_manifest,
             "service_outputs": service_outputs,
             "run_info": run_info,
             "resource_plan": resource_plan,
@@ -426,6 +712,8 @@ def run_search_policy_rl(
     config: dict[str, Any],
     spad_cfg: dict[str, Any],
     stage_dir: Path,
+    log_dir: Path,
+    checkpoint_dir: Path,
     resource_plan: dict[str, Any],
     dry_run: bool,
 ) -> dict[str, Any]:
@@ -434,7 +722,9 @@ def run_search_policy_rl(
     sub_cfg = spad_cfg["sub_stages"]["search_policy_rl"]
     backend = str(sub_cfg.get("backend") or spad_cfg.get("default_backend") or "smoke")
     stage_dir.mkdir(parents=True, exist_ok=True)
-    checkpoint_dir = stage_dir / f"actor_checkpoint_{backend}"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    checkpoint_path = checkpoint_dir / f"actor_checkpoint_{backend}"
     rollout_jsonl = stage_dir / "rollout_smoke.jsonl"
     reward_jsonl = stage_dir / "reward_smoke.jsonl"
     if backend == "verl":
@@ -442,6 +732,8 @@ def run_search_policy_rl(
             config=config,
             spad_cfg=spad_cfg,
             stage_dir=stage_dir,
+            log_dir=log_dir,
+            checkpoint_dir=checkpoint_dir,
             resource_plan=resource_plan,
             dry_run=dry_run,
         )
@@ -449,9 +741,10 @@ def run_search_policy_rl(
         outputs = {
             "status": "planned",
             "backend": backend,
-            "actor_checkpoint": str(checkpoint_dir),
+            "actor_checkpoint": str(checkpoint_path),
             "rollout_jsonl": str(rollout_jsonl),
             "reward_jsonl": str(reward_jsonl),
+            "runtime_dir": str(log_dir),
             "resource_plan": resource_plan,
         }
         outputs["manifest"] = str(stage_dir / "manifest.json")
@@ -490,8 +783,8 @@ def run_search_policy_rl(
         )
         reward_records.append({"index": index, "question": question, **reward})
 
-    checkpoint_dir.mkdir(parents=True, exist_ok=True)
-    (checkpoint_dir / "README.txt").write_text(
+    checkpoint_path.mkdir(parents=True, exist_ok=True)
+    (checkpoint_path / "README.txt").write_text(
         "SPAD-RAG Stage 1 smoke checkpoint placeholder. Real actor training requires backend=verl.\n",
         encoding="utf-8",
     )
@@ -502,9 +795,10 @@ def run_search_policy_rl(
         "backend": backend,
         "sample_count": len(rows),
         "init_actor_model": init_actor_model(config, spad_cfg),
-        "actor_checkpoint": str(checkpoint_dir),
+        "actor_checkpoint": str(checkpoint_path),
         "rollout_jsonl": str(rollout_jsonl),
         "reward_jsonl": str(reward_jsonl),
+        "runtime_dir": str(log_dir),
         "resource_plan": resource_plan,
         "warning": "smoke backend does not update actor parameters",
     }

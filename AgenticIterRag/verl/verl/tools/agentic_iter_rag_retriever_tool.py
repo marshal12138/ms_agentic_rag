@@ -97,6 +97,9 @@ class AgenticIterRagRetrieverTool(BaseTool):
         self.max_retries = int(_require_config(config, "max_retries"))
         self.retry_delay = float(_require_config(config, "retry_delay"))
         self.retry_backoff = float(_require_config(config, "retry_backoff"))
+        self.fail_fast_on_recall_error = _as_bool(
+            config.get("fail_fast_on_recall_error", os.getenv("AGENTIC_ITER_RAG_FAIL_FAST_RECALL_ERROR", "0"))
+        )
 
         ranker_config = dict(config.get("ranker") or {})
         self.ranker_enabled = _as_bool(_require_config(config, "ranker_enabled"))
@@ -167,6 +170,8 @@ class AgenticIterRagRetrieverTool(BaseTool):
             recall_docs = await self._call_retrieval_api(query, top_n)
         except Exception as exc:
             logger.error(f"Recall retriever failed for query {query[:50]!r}: {exc}")
+            if self.fail_fast_on_recall_error:
+                raise RuntimeError(f"fatal_recall_error: {exc}") from exc
             metrics["search_tool_error"] = True
             metrics["search_tool_error_reason"] = "recall_error"
             metrics["recall_failed"] = True

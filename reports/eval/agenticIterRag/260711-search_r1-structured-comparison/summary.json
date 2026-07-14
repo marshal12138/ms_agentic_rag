@@ -1,0 +1,1265 @@
+{
+  "data_path": "/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/data/AgenticIterRag/structured_answer/260711a_search_r1_512_350/search_r1_structured.eval.parquet",
+  "data_sha256": "ce01777aabcbfae4e48343b09fc76bb6f043f500177a8f51df039beea47453db",
+  "records_path": "/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/reports/eval/agenticIterRag/260711-search_r1-structured-comparison/records.jsonl",
+  "records_sha256": "0963365c027df947013a9fe36207fe02214b4afb53fe0375f9b9c4b70cf13380",
+  "repeat_aggregate": {
+    "base": {
+      "answer_group_f1_mean": 0.17939452723042804,
+      "answer_group_f1_std": 0.0046908748146171795,
+      "answer_group_recall_mean": 0.10721247563352827,
+      "answer_group_recall_std": 0.009399269747556485,
+      "legacy_em_mean": 0.10380952380952381,
+      "legacy_em_std": 0.009184429296183764,
+      "legacy_f1_mean": 0.17919603351876365,
+      "legacy_f1_std": 0.0036988806116898796,
+      "run_count": 3,
+      "structured_em_mean": 0.10623781676413253,
+      "structured_em_std": 0.009399269747556485
+    },
+    "legacy_search_r1": {
+      "answer_group_f1_mean": 0.19561922751401686,
+      "answer_group_f1_std": 0.002135260772848414,
+      "answer_group_recall_mean": 0.13767056530214425,
+      "answer_group_recall_std": 0.0029239766081871343,
+      "legacy_em_mean": 0.1361904761904762,
+      "legacy_em_std": 0.004364357804719858,
+      "legacy_f1_mean": 0.1995293019769492,
+      "legacy_f1_std": 0.003734944782463543,
+      "run_count": 3,
+      "structured_em_mean": 0.13450292397660818,
+      "structured_em_std": 0.0029239766081871343
+    },
+    "structured_search_r1": {
+      "answer_group_f1_mean": 0.2042379409490552,
+      "answer_group_f1_std": 0.004482089704754858,
+      "answer_group_recall_mean": 0.14449317738791423,
+      "answer_group_recall_std": 0.004466448045765925,
+      "legacy_em_mean": 0.13904761904761906,
+      "legacy_em_std": 0.004364357804719846,
+      "legacy_f1_mean": 0.20671659493068184,
+      "legacy_f1_std": 0.004643065955602454,
+      "run_count": 3,
+      "structured_em_mean": 0.14132553606237816,
+      "structured_em_std": 0.004466448045765925
+    }
+  },
+  "runs": {
+    "base_run1": {
+      "by_answer_semantics": {
+        "alias_or": {
+          "answer_group_f1": 0.21009020530297126,
+          "answer_group_recall": 0.13829787234042554,
+          "legacy_em": 0.13829787234042554,
+          "legacy_f1": 0.21009020530297126,
+          "n": 94,
+          "structured_em": 0.13829787234042554,
+          "structured_n": 94
+        },
+        "ambiguous": {
+          "answer_group_f1": 0.0,
+          "answer_group_recall": 0.0,
+          "legacy_em": 0.0,
+          "legacy_f1": 0.05630970336852689,
+          "n": 9,
+          "structured_em": 0.0,
+          "structured_n": 1
+        },
+        "contaminated": {
+          "answer_group_f1": 0.22864774114774114,
+          "answer_group_recall": 0.15,
+          "legacy_em": 0.175,
+          "legacy_f1": 0.24094932844932843,
+          "n": 40,
+          "structured_em": 0.15,
+          "structured_n": 40
+        },
+        "multi_slot": {
+          "answer_group_f1": 0.11111111111111112,
+          "answer_group_recall": 0.25,
+          "legacy_em": 0.0,
+          "legacy_f1": 0.08522727272727273,
+          "n": 4,
+          "structured_em": 0.25,
+          "structured_n": 4
+        },
+        "required_set": {
+          "answer_group_f1": 0.09876543209876543,
+          "answer_group_recall": 0.1111111111111111,
+          "legacy_em": 0.0,
+          "legacy_f1": 0.14035087719298248,
+          "n": 3,
+          "structured_em": 0.0,
+          "structured_n": 3
+        },
+        "single": {
+          "answer_group_f1": 0.16779137728886495,
+          "answer_group_recall": 0.1,
+          "legacy_em": 0.1,
+          "legacy_f1": 0.16779137728886495,
+          "n": 200,
+          "structured_em": 0.1,
+          "structured_n": 200
+        }
+      },
+      "by_data_source": {
+        "2wikimultihopqa": {
+          "answer_group_f1": 0.14206608833727477,
+          "answer_group_recall": 0.08,
+          "legacy_em": 0.08,
+          "legacy_f1": 0.14206608833727477,
+          "n": 50,
+          "structured_em": 0.08,
+          "structured_n": 50
+        },
+        "bamboogle": {
+          "answer_group_f1": 0.2182639089870211,
+          "answer_group_recall": 0.12,
+          "legacy_em": 0.12,
+          "legacy_f1": 0.2182639089870211,
+          "n": 50,
+          "structured_em": 0.12,
+          "structured_n": 50
+        },
+        "hotpotqa": {
+          "answer_group_f1": 0.1050259991216513,
+          "answer_group_recall": 0.04,
+          "legacy_em": 0.04,
+          "legacy_f1": 0.1050259991216513,
+          "n": 50,
+          "structured_em": 0.04,
+          "structured_n": 50
+        },
+        "musique": {
+          "answer_group_f1": 0.12029047619047618,
+          "answer_group_recall": 0.1,
+          "legacy_em": 0.1,
+          "legacy_f1": 0.12029047619047618,
+          "n": 50,
+          "structured_em": 0.1,
+          "structured_n": 50
+        },
+        "nq": {
+          "answer_group_f1": 0.18523216662751546,
+          "answer_group_recall": 0.12403100775193798,
+          "legacy_em": 0.08,
+          "legacy_f1": 0.1698598295409441,
+          "n": 50,
+          "structured_em": 0.11627906976744186,
+          "structured_n": 43
+        },
+        "popqa": {
+          "answer_group_f1": 0.19146320346320347,
+          "answer_group_recall": 0.12,
+          "legacy_em": 0.12,
+          "legacy_f1": 0.19146320346320347,
+          "n": 50,
+          "structured_em": 0.12,
+          "structured_n": 50
+        },
+        "triviaqa": {
+          "answer_group_f1": 0.3341415953660852,
+          "answer_group_recall": 0.24489795918367346,
+          "legacy_em": 0.26,
+          "legacy_f1": 0.3373000333000333,
+          "n": 50,
+          "structured_em": 0.24489795918367346,
+          "structured_n": 49
+        }
+      },
+      "overall": {
+        "answer_group_f1": 0.18477603842954002,
+        "answer_group_recall": 0.1179337231968811,
+        "legacy_em": 0.11428571428571428,
+        "legacy_f1": 0.1834670769915149,
+        "n": 350,
+        "structured_em": 0.11695906432748537,
+        "structured_n": 342
+      },
+      "task_name": "260710-qwen17_base_reval3_run1_search_eval_350",
+      "trace_path": "/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/log/eval/agenticIterRag/260710-qwen17_base_reval3_run1_search_eval_350/trace/traces.jsonl",
+      "trace_sha256": "aed0aa6b3f6a7563667dc3d183447ddd9fdae271542169901b91f0e21748c0b3"
+    },
+    "base_run2": {
+      "by_answer_semantics": {
+        "alias_or": {
+          "answer_group_f1": 0.20166246283267558,
+          "answer_group_recall": 0.11702127659574468,
+          "legacy_em": 0.11702127659574468,
+          "legacy_f1": 0.20166246283267558,
+          "n": 94,
+          "structured_em": 0.11702127659574468,
+          "structured_n": 94
+        },
+        "ambiguous": {
+          "answer_group_f1": 0.0,
+          "answer_group_recall": 0.0,
+          "legacy_em": 0.0,
+          "legacy_f1": 0.05630970336852689,
+          "n": 9,
+          "structured_em": 0.0,
+          "structured_n": 1
+        },
+        "contaminated": {
+          "answer_group_f1": 0.26486291486291486,
+          "answer_group_recall": 0.175,
+          "legacy_em": 0.2,
+          "legacy_f1": 0.2838418525918526,
+          "n": 40,
+          "structured_em": 0.175,
+          "structured_n": 40
+        },
+        "multi_slot": {
+          "answer_group_f1": 0.11111111111111112,
+          "answer_group_recall": 0.25,
+          "legacy_em": 0.0,
+          "legacy_f1": 0.08522727272727273,
+          "n": 4,
+          "structured_em": 0.25,
+          "structured_n": 4
+        },
+        "required_set": {
+          "answer_group_f1": 0.09876543209876543,
+          "answer_group_recall": 0.1111111111111111,
+          "legacy_em": 0.0,
+          "legacy_f1": 0.1611842105263158,
+          "n": 3,
+          "structured_em": 0.0,
+          "structured_n": 3
+        },
+        "single": {
+          "answer_group_f1": 0.15161678671569978,
+          "answer_group_recall": 0.08,
+          "legacy_em": 0.08,
+          "legacy_f1": 0.15161678671569978,
+          "n": 200,
+          "structured_em": 0.08,
+          "structured_n": 200
+        }
+      },
+      "by_data_source": {
+        "2wikimultihopqa": {
+          "answer_group_f1": 0.16752136752136754,
+          "answer_group_recall": 0.1,
+          "legacy_em": 0.1,
+          "legacy_f1": 0.16752136752136754,
+          "n": 50,
+          "structured_em": 0.1,
+          "structured_n": 50
+        },
+        "bamboogle": {
+          "answer_group_f1": 0.1815945165945166,
+          "answer_group_recall": 0.1,
+          "legacy_em": 0.1,
+          "legacy_f1": 0.1815945165945166,
+          "n": 50,
+          "structured_em": 0.1,
+          "structured_n": 50
+        },
+        "hotpotqa": {
+          "answer_group_f1": 0.10291317860883079,
+          "answer_group_recall": 0.02,
+          "legacy_em": 0.02,
+          "legacy_f1": 0.10291317860883079,
+          "n": 50,
+          "structured_em": 0.02,
+          "structured_n": 50
+        },
+        "musique": {
+          "answer_group_f1": 0.10349047619047619,
+          "answer_group_recall": 0.08,
+          "legacy_em": 0.08,
+          "legacy_f1": 0.10349047619047619,
+          "n": 50,
+          "structured_em": 0.08,
+          "structured_n": 50
+        },
+        "nq": {
+          "answer_group_f1": 0.17699699095047933,
+          "answer_group_recall": 0.10077519379844961,
+          "legacy_em": 0.06,
+          "legacy_f1": 0.16402757845869304,
+          "n": 50,
+          "structured_em": 0.09302325581395349,
+          "structured_n": 43
+        },
+        "popqa": {
+          "answer_group_f1": 0.19146320346320347,
+          "answer_group_recall": 0.12,
+          "legacy_em": 0.12,
+          "legacy_f1": 0.19146320346320347,
+          "n": 50,
+          "structured_em": 0.12,
+          "structured_n": 50
+        },
+        "triviaqa": {
+          "answer_group_f1": 0.31948731540568276,
+          "answer_group_recall": 0.20408163265306123,
+          "legacy_em": 0.22,
+          "legacy_f1": 0.3282807192807193,
+          "n": 50,
+          "structured_em": 0.20408163265306123,
+          "structured_n": 49
+        }
+      },
+      "overall": {
+        "answer_group_f1": 0.17723650931189705,
+        "answer_group_recall": 0.10331384015594543,
+        "legacy_em": 0.1,
+        "legacy_f1": 0.17704157715968669,
+        "n": 350,
+        "structured_em": 0.1023391812865497,
+        "structured_n": 342
+      },
+      "task_name": "260710-qwen17_base_reval3_run2_search_eval_350",
+      "trace_path": "/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/log/eval/agenticIterRag/260710-qwen17_base_reval3_run2_search_eval_350/trace/traces.jsonl",
+      "trace_sha256": "12abf72af8d13945b4fd0ee72c8b9023ef3a35376b7671d1e3e83f2e909ef59c"
+    },
+    "base_run3": {
+      "by_answer_semantics": {
+        "alias_or": {
+          "answer_group_f1": 0.19414073205297955,
+          "answer_group_recall": 0.10638297872340426,
+          "legacy_em": 0.10638297872340426,
+          "legacy_f1": 0.19414073205297955,
+          "n": 94,
+          "structured_em": 0.10638297872340426,
+          "structured_n": 94
+        },
+        "ambiguous": {
+          "answer_group_f1": 0.0,
+          "answer_group_recall": 0.0,
+          "legacy_em": 0.0,
+          "legacy_f1": 0.05630970336852689,
+          "n": 9,
+          "structured_em": 0.0,
+          "structured_n": 1
+        },
+        "contaminated": {
+          "answer_group_f1": 0.1933885558885559,
+          "answer_group_recall": 0.1,
+          "legacy_em": 0.125,
+          "legacy_f1": 0.2214772244663549,
+          "n": 40,
+          "structured_em": 0.1,
+          "structured_n": 40
+        },
+        "multi_slot": {
+          "answer_group_f1": 0.11111111111111112,
+          "answer_group_recall": 0.25,
+          "legacy_em": 0.0,
+          "legacy_f1": 0.10416666666666666,
+          "n": 4,
+          "structured_em": 0.25,
+          "structured_n": 4
+        },
+        "required_set": {
+          "answer_group_f1": 0.09876543209876543,
+          "answer_group_recall": 0.1111111111111111,
+          "legacy_em": 0.0,
+          "legacy_f1": 0.14035087719298248,
+          "n": 3,
+          "structured_em": 0.0,
+          "structured_n": 3
+        },
+        "single": {
+          "answer_group_f1": 0.16762490910792313,
+          "answer_group_recall": 0.095,
+          "legacy_em": 0.095,
+          "legacy_f1": 0.16762490910792313,
+          "n": 200,
+          "structured_em": 0.095,
+          "structured_n": 200
+        }
+      },
+      "by_data_source": {
+        "2wikimultihopqa": {
+          "answer_group_f1": 0.11390440505931243,
+          "answer_group_recall": 0.04,
+          "legacy_em": 0.04,
+          "legacy_f1": 0.11390440505931243,
+          "n": 50,
+          "structured_em": 0.04,
+          "structured_n": 50
+        },
+        "bamboogle": {
+          "answer_group_f1": 0.21350756007277746,
+          "answer_group_recall": 0.12,
+          "legacy_em": 0.12,
+          "legacy_f1": 0.21350756007277746,
+          "n": 50,
+          "structured_em": 0.12,
+          "structured_n": 50
+        },
+        "hotpotqa": {
+          "answer_group_f1": 0.10469872639437856,
+          "answer_group_recall": 0.04,
+          "legacy_em": 0.04,
+          "legacy_f1": 0.10469872639437856,
+          "n": 50,
+          "structured_em": 0.04,
+          "structured_n": 50
+        },
+        "musique": {
+          "answer_group_f1": 0.12179047619047619,
+          "answer_group_recall": 0.1,
+          "legacy_em": 0.1,
+          "legacy_f1": 0.1252687370600414,
+          "n": 50,
+          "structured_em": 0.1,
+          "structured_n": 50
+        },
+        "nq": {
+          "answer_group_f1": 0.20830005481168273,
+          "answer_group_recall": 0.12403100775193798,
+          "legacy_em": 0.08,
+          "legacy_f1": 0.19121336489447946,
+          "n": 50,
+          "structured_em": 0.11627906976744186,
+          "structured_n": 43
+        },
+        "popqa": {
+          "answer_group_f1": 0.20257431457431457,
+          "answer_group_recall": 0.14,
+          "legacy_em": 0.14,
+          "legacy_f1": 0.20257431457431457,
+          "n": 50,
+          "structured_em": 0.14,
+          "structured_n": 50
+        },
+        "triviaqa": {
+          "answer_group_f1": 0.27489422733433383,
+          "answer_group_recall": 0.14285714285714285,
+          "legacy_em": 0.16,
+          "legacy_f1": 0.28838901678032114,
+          "n": 50,
+          "structured_em": 0.14285714285714285,
+          "structured_n": 49
+        }
+      },
+      "overall": {
+        "answer_group_f1": 0.176171033949847,
+        "answer_group_recall": 0.10038986354775829,
+        "legacy_em": 0.09714285714285714,
+        "legacy_f1": 0.1770794464050893,
+        "n": 350,
+        "structured_em": 0.09941520467836257,
+        "structured_n": 342
+      },
+      "task_name": "260710-qwen17_base_reval3_run3_search_eval_350",
+      "trace_path": "/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/log/eval/agenticIterRag/260710-qwen17_base_reval3_run3_search_eval_350/trace/traces.jsonl",
+      "trace_sha256": "57d7c2c444b43d16a30d4ce71e4ce1b456aa0ba2a1ddb6354a5e7b126b1b441b"
+    },
+    "legacy_search_r1_run1": {
+      "by_answer_semantics": {
+        "alias_or": {
+          "answer_group_f1": 0.204097142019545,
+          "answer_group_recall": 0.13829787234042554,
+          "legacy_em": 0.13829787234042554,
+          "legacy_f1": 0.204097142019545,
+          "n": 94,
+          "structured_em": 0.13829787234042554,
+          "structured_n": 94
+        },
+        "ambiguous": {
+          "answer_group_f1": 0.125,
+          "answer_group_recall": 0.0,
+          "legacy_em": 0.1111111111111111,
+          "legacy_f1": 0.27696408529741867,
+          "n": 9,
+          "structured_em": 0.0,
+          "structured_n": 1
+        },
+        "contaminated": {
+          "answer_group_f1": 0.3651587301587301,
+          "answer_group_recall": 0.275,
+          "legacy_em": 0.3,
+          "legacy_f1": 0.38697857697857696,
+          "n": 40,
+          "structured_em": 0.275,
+          "structured_n": 40
+        },
+        "multi_slot": {
+          "answer_group_f1": 0.11764705882352941,
+          "answer_group_recall": 0.25,
+          "legacy_em": 0.0,
+          "legacy_f1": 0.10833333333333334,
+          "n": 4,
+          "structured_em": 0.25,
+          "structured_n": 4
+        },
+        "required_set": {
+          "answer_group_f1": 0.2458242556281772,
+          "answer_group_recall": 0.3611111111111111,
+          "legacy_em": 0.0,
+          "legacy_f1": 0.21442495126705655,
+          "n": 3,
+          "structured_em": 0.0,
+          "structured_n": 3
+        },
+        "single": {
+          "answer_group_f1": 0.15515133477633478,
+          "answer_group_recall": 0.1,
+          "legacy_em": 0.1,
+          "legacy_f1": 0.15515133477633478,
+          "n": 200,
+          "structured_em": 0.1,
+          "structured_n": 200
+        }
+      },
+      "by_data_source": {
+        "2wikimultihopqa": {
+          "answer_group_f1": 0.07735435435435435,
+          "answer_group_recall": 0.02,
+          "legacy_em": 0.02,
+          "legacy_f1": 0.07735435435435435,
+          "n": 50,
+          "structured_em": 0.02,
+          "structured_n": 50
+        },
+        "bamboogle": {
+          "answer_group_f1": 0.1295909090909091,
+          "answer_group_recall": 0.08,
+          "legacy_em": 0.08,
+          "legacy_f1": 0.1295909090909091,
+          "n": 50,
+          "structured_em": 0.08,
+          "structured_n": 50
+        },
+        "hotpotqa": {
+          "answer_group_f1": 0.1028989898989899,
+          "answer_group_recall": 0.06,
+          "legacy_em": 0.06,
+          "legacy_f1": 0.1028989898989899,
+          "n": 50,
+          "structured_em": 0.06,
+          "structured_n": 50
+        },
+        "musique": {
+          "answer_group_f1": 0.13190476190476189,
+          "answer_group_recall": 0.08,
+          "legacy_em": 0.08,
+          "legacy_f1": 0.13190476190476189,
+          "n": 50,
+          "structured_em": 0.08,
+          "structured_n": 50
+        },
+        "nq": {
+          "answer_group_f1": 0.2943307250078796,
+          "answer_group_recall": 0.2112403100775194,
+          "legacy_em": 0.16,
+          "legacy_f1": 0.29784890255942886,
+          "n": 50,
+          "structured_em": 0.18604651162790697,
+          "structured_n": 43
+        },
+        "popqa": {
+          "answer_group_f1": 0.2118095238095238,
+          "answer_group_recall": 0.18,
+          "legacy_em": 0.18,
+          "legacy_f1": 0.2118095238095238,
+          "n": 50,
+          "structured_em": 0.18,
+          "structured_n": 50
+        },
+        "triviaqa": {
+          "answer_group_f1": 0.4249114364360463,
+          "answer_group_recall": 0.32653061224489793,
+          "legacy_em": 0.34,
+          "legacy_f1": 0.43386908516320283,
+          "n": 50,
+          "structured_em": 0.32653061224489793,
+          "structured_n": 49
+        }
+      },
+      "overall": {
+        "answer_group_f1": 0.1934351126129592,
+        "answer_group_recall": 0.13474658869395711,
+        "legacy_em": 0.13142857142857142,
+        "legacy_f1": 0.1978966466830244,
+        "n": 350,
+        "structured_em": 0.13157894736842105,
+        "structured_n": 342
+      },
+      "task_name": "260710-search_r1_original_qwen17_latest_gs8_reval3_run1_search_eval_350",
+      "trace_path": "/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/log/eval/agenticIterRag/260710-search_r1_original_qwen17_latest_gs8_reval3_run1_search_eval_350/trace/traces.jsonl",
+      "trace_sha256": "5deb8b928717742173dbbfe5250cfe34681431091a2938d7a55f5a53bbefcbf3"
+    },
+    "legacy_search_r1_run2": {
+      "by_answer_semantics": {
+        "alias_or": {
+          "answer_group_f1": 0.2140811316343231,
+          "answer_group_recall": 0.14893617021276595,
+          "legacy_em": 0.14893617021276595,
+          "legacy_f1": 0.2140811316343231,
+          "n": 94,
+          "structured_em": 0.14893617021276595,
+          "structured_n": 94
+        },
+        "ambiguous": {
+          "answer_group_f1": 0.0,
+          "answer_group_recall": 0.0,
+          "legacy_em": 0.2222222222222222,
+          "legacy_f1": 0.3519640852974186,
+          "n": 9,
+          "structured_em": 0.0,
+          "structured_n": 1
+        },
+        "contaminated": {
+          "answer_group_f1": 0.3926587301587302,
+          "answer_group_recall": 0.3,
+          "legacy_em": 0.325,
+          "legacy_f1": 0.4053876678876679,
+          "n": 40,
+          "structured_em": 0.3,
+          "structured_n": 40
+        },
+        "multi_slot": {
+          "answer_group_f1": 0.0,
+          "answer_group_recall": 0.0,
+          "legacy_em": 0.0,
+          "legacy_f1": 0.03846153846153846,
+          "n": 4,
+          "structured_em": 0.0,
+          "structured_n": 4
+        },
+        "required_set": {
+          "answer_group_f1": 0.23901284651791752,
+          "answer_group_recall": 0.3611111111111111,
+          "legacy_em": 0.0,
+          "legacy_f1": 0.20105820105820105,
+          "n": 3,
+          "structured_em": 0.0,
+          "structured_n": 3
+        },
+        "single": {
+          "answer_group_f1": 0.15533539588430892,
+          "answer_group_recall": 0.1,
+          "legacy_em": 0.1,
+          "legacy_f1": 0.15533539588430892,
+          "n": 200,
+          "structured_em": 0.1,
+          "structured_n": 200
+        }
+      },
+      "by_data_source": {
+        "2wikimultihopqa": {
+          "answer_group_f1": 0.09515873015873016,
+          "answer_group_recall": 0.04,
+          "legacy_em": 0.04,
+          "legacy_f1": 0.09515873015873016,
+          "n": 50,
+          "structured_em": 0.04,
+          "structured_n": 50
+        },
+        "bamboogle": {
+          "answer_group_f1": 0.18617852437417653,
+          "answer_group_recall": 0.12,
+          "legacy_em": 0.12,
+          "legacy_f1": 0.18617852437417653,
+          "n": 50,
+          "structured_em": 0.12,
+          "structured_n": 50
+        },
+        "hotpotqa": {
+          "answer_group_f1": 0.096,
+          "answer_group_recall": 0.06,
+          "legacy_em": 0.06,
+          "legacy_f1": 0.096,
+          "n": 50,
+          "structured_em": 0.06,
+          "structured_n": 50
+        },
+        "musique": {
+          "answer_group_f1": 0.07271062271062272,
+          "answer_group_recall": 0.02,
+          "legacy_em": 0.02,
+          "legacy_f1": 0.07271062271062272,
+          "n": 50,
+          "structured_em": 0.02,
+          "structured_n": 50
+        },
+        "nq": {
+          "answer_group_f1": 0.3152759390553626,
+          "answer_group_recall": 0.23449612403100775,
+          "legacy_em": 0.22,
+          "legacy_f1": 0.3352904872904873,
+          "n": 50,
+          "structured_em": 0.20930232558139536,
+          "structured_n": 43
+        },
+        "popqa": {
+          "answer_group_f1": 0.2338095238095238,
+          "answer_group_recall": 0.2,
+          "legacy_em": 0.2,
+          "legacy_f1": 0.2338095238095238,
+          "n": 50,
+          "structured_em": 0.2,
+          "structured_n": 50
+        },
+        "triviaqa": {
+          "answer_group_f1": 0.40539505845628293,
+          "answer_group_recall": 0.30612244897959184,
+          "legacy_em": 0.32,
+          "legacy_f1": 0.4074703074703075,
+          "n": 50,
+          "structured_em": 0.30612244897959184,
+          "structured_n": 49
+        }
+      },
+      "overall": {
+        "answer_group_f1": 0.19770202718243016,
+        "answer_group_recall": 0.13767056530214425,
+        "legacy_em": 0.14,
+        "legacy_f1": 0.20380259940197828,
+        "n": 350,
+        "structured_em": 0.13450292397660818,
+        "structured_n": 342
+      },
+      "task_name": "260710-search_r1_original_qwen17_latest_gs8_reval3_run2_search_eval_350",
+      "trace_path": "/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/log/eval/agenticIterRag/260710-search_r1_original_qwen17_latest_gs8_reval3_run2_search_eval_350/trace/traces.jsonl",
+      "trace_sha256": "d4956e575e053101743d7382cb401dd90d0b44f644641e24fc6aaf103ce39f34"
+    },
+    "legacy_search_r1_run3": {
+      "by_answer_semantics": {
+        "alias_or": {
+          "answer_group_f1": 0.22172437294464828,
+          "answer_group_recall": 0.1595744680851064,
+          "legacy_em": 0.1595744680851064,
+          "legacy_f1": 0.22172437294464828,
+          "n": 94,
+          "structured_em": 0.1595744680851064,
+          "structured_n": 94
+        },
+        "ambiguous": {
+          "answer_group_f1": 0.0,
+          "answer_group_recall": 0.0,
+          "legacy_em": 0.0,
+          "legacy_f1": 0.10751964085297419,
+          "n": 9,
+          "structured_em": 0.0,
+          "structured_n": 1
+        },
+        "contaminated": {
+          "answer_group_f1": 0.372273425499232,
+          "answer_group_recall": 0.3,
+          "legacy_em": 0.325,
+          "legacy_f1": 0.3956349206349207,
+          "n": 40,
+          "structured_em": 0.3,
+          "structured_n": 40
+        },
+        "multi_slot": {
+          "answer_group_f1": 0.0,
+          "answer_group_recall": 0.0,
+          "legacy_em": 0.0,
+          "legacy_f1": 0.041666666666666664,
+          "n": 4,
+          "structured_em": 0.0,
+          "structured_n": 4
+        },
+        "required_set": {
+          "answer_group_f1": 0.2458242556281772,
+          "answer_group_recall": 0.3611111111111111,
+          "legacy_em": 0.0,
+          "legacy_f1": 0.21442495126705655,
+          "n": 3,
+          "structured_em": 0.0,
+          "structured_n": 3
+        },
+        "single": {
+          "answer_group_f1": 0.15232962387853693,
+          "answer_group_recall": 0.1,
+          "legacy_em": 0.1,
+          "legacy_f1": 0.15232962387853693,
+          "n": 200,
+          "structured_em": 0.1,
+          "structured_n": 200
+        }
+      },
+      "by_data_source": {
+        "2wikimultihopqa": {
+          "answer_group_f1": 0.0984019734019734,
+          "answer_group_recall": 0.04,
+          "legacy_em": 0.04,
+          "legacy_f1": 0.0984019734019734,
+          "n": 50,
+          "structured_em": 0.04,
+          "structured_n": 50
+        },
+        "bamboogle": {
+          "answer_group_f1": 0.15320233389798607,
+          "answer_group_recall": 0.1,
+          "legacy_em": 0.1,
+          "legacy_f1": 0.15320233389798607,
+          "n": 50,
+          "structured_em": 0.1,
+          "structured_n": 50
+        },
+        "hotpotqa": {
+          "answer_group_f1": 0.11234704184704185,
+          "answer_group_recall": 0.06,
+          "legacy_em": 0.06,
+          "legacy_f1": 0.11234704184704185,
+          "n": 50,
+          "structured_em": 0.06,
+          "structured_n": 50
+        },
+        "musique": {
+          "answer_group_f1": 0.09271062271062272,
+          "answer_group_recall": 0.04,
+          "legacy_em": 0.04,
+          "legacy_f1": 0.09271062271062272,
+          "n": 50,
+          "structured_em": 0.04,
+          "structured_n": 50
+        },
+        "nq": {
+          "answer_group_f1": 0.3033480528692567,
+          "answer_group_recall": 0.23449612403100775,
+          "legacy_em": 0.18,
+          "legacy_f1": 0.2816822358927622,
+          "n": 50,
+          "structured_em": 0.20930232558139536,
+          "structured_n": 43
+        },
+        "popqa": {
+          "answer_group_f1": 0.2038095238095238,
+          "answer_group_recall": 0.18,
+          "legacy_em": 0.18,
+          "legacy_f1": 0.2038095238095238,
+          "n": 50,
+          "structured_em": 0.18,
+          "structured_n": 50
+        },
+        "triviaqa": {
+          "answer_group_f1": 0.4258956033188307,
+          "answer_group_recall": 0.3469387755102041,
+          "legacy_em": 0.36,
+          "legacy_f1": 0.436066887361005,
+          "n": 50,
+          "structured_em": 0.3469387755102041,
+          "structured_n": 49
+        }
+      },
+      "overall": {
+        "answer_group_f1": 0.1957205427466612,
+        "answer_group_recall": 0.14059454191033138,
+        "legacy_em": 0.13714285714285715,
+        "legacy_f1": 0.19688865984584503,
+        "n": 350,
+        "structured_em": 0.13742690058479531,
+        "structured_n": 342
+      },
+      "task_name": "260710-search_r1_original_qwen17_latest_gs8_reval3_run3_search_eval_350",
+      "trace_path": "/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/log/eval/agenticIterRag/260710-search_r1_original_qwen17_latest_gs8_reval3_run3_search_eval_350/trace/traces.jsonl",
+      "trace_sha256": "af8c60e0bfecabbe11098e54b03c4cf9f2a996c8fd2d0bf2e7d054618c7ea983"
+    },
+    "structured_search_r1_run1": {
+      "by_answer_semantics": {
+        "alias_or": {
+          "answer_group_f1": 0.23612794632214068,
+          "answer_group_recall": 0.1595744680851064,
+          "legacy_em": 0.1595744680851064,
+          "legacy_f1": 0.23612794632214068,
+          "n": 94,
+          "structured_em": 0.1595744680851064,
+          "structured_n": 94
+        },
+        "ambiguous": {
+          "answer_group_f1": 0.0,
+          "answer_group_recall": 0.0,
+          "legacy_em": 0.0,
+          "legacy_f1": 0.13057371096586784,
+          "n": 9,
+          "structured_em": 0.0,
+          "structured_n": 1
+        },
+        "contaminated": {
+          "answer_group_f1": 0.39752304147465434,
+          "answer_group_recall": 0.325,
+          "legacy_em": 0.35,
+          "legacy_f1": 0.4241421123679189,
+          "n": 40,
+          "structured_em": 0.325,
+          "structured_n": 40
+        },
+        "multi_slot": {
+          "answer_group_f1": 0.11764705882352941,
+          "answer_group_recall": 0.25,
+          "legacy_em": 0.0,
+          "legacy_f1": 0.08939393939393941,
+          "n": 4,
+          "structured_em": 0.25,
+          "structured_n": 4
+        },
+        "required_set": {
+          "answer_group_f1": 0.2458242556281772,
+          "answer_group_recall": 0.3611111111111111,
+          "legacy_em": 0.0,
+          "legacy_f1": 0.21442495126705655,
+          "n": 3,
+          "structured_em": 0.0,
+          "structured_n": 3
+        },
+        "single": {
+          "answer_group_f1": 0.14699800410941716,
+          "answer_group_recall": 0.09,
+          "legacy_em": 0.09,
+          "legacy_f1": 0.14699800410941716,
+          "n": 200,
+          "structured_em": 0.09,
+          "structured_n": 200
+        }
+      },
+      "by_data_source": {
+        "2wikimultihopqa": {
+          "answer_group_f1": 0.16839682539682538,
+          "answer_group_recall": 0.12,
+          "legacy_em": 0.12,
+          "legacy_f1": 0.16839682539682538,
+          "n": 50,
+          "structured_em": 0.12,
+          "structured_n": 50
+        },
+        "bamboogle": {
+          "answer_group_f1": 0.16704906204906206,
+          "answer_group_recall": 0.1,
+          "legacy_em": 0.1,
+          "legacy_f1": 0.16704906204906206,
+          "n": 50,
+          "structured_em": 0.1,
+          "structured_n": 50
+        },
+        "hotpotqa": {
+          "answer_group_f1": 0.0778170525127047,
+          "answer_group_recall": 0.04,
+          "legacy_em": 0.04,
+          "legacy_f1": 0.0778170525127047,
+          "n": 50,
+          "structured_em": 0.04,
+          "structured_n": 50
+        },
+        "musique": {
+          "answer_group_f1": 0.09428571428571429,
+          "answer_group_recall": 0.06,
+          "legacy_em": 0.06,
+          "legacy_f1": 0.09428571428571429,
+          "n": 50,
+          "structured_em": 0.06,
+          "structured_n": 50
+        },
+        "nq": {
+          "answer_group_f1": 0.2549896397365618,
+          "answer_group_recall": 0.187984496124031,
+          "legacy_em": 0.12,
+          "legacy_f1": 0.2386501503312649,
+          "n": 50,
+          "structured_em": 0.16279069767441862,
+          "structured_n": 43
+        },
+        "popqa": {
+          "answer_group_f1": 0.19346320346320348,
+          "answer_group_recall": 0.14,
+          "legacy_em": 0.14,
+          "legacy_f1": 0.19346320346320348,
+          "n": 50,
+          "structured_em": 0.14,
+          "structured_n": 50
+        },
+        "triviaqa": {
+          "answer_group_f1": 0.4630502661894251,
+          "answer_group_recall": 0.3469387755102041,
+          "legacy_em": 0.36,
+          "legacy_f1": 0.4750845175802481,
+          "n": 50,
+          "structured_em": 0.3469387755102041,
+          "structured_n": 49
+        }
+      },
+      "overall": {
+        "answer_group_f1": 0.20089067379336104,
+        "answer_group_recall": 0.14059454191033138,
+        "legacy_em": 0.13428571428571429,
+        "legacy_f1": 0.2021066465170033,
+        "n": 350,
+        "structured_em": 0.13742690058479531,
+        "structured_n": 342
+      },
+      "task_name": "260711-search_r1_structured_qwen17_gs8_eval350",
+      "trace_path": "/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/log/eval/agenticIterRag/260711-search_r1_structured_qwen17_gs8_eval350/trace/traces.jsonl",
+      "trace_sha256": "cb1f8091e991865100de7014e1823302840080f8b35f07b00996a367ebd85591"
+    },
+    "structured_search_r1_run2": {
+      "by_answer_semantics": {
+        "alias_or": {
+          "answer_group_f1": 0.25304399289697127,
+          "answer_group_recall": 0.1702127659574468,
+          "legacy_em": 0.1702127659574468,
+          "legacy_f1": 0.25304399289697127,
+          "n": 94,
+          "structured_em": 0.1702127659574468,
+          "structured_n": 94
+        },
+        "ambiguous": {
+          "answer_group_f1": 0.0,
+          "answer_group_recall": 0.0,
+          "legacy_em": 0.0,
+          "legacy_f1": 0.17097775136990823,
+          "n": 9,
+          "structured_em": 0.0,
+          "structured_n": 1
+        },
+        "contaminated": {
+          "answer_group_f1": 0.36929723502304146,
+          "answer_group_recall": 0.3,
+          "legacy_em": 0.325,
+          "legacy_f1": 0.3959163059163059,
+          "n": 40,
+          "structured_em": 0.3,
+          "structured_n": 40
+        },
+        "multi_slot": {
+          "answer_group_f1": 0.11764705882352941,
+          "answer_group_recall": 0.25,
+          "legacy_em": 0.0,
+          "legacy_f1": 0.08939393939393941,
+          "n": 4,
+          "structured_em": 0.25,
+          "structured_n": 4
+        },
+        "required_set": {
+          "answer_group_f1": 0.2458242556281772,
+          "answer_group_recall": 0.3611111111111111,
+          "legacy_em": 0.0,
+          "legacy_f1": 0.21442495126705655,
+          "n": 3,
+          "structured_em": 0.0,
+          "structured_n": 3
+        },
+        "single": {
+          "answer_group_f1": 0.15912395819918704,
+          "answer_group_recall": 0.105,
+          "legacy_em": 0.105,
+          "legacy_f1": 0.15912395819918704,
+          "n": 200,
+          "structured_em": 0.105,
+          "structured_n": 200
+        }
+      },
+      "by_data_source": {
+        "2wikimultihopqa": {
+          "answer_group_f1": 0.18347374847374848,
+          "answer_group_recall": 0.14,
+          "legacy_em": 0.14,
+          "legacy_f1": 0.18347374847374848,
+          "n": 50,
+          "structured_em": 0.14,
+          "structured_n": 50
+        },
+        "bamboogle": {
+          "answer_group_f1": 0.18104906204906204,
+          "answer_group_recall": 0.12,
+          "legacy_em": 0.12,
+          "legacy_f1": 0.18104906204906204,
+          "n": 50,
+          "structured_em": 0.12,
+          "structured_n": 50
+        },
+        "hotpotqa": {
+          "answer_group_f1": 0.09919367588932806,
+          "answer_group_recall": 0.06,
+          "legacy_em": 0.06,
+          "legacy_f1": 0.09919367588932806,
+          "n": 50,
+          "structured_em": 0.06,
+          "structured_n": 50
+        },
+        "musique": {
+          "answer_group_f1": 0.12095238095238095,
+          "answer_group_recall": 0.08,
+          "legacy_em": 0.08,
+          "legacy_f1": 0.12095238095238095,
+          "n": 50,
+          "structured_em": 0.08,
+          "structured_n": 50
+        },
+        "nq": {
+          "answer_group_f1": 0.2522988482758805,
+          "answer_group_recall": 0.187984496124031,
+          "legacy_em": 0.12,
+          "legacy_f1": 0.24360879694780624,
+          "n": 50,
+          "structured_em": 0.16279069767441862,
+          "structured_n": 43
+        },
+        "popqa": {
+          "answer_group_f1": 0.21346320346320347,
+          "answer_group_recall": 0.16,
+          "legacy_em": 0.16,
+          "legacy_f1": 0.21346320346320347,
+          "n": 50,
+          "structured_em": 0.16,
+          "structured_n": 50
+        },
+        "triviaqa": {
+          "answer_group_f1": 0.4252127215919184,
+          "answer_group_recall": 0.30612244897959184,
+          "legacy_em": 0.32,
+          "legacy_f1": 0.4380037238746916,
+          "n": 50,
+          "structured_em": 0.30612244897959184,
+          "structured_n": 49
+        }
+      },
+      "overall": {
+        "answer_group_f1": 0.20933005080483338,
+        "answer_group_recall": 0.1493664717348928,
+        "legacy_em": 0.14285714285714285,
+        "legacy_f1": 0.21139208452146013,
+        "n": 350,
+        "structured_em": 0.14619883040935672,
+        "structured_n": 342
+      },
+      "task_name": "260711-search_r1_structured_qwen17_gs8_reval3_run2_search_eval_350",
+      "trace_path": "/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/log/eval/agenticIterRag/260711-search_r1_structured_qwen17_gs8_reval3_run2_search_eval_350/trace/traces.jsonl",
+      "trace_sha256": "05bf65960c6b305b9c6fdde2c9ad36d8d3bf3898ffbe0bd149a9f7c1e3fc2d3c"
+    },
+    "structured_search_r1_run3": {
+      "by_answer_semantics": {
+        "alias_or": {
+          "answer_group_f1": 0.21551524435445552,
+          "answer_group_recall": 0.13829787234042554,
+          "legacy_em": 0.13829787234042554,
+          "legacy_f1": 0.21551524435445552,
+          "n": 94,
+          "structured_em": 0.13829787234042554,
+          "structured_n": 94
+        },
+        "ambiguous": {
+          "answer_group_f1": 0.0,
+          "answer_group_recall": 0.0,
+          "legacy_em": 0.1111111111111111,
+          "legacy_f1": 0.2186307519640853,
+          "n": 9,
+          "structured_em": 0.0,
+          "structured_n": 1
+        },
+        "contaminated": {
+          "answer_group_f1": 0.40288018433179723,
+          "answer_group_recall": 0.325,
+          "legacy_em": 0.35,
+          "legacy_f1": 0.43574925522506164,
+          "n": 40,
+          "structured_em": 0.325,
+          "structured_n": 40
+        },
+        "multi_slot": {
+          "answer_group_f1": 0.11764705882352941,
+          "answer_group_recall": 0.25,
+          "legacy_em": 0.0,
+          "legacy_f1": 0.08939393939393941,
+          "n": 4,
+          "structured_em": 0.25,
+          "structured_n": 4
+        },
+        "required_set": {
+          "answer_group_f1": 0.2458242556281772,
+          "answer_group_recall": 0.3611111111111111,
+          "legacy_em": 0.0,
+          "legacy_f1": 0.21442495126705655,
+          "n": 3,
+          "structured_em": 0.0,
+          "structured_n": 3
+        },
+        "single": {
+          "answer_group_f1": 0.1583546912818938,
+          "answer_group_recall": 0.105,
+          "legacy_em": 0.105,
+          "legacy_f1": 0.1583546912818938,
+          "n": 200,
+          "structured_em": 0.105,
+          "structured_n": 200
+        }
+      },
+      "by_data_source": {
+        "2wikimultihopqa": {
+          "answer_group_f1": 0.1067126148705096,
+          "answer_group_recall": 0.06,
+          "legacy_em": 0.06,
+          "legacy_f1": 0.1067126148705096,
+          "n": 50,
+          "structured_em": 0.06,
+          "structured_n": 50
+        },
+        "bamboogle": {
+          "answer_group_f1": 0.22038239538239537,
+          "answer_group_recall": 0.14,
+          "legacy_em": 0.14,
+          "legacy_f1": 0.22038239538239537,
+          "n": 50,
+          "structured_em": 0.14,
+          "structured_n": 50
+        },
+        "hotpotqa": {
+          "answer_group_f1": 0.06405081874647092,
+          "answer_group_recall": 0.04,
+          "legacy_em": 0.04,
+          "legacy_f1": 0.06405081874647092,
+          "n": 50,
+          "structured_em": 0.04,
+          "structured_n": 50
+        },
+        "musique": {
+          "answer_group_f1": 0.11199999999999999,
+          "answer_group_recall": 0.08,
+          "legacy_em": 0.08,
+          "legacy_f1": 0.11199999999999999,
+          "n": 50,
+          "structured_em": 0.08,
+          "structured_n": 50
+        },
+        "nq": {
+          "answer_group_f1": 0.2457927574674641,
+          "answer_group_recall": 0.187984496124031,
+          "legacy_em": 0.14,
+          "legacy_f1": 0.24659109895952003,
+          "n": 50,
+          "structured_em": 0.16279069767441862,
+          "structured_n": 43
+        },
+        "popqa": {
+          "answer_group_f1": 0.21346320346320347,
+          "answer_group_recall": 0.16,
+          "legacy_em": 0.16,
+          "legacy_f1": 0.21346320346320347,
+          "n": 50,
+          "structured_em": 0.16,
+          "structured_n": 50
+        },
+        "triviaqa": {
+          "answer_group_f1": 0.466389783814657,
+          "answer_group_recall": 0.3469387755102041,
+          "legacy_em": 0.36,
+          "legacy_f1": 0.4833572448529754,
+          "n": 50,
+          "structured_em": 0.3469387755102041,
+          "structured_n": 49
+        }
+      },
+      "overall": {
+        "answer_group_f1": 0.2024930982489711,
+        "answer_group_recall": 0.14351851851851852,
+        "legacy_em": 0.14,
+        "legacy_f1": 0.20665105375358211,
+        "n": 350,
+        "structured_em": 0.14035087719298245,
+        "structured_n": 342
+      },
+      "task_name": "260711-search_r1_structured_qwen17_gs8_reval3_run3_search_eval_350",
+      "trace_path": "/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/log/eval/agenticIterRag/260711-search_r1_structured_qwen17_gs8_reval3_run3_search_eval_350/trace/traces.jsonl",
+      "trace_sha256": "812a92e3e9b26547289aafdf7309dca9075a8069c5bc7bc1a54a4290ffbcc8d2"
+    }
+  },
+  "version": "search-r1-structured-answer-v1"
+}

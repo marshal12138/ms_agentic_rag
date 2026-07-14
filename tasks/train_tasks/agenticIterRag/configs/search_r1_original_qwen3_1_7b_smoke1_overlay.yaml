@@ -1,0 +1,17 @@
+# 1-step real smoke for the Search-R1 original baseline.
+# Apply after search_r1_original_qwen3_1_7b_formal_overlay.yaml.
+
+main_run:
+  project:
+    experiment_name: agentic_iter_rag_v1_search_r1_original_qwen3_1_7b_smoke1
+
+agent_training:
+  resume_from_sub_stage: search_policy_rl
+  stop_after_sub_stage: search_policy_rl
+  force_rerun_sub_stages: [search_policy_rl]
+  sub_stages:
+    search_policy_rl:
+      backend: verl
+      trainer:
+        total_training_steps: 1
+        save_freq: 1

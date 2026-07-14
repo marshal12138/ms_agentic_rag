@@ -1,0 +1,192 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2400" height="1320" viewBox="0 0 2400 1320" role="img" aria-labelledby="title desc">
+  <title id="title">ADRR Agentic Retrieval Rollout Architecture</title>
+  <desc id="desc">A polished architecture diagram showing query input, actor LLM, iterative agent rollout, dynamic recall weights, a retriever ensemble, RRF fusion, and final answer generation.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#fbfcff"/>
+      <stop offset="58%" stop-color="#f7fafc"/>
+      <stop offset="100%" stop-color="#eef7f2"/>
+    </linearGradient>
+    <linearGradient id="actorGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#edf5ff"/>
+      <stop offset="100%" stop-color="#dbeafe"/>
+    </linearGradient>
+    <linearGradient id="rolloutGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f4fff8"/>
+      <stop offset="100%" stop-color="#dcfce7"/>
+    </linearGradient>
+    <linearGradient id="retrieverGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f8fbff"/>
+      <stop offset="100%" stop-color="#e7efff"/>
+    </linearGradient>
+    <linearGradient id="weightGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#fff7ed"/>
+      <stop offset="100%" stop-color="#ffe4e6"/>
+    </linearGradient>
+    <linearGradient id="queryGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ecfdf5"/>
+      <stop offset="100%" stop-color="#d1fae5"/>
+    </linearGradient>
+    <filter id="softShadow" x="-20%" y="-30%" width="140%" height="170%">
+      <feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#334155" flood-opacity="0.13"/>
+    </filter>
+    <filter id="lightShadow" x="-20%" y="-30%" width="140%" height="170%">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#334155" flood-opacity="0.10"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 14 14" refX="12" refY="7" markerWidth="6.4" markerHeight="6.4" orient="auto-start-reverse">
+      <path d="M1,1 L13,7 L1,13" fill="none" stroke="#94a3b8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <marker id="arrowBlue" viewBox="0 0 14 14" refX="12" refY="7" markerWidth="6.4" markerHeight="6.4" orient="auto-start-reverse">
+      <path d="M1,1 L13,7 L1,13" fill="none" stroke="#3b82f6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <marker id="arrowGreen" viewBox="0 0 14 14" refX="12" refY="7" markerWidth="6.4" markerHeight="6.4" orient="auto-start-reverse">
+      <path d="M1,1 L13,7 L1,13" fill="none" stroke="#22c55e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <style>
+      .font { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; }
+      .title { font-size: 32px; font-weight: 760; fill: #0f172a; letter-spacing: 0; }
+      .subtle { font-size: 20px; font-weight: 540; fill: #64748b; letter-spacing: 0; }
+      .label { font-size: 31px; font-weight: 680; fill: #1e293b; letter-spacing: 0; }
+      .small { font-size: 22px; font-weight: 620; fill: #334155; letter-spacing: 0; }
+      .tiny { font-size: 18px; font-weight: 560; fill: #64748b; letter-spacing: 0; }
+      .step { font-size: 17px; font-weight: 760; fill: #475569; letter-spacing: 0; }
+      .arrowText { font-size: 17px; font-weight: 640; fill: #64748b; letter-spacing: 0; }
+      .cardStroke { stroke-width: 3.2; }
+      .flow { fill: none; stroke: #94a3b8; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#arrow); }
+      .flowBlue { fill: none; stroke: #3b82f6; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#arrowBlue); }
+      .flowGreen { fill: none; stroke: #22c55e; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#arrowGreen); }
+      .softLine { fill: none; stroke: #cbd5e1; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; opacity: 0.34; }
+    </style>
+  </defs>
+
+  <rect width="2400" height="1320" fill="url(#bg)"/>
+  <path d="M0 1038 C420 962 636 1105 1020 1030 C1435 949 1738 1066 2400 920 L2400 1320 L0 1320 Z" fill="#ffffff" opacity="0.58"/>
+  <g opacity="0.36">
+    <path d="M208 178 H2192" stroke="#e2e8f0" stroke-width="1.2"/>
+    <path d="M208 318 H2192" stroke="#e2e8f0" stroke-width="1.2"/>
+    <path d="M208 458 H2192" stroke="#e2e8f0" stroke-width="1.2"/>
+    <path d="M208 598 H2192" stroke="#e2e8f0" stroke-width="1.2"/>
+    <path d="M208 738 H2192" stroke="#e2e8f0" stroke-width="1.2"/>
+    <path d="M208 878 H2192" stroke="#e2e8f0" stroke-width="1.2"/>
+    <path d="M208 1018 H2192" stroke="#e2e8f0" stroke-width="1.2"/>
+    <path d="M360 80 V1190" stroke="#e2e8f0" stroke-width="1.2"/>
+    <path d="M640 80 V1190" stroke="#e2e8f0" stroke-width="1.2"/>
+    <path d="M920 80 V1190" stroke="#e2e8f0" stroke-width="1.2"/>
+    <path d="M1200 80 V1190" stroke="#e2e8f0" stroke-width="1.2"/>
+    <path d="M1480 80 V1190" stroke="#e2e8f0" stroke-width="1.2"/>
+    <path d="M1760 80 V1190" stroke="#e2e8f0" stroke-width="1.2"/>
+    <path d="M2040 80 V1190" stroke="#e2e8f0" stroke-width="1.2"/>
+  </g>
+
+  <text x="120" y="108" class="font title">ADRR Agentic Retrieval Rollout</text>
+  <text x="120" y="146" class="font subtle">Dynamic query rewriting and recall-weight control over a multi-retriever ensemble</text>
+
+  <!-- Main flow -->
+  <rect x="84" y="741" width="214" height="118" rx="59" fill="#f8fafc" stroke="#cbd5e1" stroke-width="4" filter="url(#lightShadow)"/>
+  <text x="191" y="811" text-anchor="middle" class="font label">query</text>
+
+  <path d="M302 800 H398" class="flow"/>
+
+  <rect x="422" y="698" width="346" height="204" rx="18" fill="url(#actorGrad)" stroke="#3b82f6" class="cardStroke" filter="url(#softShadow)"/>
+  <rect x="450" y="726" width="74" height="36" rx="18" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1.6"/>
+  <text x="487" y="751" text-anchor="middle" class="font step">LLM</text>
+  <text x="595" y="791" text-anchor="middle" class="font label">actor LLM</text>
+  <text x="595" y="839" text-anchor="middle" class="font tiny">policy for reasoning and tool use</text>
+
+  <path d="M770 800 H1024" class="flow"/>
+
+  <!-- Agent rollout container -->
+  <rect x="908" y="540" width="1092" height="550" rx="28" fill="#ffffff" fill-opacity="0.62" stroke="#334155" stroke-width="2.8" stroke-dasharray="9 12"/>
+  <rect x="930" y="514" width="255" height="58" rx="15" fill="#0f172a" filter="url(#lightShadow)"/>
+  <text x="1058" y="552" text-anchor="middle" class="font" font-size="29" font-weight="760" fill="#ffffff">agent rollout</text>
+  <text x="1902" y="608" text-anchor="middle" class="font" font-size="40" font-weight="760" fill="#0f172a">× N</text>
+
+  <rect x="1028" y="690" width="286" height="230" rx="18" fill="url(#rolloutGrad)" stroke="#22c55e" class="cardStroke" filter="url(#softShadow)"/>
+  <circle cx="1068" cy="730" r="18" fill="#ffffff" stroke="#86efac" stroke-width="2"/>
+  <text x="1068" y="737" text-anchor="middle" class="font step">1</text>
+  <text x="1171" y="796" text-anchor="middle" class="font label">think</text>
+  <text x="1171" y="844" text-anchor="middle" class="font tiny">reason over context</text>
+
+  <path d="M1316 805 H1414" class="flow"/>
+
+  <rect x="1418" y="690" width="286" height="230" rx="18" fill="url(#rolloutGrad)" stroke="#22c55e" class="cardStroke" filter="url(#softShadow)"/>
+  <circle cx="1458" cy="730" r="18" fill="#ffffff" stroke="#86efac" stroke-width="2"/>
+  <text x="1458" y="737" text-anchor="middle" class="font step">2</text>
+  <text x="1561" y="796" text-anchor="middle" class="font label">tool call</text>
+  <text x="1561" y="844" text-anchor="middle" class="font tiny">search action + parameters</text>
+
+  <rect x="1740" y="650" width="210" height="100" rx="16" fill="url(#queryGrad)" stroke="#22c55e" class="cardStroke" filter="url(#lightShadow)"/>
+  <circle cx="1774" cy="681" r="12" fill="#ffffff" stroke="#86efac" stroke-width="2"/>
+  <text x="1774" y="686" text-anchor="middle" class="font step">q</text>
+  <text x="1845" y="702" text-anchor="middle" class="font small">query</text>
+  <text x="1845" y="730" text-anchor="middle" class="font tiny">rewritten</text>
+
+  <rect x="1740" y="790" width="210" height="100" rx="16" fill="url(#weightGrad)" stroke="#fb7185" class="cardStroke" filter="url(#lightShadow)"/>
+  <circle cx="1774" cy="821" r="12" fill="#ffffff" stroke="#fda4af" stroke-width="2"/>
+  <text x="1774" y="826" text-anchor="middle" class="font step">w</text>
+  <text x="1845" y="838" text-anchor="middle" class="font small">recall</text>
+  <text x="1845" y="868" text-anchor="middle" class="font small">weights</text>
+
+  <path d="M1704 748 C1718 732 1728 716 1740 700" class="flowGreen"/>
+  <path d="M1704 842 H1736" class="flowGreen"/>
+
+  <!-- Retriever ensemble -->
+  <rect x="1178" y="80" width="790" height="390" rx="22" fill="url(#retrieverGrad)" stroke="#3b82f6" class="cardStroke" filter="url(#softShadow)"/>
+  <text x="1216" y="134" class="font" font-size="27" font-weight="760" fill="#1e293b">Retriever Ensemble</text>
+  <text x="1218" y="168" class="font tiny">hybrid recall candidates are fused by adaptive RRF weights</text>
+
+  <rect x="1240" y="200" width="164" height="118" rx="16" fill="#ffffff" stroke="#cbd5e1" stroke-width="3.1" filter="url(#lightShadow)"/>
+  <text x="1322" y="247" text-anchor="middle" class="font small">text</text>
+  <text x="1322" y="281" text-anchor="middle" class="font small">retriever</text>
+
+  <rect x="1492" y="200" width="164" height="118" rx="16" fill="#ffffff" stroke="#cbd5e1" stroke-width="3.1" filter="url(#lightShadow)"/>
+  <text x="1574" y="247" text-anchor="middle" class="font small">vector</text>
+  <text x="1574" y="281" text-anchor="middle" class="font small">retriever</text>
+
+  <rect x="1744" y="200" width="164" height="118" rx="16" fill="#ffffff" stroke="#cbd5e1" stroke-width="3.1" filter="url(#lightShadow)"/>
+  <text x="1826" y="247" text-anchor="middle" class="font small">heavy</text>
+  <text x="1826" y="281" text-anchor="middle" class="font small">retriever</text>
+
+  <rect x="1240" y="336" width="668" height="36" rx="14" fill="#eff6ff" opacity="0.8"/>
+  <path d="M1288 354 H1878" fill="none" stroke="#bfdbfe" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="1322" cy="354" r="8" fill="#3b82f6"/>
+  <circle cx="1574" cy="354" r="8" fill="#14b8a6"/>
+  <circle cx="1826" cy="354" r="8" fill="#f97316"/>
+
+  <rect x="1240" y="388" width="668" height="62" rx="16" fill="url(#weightGrad)" stroke="#fb7185" stroke-width="3.1" filter="url(#lightShadow)"/>
+  <text x="1574" y="428" text-anchor="middle" class="font small">RRF fusion weights</text>
+
+  <!-- Bidirectional retrieval wiring -->
+  <path d="M1845 650 V510 C1845 484 1828 470 1802 470 H1748 C1730 470 1718 462 1718 450" class="softLine"/>
+  <path d="M1950 840 H1976 V486 C1976 464 1960 450 1938 450 H1908" class="softLine"/>
+
+  <rect x="1374" y="950" width="330" height="72" rx="18" fill="#f8fafc" stroke="#cbd5e1" stroke-width="2.4" filter="url(#lightShadow)"/>
+  <text x="1539" y="995" text-anchor="middle" class="font small">retrieved evidence</text>
+  <path d="M1561 920 V950" class="softLine"/>
+  <path d="M1374 986 C1288 1035 1208 1020 1168 922" class="flowGreen"/>
+  <text x="1274" y="1042" text-anchor="middle" class="font arrowText">observe</text>
+
+  <!-- Output -->
+  <path d="M1704 874 H1720 V930 H2050 V800 H2118" class="flow"/>
+  <rect x="2122" y="741" width="214" height="118" rx="59" fill="#f8fafc" stroke="#cbd5e1" stroke-width="4" filter="url(#lightShadow)"/>
+  <text x="2229" y="811" text-anchor="middle" class="font label">answer</text>
+
+  <!-- Annotations on flow -->
+  <rect x="842" y="750" width="86" height="34" rx="17" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5"/>
+  <text x="885" y="773" text-anchor="middle" class="font arrowText">prompt</text>
+  <rect x="1330" y="750" width="76" height="34" rx="17" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5"/>
+  <text x="1368" y="773" text-anchor="middle" class="font arrowText">action</text>
+  <rect x="1880" y="908" width="96" height="34" rx="17" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5"/>
+  <text x="1928" y="931" text-anchor="middle" class="font arrowText">finalize</text>
+
+  <!-- Legend -->
+  <rect x="120" y="1160" width="850" height="96" rx="20" fill="#ffffff" fill-opacity="0.82" stroke="#e2e8f0" stroke-width="2" filter="url(#lightShadow)"/>
+  <circle cx="166" cy="1208" r="12" fill="#3b82f6"/>
+  <text x="190" y="1216" class="font tiny">policy module</text>
+  <circle cx="348" cy="1208" r="12" fill="#22c55e"/>
+  <text x="372" y="1216" class="font tiny">agent state / tool use</text>
+  <circle cx="610" cy="1208" r="12" fill="#fb7185"/>
+  <text x="634" y="1216" class="font tiny">adaptive recall weights</text>
+  <circle cx="872" cy="1208" r="12" fill="#94a3b8"/>
+  <text x="896" y="1216" class="font tiny">control flow</text>
+</svg>

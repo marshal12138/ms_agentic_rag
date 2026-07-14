@@ -19,6 +19,6 @@ bash "${ROOT}/scripts/agenticIterRag_v1/01_pipeline_launcher.sh" \
   --MODEL_CONFIG=qwen3_4b \
   --ROLLOUT_CONFIG=air_async_qwen3_4b \
   --OVERLAY_YAML=tasks/train_tasks/agenticIterRag/configs/endpoint_hard_short_reason_base_overlay.yaml \
-  --OVERLAY_YAML=tasks/train_tasks/agenticIterRag/configs/endpoint_hard_short_reason_answer_evidence_w02_n4_1p5epoch_overlay.yaml \
+  --OVERLAY_YAML=tasks/train_tasks/agenticIterRag/configs/endpoint_hard_short_reason_answer_evidence_w02_n8_1p5epoch_overlay.yaml \
   --data.trace_max_samples=-1 \
   "$@"

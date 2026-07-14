@@ -1,0 +1,470 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2800" height="1900" viewBox="0 0 2800 1900" role="img" aria-labelledby="title desc">
+  <title id="title">SPAD Search-Policy RL with Answer Distillation</title>
+  <desc id="desc">A three-stage architecture diagram for SPAD: teacher-grounded search-policy reinforcement learning, on-policy answer refresh, and answer distillation with preference learning.</desc>
+  <defs>
+    <linearGradient id="pageBg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#fbfdff"/>
+      <stop offset="56%" stop-color="#f7fafc"/>
+      <stop offset="100%" stop-color="#eef7f3"/>
+    </linearGradient>
+    <linearGradient id="laneGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#f8fafc"/>
+    </linearGradient>
+    <linearGradient id="actorGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#eff6ff"/>
+      <stop offset="100%" stop-color="#dbeafe"/>
+    </linearGradient>
+    <linearGradient id="serviceGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f0fdf4"/>
+      <stop offset="100%" stop-color="#dcfce7"/>
+    </linearGradient>
+    <linearGradient id="teacherGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#fff7ed"/>
+      <stop offset="100%" stop-color="#ffedd5"/>
+    </linearGradient>
+    <linearGradient id="rewardGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#fff7ed"/>
+      <stop offset="100%" stop-color="#ffe4e6"/>
+    </linearGradient>
+    <linearGradient id="dataGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ecfdf5"/>
+      <stop offset="100%" stop-color="#d1fae5"/>
+    </linearGradient>
+    <linearGradient id="artifactGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f8fafc"/>
+      <stop offset="100%" stop-color="#e2e8f0"/>
+    </linearGradient>
+    <linearGradient id="distillGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#faf5ff"/>
+      <stop offset="100%" stop-color="#ede9fe"/>
+    </linearGradient>
+    <filter id="shadow" x="-16%" y="-28%" width="132%" height="164%">
+      <feDropShadow dx="0" dy="15" stdDeviation="16" flood-color="#0f172a" flood-opacity="0.12"/>
+    </filter>
+    <filter id="softShadow" x="-16%" y="-28%" width="132%" height="164%">
+      <feDropShadow dx="0" dy="7" stdDeviation="9" flood-color="#0f172a" flood-opacity="0.10"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 14 14" refX="12" refY="7" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M1,1 L13,7 L1,13" fill="none" stroke="#94a3b8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <marker id="arrowBlue" viewBox="0 0 14 14" refX="12" refY="7" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M1,1 L13,7 L1,13" fill="none" stroke="#3b82f6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <marker id="arrowGreen" viewBox="0 0 14 14" refX="12" refY="7" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M1,1 L13,7 L1,13" fill="none" stroke="#22c55e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <marker id="arrowRed" viewBox="0 0 14 14" refX="12" refY="7" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M1,1 L13,7 L1,13" fill="none" stroke="#fb7185" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <marker id="arrowPurple" viewBox="0 0 14 14" refX="12" refY="7" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M1,1 L13,7 L1,13" fill="none" stroke="#8b5cf6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <style>
+      .font { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; letter-spacing: 0; }
+      .title { font-size: 42px; font-weight: 780; fill: #0f172a; }
+      .subtitle { font-size: 22px; font-weight: 540; fill: #64748b; }
+      .stageNo { font-size: 17px; font-weight: 780; fill: #ffffff; }
+      .stageTitle { font-size: 27px; font-weight: 760; fill: #0f172a; }
+      .stageSub { font-size: 17px; font-weight: 560; fill: #64748b; }
+      .nodeTitle { font-size: 23px; font-weight: 720; fill: #1e293b; }
+      .nodeSub { font-size: 16px; font-weight: 560; fill: #64748b; }
+      .groupTitle { font-size: 20px; font-weight: 720; fill: #334155; }
+      .tag { font-size: 14px; font-weight: 760; fill: #475569; }
+      .small { font-size: 17px; font-weight: 650; fill: #334155; }
+      .tiny { font-size: 14px; font-weight: 590; fill: #64748b; }
+      .arrowText { font-size: 15px; font-weight: 640; fill: #64748b; }
+      .metric { font-size: 15px; font-weight: 650; fill: #475569; }
+      .inverse { fill: #ffffff; }
+      .flow { fill: none; stroke: #94a3b8; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#arrow); }
+      .flowBlue { fill: none; stroke: #3b82f6; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#arrowBlue); }
+      .flowGreen { fill: none; stroke: #22c55e; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#arrowGreen); }
+      .flowRed { fill: none; stroke: #fb7185; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#arrowRed); }
+      .flowPurple { fill: none; stroke: #8b5cf6; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#arrowPurple); }
+      .thinFlow { fill: none; stroke: #cbd5e1; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#arrow); }
+      .dashGroup { fill: #ffffff; fill-opacity: 0.64; stroke: #334155; stroke-width: 2.7; stroke-dasharray: 9 11; }
+    </style>
+  </defs>
+
+  <rect width="2800" height="1900" fill="url(#pageBg)"/>
+  <path d="M0 1600 C400 1480 760 1640 1130 1552 C1580 1448 1940 1580 2800 1410 L2800 1900 L0 1900 Z" fill="#ffffff" opacity="0.62"/>
+  <g opacity="0.34">
+    <path d="M130 180 H2670" stroke="#e2e8f0" stroke-width="1.1"/>
+    <path d="M130 430 H2670" stroke="#e2e8f0" stroke-width="1.1"/>
+    <path d="M130 680 H2670" stroke="#e2e8f0" stroke-width="1.1"/>
+    <path d="M130 930 H2670" stroke="#e2e8f0" stroke-width="1.1"/>
+    <path d="M130 1180 H2670" stroke="#e2e8f0" stroke-width="1.1"/>
+    <path d="M130 1430 H2670" stroke="#e2e8f0" stroke-width="1.1"/>
+    <path d="M130 1680 H2670" stroke="#e2e8f0" stroke-width="1.1"/>
+    <path d="M430 84 V1770" stroke="#e2e8f0" stroke-width="1.1"/>
+    <path d="M780 84 V1770" stroke="#e2e8f0" stroke-width="1.1"/>
+    <path d="M1130 84 V1770" stroke="#e2e8f0" stroke-width="1.1"/>
+    <path d="M1480 84 V1770" stroke="#e2e8f0" stroke-width="1.1"/>
+    <path d="M1830 84 V1770" stroke="#e2e8f0" stroke-width="1.1"/>
+    <path d="M2180 84 V1770" stroke="#e2e8f0" stroke-width="1.1"/>
+    <path d="M2530 84 V1770" stroke="#e2e8f0" stroke-width="1.1"/>
+  </g>
+
+  <text x="120" y="92" class="font title">SPAD: Search-Policy RL with Answer Distillation</text>
+  <text x="120" y="132" class="font subtitle">Decouple search-policy credit assignment from answer generation, then distill evidence-grounded answers back into the actor.</text>
+
+  <text x="1960" y="48" class="font tag">DECOUPLED CAPABILITIES</text>
+  <rect x="1958" y="62" width="336" height="72" rx="18" fill="url(#actorGrad)" stroke="#93c5fd" stroke-width="2" filter="url(#softShadow)"/>
+  <text x="2126" y="92" text-anchor="middle" class="font small">Search policy</text>
+  <text x="2126" y="116" text-anchor="middle" class="font tiny">what, how many rounds, when to stop</text>
+  <rect x="2316" y="62" width="350" height="72" rx="18" fill="url(#distillGrad)" stroke="#c4b5fd" stroke-width="2" filter="url(#softShadow)"/>
+  <text x="2491" y="92" text-anchor="middle" class="font small">Answer ability</text>
+  <text x="2491" y="116" text-anchor="middle" class="font tiny">evidence context to precise short answer</text>
+
+  <!-- Stage lanes -->
+  <rect x="82" y="190" width="2636" height="580" rx="30" fill="url(#laneGrad)" stroke="#e2e8f0" stroke-width="2" filter="url(#shadow)"/>
+  <rect x="82" y="810" width="2636" height="450" rx="30" fill="url(#laneGrad)" stroke="#e2e8f0" stroke-width="2" filter="url(#shadow)"/>
+  <rect x="82" y="1300" width="2636" height="440" rx="30" fill="url(#laneGrad)" stroke="#e2e8f0" stroke-width="2" filter="url(#shadow)"/>
+  <path d="M392 220 V740" stroke="#e2e8f0" stroke-width="2"/>
+  <path d="M392 840 V1230" stroke="#e2e8f0" stroke-width="2"/>
+  <path d="M392 1330 V1710" stroke="#e2e8f0" stroke-width="2"/>
+
+  <!-- Stage labels -->
+  <g>
+    <rect x="120" y="236" width="82" height="35" rx="17.5" fill="#2563eb"/>
+    <text x="161" y="260" text-anchor="middle" class="font stageNo">STAGE 1</text>
+    <text x="120" y="316" class="font stageTitle">Search-Policy RL</text>
+    <text x="120" y="350" class="font stageSub">search_policy_rl</text>
+    <text x="120" y="404" class="font small">Train the policy for:</text>
+    <text x="120" y="438" class="font stageSub">what to search</text>
+    <text x="120" y="468" class="font stageSub">how many rounds</text>
+    <text x="120" y="498" class="font stageSub">when to stop</text>
+    <rect x="120" y="548" width="226" height="82" rx="16" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1.8"/>
+    <text x="233" y="580" text-anchor="middle" class="font tiny">Stop generation at</text>
+    <text x="233" y="608" text-anchor="middle" class="font small">opening &lt;answer&gt;</text>
+    <text x="233" y="678" text-anchor="middle" class="font tiny">Answer body is not trained here</text>
+  </g>
+  <g>
+    <rect x="120" y="854" width="82" height="35" rx="17.5" fill="#16a34a"/>
+    <text x="161" y="878" text-anchor="middle" class="font stageNo">STAGE 2</text>
+    <text x="120" y="934" class="font stageTitle">Answer Refresh</text>
+    <text x="120" y="968" class="font stageSub">answer_refresh_data</text>
+    <text x="120" y="1022" class="font small">Freeze Stage 1 actor</text>
+    <text x="120" y="1054" class="font stageSub">roll out on-policy context</text>
+    <text x="120" y="1084" class="font stageSub">generate complete answers</text>
+    <text x="120" y="1142" class="font small">Build preference pairs</text>
+    <text x="120" y="1174" class="font stageSub">teacher = chosen</text>
+    <text x="120" y="1204" class="font stageSub">actor = rejected</text>
+  </g>
+  <g>
+    <rect x="120" y="1344" width="82" height="35" rx="17.5" fill="#7c3aed"/>
+    <text x="161" y="1368" text-anchor="middle" class="font stageNo">STAGE 3</text>
+    <text x="120" y="1424" class="font stageTitle">Answer Distillation</text>
+    <text x="120" y="1458" class="font stageSub">answer_distillation</text>
+    <text x="120" y="1512" class="font small">Preference learning</text>
+    <text x="120" y="1544" class="font stageSub">DPO enabled by default</text>
+    <text x="120" y="1574" class="font stageSub">optional SFT interface</text>
+    <text x="120" y="1632" class="font small">Final capability</text>
+    <text x="120" y="1664" class="font stageSub">search + grounded answer</text>
+  </g>
+
+  <!-- Stage 1: dataset -->
+  <g filter="url(#softShadow)">
+    <path d="M430 430 C430 400 566 400 566 430 V536 C566 566 430 566 430 536 Z" fill="url(#dataGrad)" stroke="#22c55e" stroke-width="3.1"/>
+    <ellipse cx="498" cy="430" rx="68" ry="30" fill="#dcfce7" stroke="#22c55e" stroke-width="3.1"/>
+    <text x="498" y="486" text-anchor="middle" class="font nodeTitle">QA</text>
+    <text x="498" y="516" text-anchor="middle" class="font nodeSub">dataset</text>
+  </g>
+  <path d="M574 483 H636" class="flow"/>
+  <text x="605" y="462" text-anchor="middle" class="font arrowText">prompt</text>
+
+  <!-- Stage 1: trainable actor -->
+  <g filter="url(#softShadow)">
+    <rect x="644" y="394" width="250" height="176" rx="18" fill="url(#actorGrad)" stroke="#3b82f6" stroke-width="3.3"/>
+    <rect x="668" y="414" width="88" height="28" rx="14" fill="#ffffff" stroke="#bfdbfe" stroke-width="1.4"/>
+    <text x="712" y="434" text-anchor="middle" class="font tag">trainable</text>
+    <text x="769" y="482" text-anchor="middle" class="font nodeTitle">Actor LLM</text>
+    <text x="769" y="512" text-anchor="middle" class="font nodeSub">reason + search / stop</text>
+    <text x="769" y="540" text-anchor="middle" class="font nodeSub">Qwen3 policy</text>
+  </g>
+  <path d="M900 483 H938" class="flowBlue"/>
+
+  <!-- Stage 1: iterative rollout -->
+  <g>
+    <rect x="946" y="316" width="500" height="340" rx="24" class="dashGroup"/>
+    <rect x="974" y="292" width="226" height="48" rx="14" fill="#0f172a" filter="url(#softShadow)"/>
+    <text x="1087" y="324" text-anchor="middle" class="font groupTitle inverse">agent rollout</text>
+    <text x="1384" y="354" text-anchor="middle" class="font nodeTitle">x N</text>
+
+    <rect x="988" y="382" width="176" height="102" rx="16" fill="url(#serviceGrad)" stroke="#22c55e" stroke-width="2.8"/>
+    <circle cx="1018" cy="412" r="14" fill="#ffffff" stroke="#86efac" stroke-width="1.8"/>
+    <text x="1018" y="418" text-anchor="middle" class="font tag">1</text>
+    <text x="1076" y="432" text-anchor="middle" class="font nodeTitle">reason</text>
+    <text x="1076" y="461" text-anchor="middle" class="font tiny">inspect current evidence</text>
+
+    <rect x="1212" y="382" width="190" height="102" rx="16" fill="url(#serviceGrad)" stroke="#22c55e" stroke-width="2.8"/>
+    <circle cx="1242" cy="412" r="14" fill="#ffffff" stroke="#86efac" stroke-width="1.8"/>
+    <text x="1242" y="418" text-anchor="middle" class="font tag">2</text>
+    <text x="1307" y="426" text-anchor="middle" class="font small">search(query)</text>
+    <text x="1307" y="456" text-anchor="middle" class="font small">or stop</text>
+
+    <rect x="1050" y="536" width="276" height="82" rx="16" fill="url(#serviceGrad)" stroke="#22c55e" stroke-width="2.8"/>
+    <text x="1188" y="570" text-anchor="middle" class="font nodeTitle">Retriever</text>
+    <text x="1188" y="598" text-anchor="middle" class="font tiny">Wikipedia evidence</text>
+
+    <path d="M1168 433 H1204" class="flowGreen"/>
+    <path d="M1307 488 V528" class="flowGreen"/>
+    <path d="M1050 578 C1004 578 988 548 1014 490" class="flowGreen"/>
+    <text x="1006" y="548" class="font arrowText">observe</text>
+  </g>
+
+  <!-- Stage 1: evidence -->
+  <path d="M1450 464 H1494" class="flowGreen"/>
+  <text x="1472" y="440" text-anchor="middle" class="font arrowText">stop</text>
+  <g filter="url(#softShadow)">
+    <path d="M1502 426 C1502 398 1662 398 1662 426 V540 C1662 568 1502 568 1502 540 Z" fill="#f8fafc" stroke="#cbd5e1" stroke-width="3"/>
+    <ellipse cx="1582" cy="426" rx="80" ry="28" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="3"/>
+    <text x="1582" y="480" text-anchor="middle" class="font nodeTitle">Search</text>
+    <text x="1582" y="510" text-anchor="middle" class="font nodeTitle">evidence</text>
+    <text x="1582" y="538" text-anchor="middle" class="font tiny">queries + top documents</text>
+  </g>
+
+  <!-- Stage 1: fixed teacher -->
+  <path d="M1670 483 H1718" class="flowRed"/>
+  <text x="1694" y="628" text-anchor="middle" class="font arrowText">question + evidence</text>
+  <g filter="url(#softShadow)">
+    <rect x="1726" y="374" width="282" height="218" rx="18" fill="url(#teacherGrad)" stroke="#f97316" stroke-width="3.2"/>
+    <rect x="1750" y="396" width="72" height="28" rx="14" fill="#ffffff" stroke="#fed7aa" stroke-width="1.4"/>
+    <text x="1786" y="416" text-anchor="middle" class="font tag">fixed</text>
+    <text x="1867" y="462" text-anchor="middle" class="font nodeTitle">Teacher Answerer</text>
+    <text x="1867" y="494" text-anchor="middle" class="font nodeSub">GLM-4.7, evidence only</text>
+    <text x="1867" y="532" text-anchor="middle" class="font tiny">answer + evidence status</text>
+    <text x="1867" y="558" text-anchor="middle" class="font tiny">supported / insufficient / ambiguous</text>
+  </g>
+
+  <!-- Stage 1: reward -->
+  <path d="M2016 483 H2064" class="flowRed"/>
+  <g filter="url(#softShadow)">
+    <rect x="2072" y="362" width="348" height="242" rx="18" fill="url(#rewardGrad)" stroke="#fb7185" stroke-width="3.2"/>
+    <rect x="2098" y="384" width="82" height="28" rx="14" fill="#ffffff" stroke="#fecdd3" stroke-width="1.4"/>
+    <text x="2139" y="404" text-anchor="middle" class="font tag">reward</text>
+    <text x="2246" y="444" text-anchor="middle" class="font nodeTitle">Teacher-Grounded</text>
+    <text x="2246" y="474" text-anchor="middle" class="font nodeTitle">Search Reward</text>
+    <text x="2110" y="514" class="font metric">+ teacher answer F1</text>
+    <text x="2110" y="540" class="font metric">- bad stop / invalid format</text>
+    <text x="2110" y="566" class="font metric">- delayed search + duplicate cost</text>
+    <text x="2246" y="592" text-anchor="middle" class="font tiny">credit assigned to search and stop decisions</text>
+  </g>
+
+  <!-- Stage 1: update and artifact -->
+  <path d="M2246 358 V264 H770 V386" class="flowRed"/>
+  <rect x="1382" y="238" width="210" height="36" rx="18" fill="#ffffff" stroke="#fecdd3" stroke-width="1.5"/>
+  <text x="1487" y="262" text-anchor="middle" class="font arrowText">GRPO policy update</text>
+  <path d="M2428 483 H2474" class="flowBlue"/>
+  <g filter="url(#softShadow)">
+    <rect x="2482" y="408" width="190" height="150" rx="18" fill="url(#artifactGrad)" stroke="#94a3b8" stroke-width="3"/>
+    <rect x="2504" y="428" width="86" height="26" rx="13" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.4"/>
+    <text x="2547" y="447" text-anchor="middle" class="font tag">output</text>
+    <text x="2577" y="486" text-anchor="middle" class="font nodeTitle">Search policy</text>
+    <text x="2577" y="516" text-anchor="middle" class="font nodeTitle">checkpoint</text>
+    <text x="2577" y="542" text-anchor="middle" class="font tiny">Stage 1 actor</text>
+  </g>
+
+  <!-- Stage 2: data and fixed actor -->
+  <g filter="url(#softShadow)">
+    <path d="M430 960 C430 934 552 934 552 960 V1060 C552 1086 430 1086 430 1060 Z" fill="url(#dataGrad)" stroke="#22c55e" stroke-width="3"/>
+    <ellipse cx="491" cy="960" rx="61" ry="26" fill="#dcfce7" stroke="#22c55e" stroke-width="3"/>
+    <text x="491" y="1010" text-anchor="middle" class="font nodeTitle">QA</text>
+    <text x="491" y="1038" text-anchor="middle" class="font nodeSub">dataset</text>
+  </g>
+  <path d="M560 1010 H632" class="flow"/>
+  <g filter="url(#softShadow)">
+    <rect x="640" y="930" width="248" height="160" rx="18" fill="url(#actorGrad)" stroke="#3b82f6" stroke-width="3.2"/>
+    <rect x="664" y="950" width="72" height="28" rx="14" fill="#ffffff" stroke="#bfdbfe" stroke-width="1.4"/>
+    <text x="700" y="970" text-anchor="middle" class="font tag">fixed</text>
+    <text x="764" y="1013" text-anchor="middle" class="font nodeTitle">Stage 1 Actor</text>
+    <text x="764" y="1044" text-anchor="middle" class="font nodeSub">on-policy search rollout</text>
+    <text x="764" y="1070" text-anchor="middle" class="font tiny">now generates full answer body</text>
+  </g>
+  <path d="M896 1010 H934" class="flowBlue"/>
+
+  <!-- Stage 2: on-policy context -->
+  <g>
+    <rect x="942" y="888" width="410" height="246" rx="22" class="dashGroup"/>
+    <rect x="968" y="866" width="246" height="44" rx="14" fill="#0f172a" filter="url(#softShadow)"/>
+    <text x="1091" y="896" text-anchor="middle" class="font small inverse">on-policy refresh</text>
+    <rect x="980" y="946" width="154" height="112" rx="16" fill="url(#serviceGrad)" stroke="#22c55e" stroke-width="2.8"/>
+    <text x="1057" y="989" text-anchor="middle" class="font small">search</text>
+    <text x="1057" y="1018" text-anchor="middle" class="font small">evidence</text>
+    <text x="1057" y="1046" text-anchor="middle" class="font tiny">same policy context</text>
+    <rect x="1162" y="946" width="154" height="112" rx="16" fill="url(#actorGrad)" stroke="#3b82f6" stroke-width="2.8"/>
+    <text x="1239" y="989" text-anchor="middle" class="font small">actor</text>
+    <text x="1239" y="1018" text-anchor="middle" class="font small">answer</text>
+    <text x="1239" y="1046" text-anchor="middle" class="font tiny">complete generation</text>
+    <path d="M1138 1002 H1154" class="flow"/>
+    <text x="1147" y="1102" text-anchor="middle" class="font tiny">search history is frozen into the answer context</text>
+  </g>
+
+  <!-- Stage 2: shared context -->
+  <path d="M1360 972 H1412" class="flowGreen"/>
+  <g filter="url(#softShadow)">
+    <rect x="1420" y="918" width="198" height="164" rx="18" fill="url(#artifactGrad)" stroke="#cbd5e1" stroke-width="3"/>
+    <text x="1519" y="966" text-anchor="middle" class="font nodeTitle">Shared</text>
+    <text x="1519" y="996" text-anchor="middle" class="font nodeTitle">context</text>
+    <text x="1519" y="1032" text-anchor="middle" class="font tiny">question + messages</text>
+    <text x="1519" y="1056" text-anchor="middle" class="font tiny">+ search evidence</text>
+  </g>
+
+  <!-- Stage 2: teacher and actor branches -->
+  <path d="M1626 962 H1680" class="flowRed"/>
+  <g filter="url(#softShadow)">
+    <rect x="1688" y="866" width="270" height="150" rx="18" fill="url(#teacherGrad)" stroke="#f97316" stroke-width="3.1"/>
+    <rect x="1710" y="884" width="70" height="26" rx="13" fill="#ffffff" stroke="#fed7aa" stroke-width="1.4"/>
+    <text x="1745" y="903" text-anchor="middle" class="font tag">fixed</text>
+    <text x="1823" y="946" text-anchor="middle" class="font nodeTitle">Teacher Answer</text>
+    <text x="1823" y="976" text-anchor="middle" class="font nodeSub">grounded in evidence only</text>
+    <text x="1823" y="1002" text-anchor="middle" class="font tiny">does not read actor answer</text>
+  </g>
+  <path d="M1352 1050 C1480 1162 1572 1174 1680 1140" class="flowBlue"/>
+  <g filter="url(#softShadow)">
+    <rect x="1688" y="1064" width="270" height="126" rx="18" fill="url(#actorGrad)" stroke="#3b82f6" stroke-width="3.1"/>
+    <rect x="1710" y="1082" width="72" height="26" rx="13" fill="#ffffff" stroke="#bfdbfe" stroke-width="1.4"/>
+    <text x="1746" y="1101" text-anchor="middle" class="font tag">frozen</text>
+    <text x="1823" y="1140" text-anchor="middle" class="font nodeTitle">Actor Answer</text>
+    <text x="1823" y="1170" text-anchor="middle" class="font nodeSub">same on-policy trajectory</text>
+  </g>
+
+  <!-- Stage 2: chosen/rejected -->
+  <path d="M1966 940 H2010" class="flowRed"/>
+  <g filter="url(#softShadow)">
+    <rect x="2018" y="878" width="190" height="124" rx="18" fill="#f0fdf4" stroke="#22c55e" stroke-width="3"/>
+    <text x="2113" y="924" text-anchor="middle" class="font nodeTitle">chosen</text>
+    <text x="2113" y="954" text-anchor="middle" class="font nodeSub">teacher answer</text>
+    <text x="2113" y="980" text-anchor="middle" class="font tiny">status block removed</text>
+  </g>
+  <path d="M1966 1127 H2010" class="flowBlue"/>
+  <g filter="url(#softShadow)">
+    <rect x="2018" y="1066" width="190" height="124" rx="18" fill="#f8fafc" stroke="#94a3b8" stroke-width="3"/>
+    <text x="2113" y="1112" text-anchor="middle" class="font nodeTitle">rejected</text>
+    <text x="2113" y="1142" text-anchor="middle" class="font nodeSub">actor answer</text>
+    <text x="2113" y="1168" text-anchor="middle" class="font tiny">original completion</text>
+  </g>
+
+  <!-- Stage 2: pair builder and artifact -->
+  <path d="M2216 940 C2260 940 2262 982 2290 1004" class="flowGreen"/>
+  <path d="M2216 1128 C2260 1128 2262 1084 2290 1062" class="flow"/>
+  <g filter="url(#softShadow)">
+    <rect x="2298" y="952" width="184" height="166" rx="18" fill="url(#distillGrad)" stroke="#8b5cf6" stroke-width="3.1"/>
+    <rect x="2320" y="974" width="68" height="26" rx="13" fill="#ffffff" stroke="#ddd6fe" stroke-width="1.4"/>
+    <text x="2354" y="993" text-anchor="middle" class="font tag">pair</text>
+    <text x="2390" y="1038" text-anchor="middle" class="font nodeTitle">Preference</text>
+    <text x="2390" y="1068" text-anchor="middle" class="font nodeTitle">example</text>
+    <text x="2390" y="1096" text-anchor="middle" class="font tiny">shared prompt and context</text>
+  </g>
+  <path d="M2490 1035 H2532" class="flowPurple"/>
+  <g filter="url(#softShadow)">
+    <path d="M2540 966 C2540 940 2676 940 2676 966 V1080 C2676 1106 2540 1106 2540 1080 Z" fill="url(#artifactGrad)" stroke="#8b5cf6" stroke-width="3"/>
+    <ellipse cx="2608" cy="966" rx="68" ry="26" fill="#f5f3ff" stroke="#8b5cf6" stroke-width="3"/>
+    <text x="2608" y="1018" text-anchor="middle" class="font nodeTitle">DPO</text>
+    <text x="2608" y="1048" text-anchor="middle" class="font nodeTitle">pairs</text>
+    <text x="2608" y="1076" text-anchor="middle" class="font tiny">Stage 2 artifact</text>
+  </g>
+
+  <!-- Stage 3: preference dataset -->
+  <g filter="url(#softShadow)">
+    <path d="M430 1452 C430 1424 574 1424 574 1452 V1572 C574 1600 430 1600 430 1572 Z" fill="url(#artifactGrad)" stroke="#8b5cf6" stroke-width="3.1"/>
+    <ellipse cx="502" cy="1452" rx="72" ry="28" fill="#f5f3ff" stroke="#8b5cf6" stroke-width="3.1"/>
+    <text x="502" y="1506" text-anchor="middle" class="font nodeTitle">Preference</text>
+    <text x="502" y="1536" text-anchor="middle" class="font nodeTitle">pairs</text>
+    <text x="502" y="1566" text-anchor="middle" class="font tiny">from Stage 2</text>
+  </g>
+  <path d="M582 1512 H644" class="flowPurple"/>
+
+  <!-- Stage 3: trainable actor -->
+  <g filter="url(#softShadow)">
+    <rect x="652" y="1428" width="270" height="168" rx="18" fill="url(#actorGrad)" stroke="#3b82f6" stroke-width="3.3"/>
+    <rect x="676" y="1448" width="88" height="28" rx="14" fill="#ffffff" stroke="#bfdbfe" stroke-width="1.4"/>
+    <text x="720" y="1468" text-anchor="middle" class="font tag">trainable</text>
+    <text x="787" y="1510" text-anchor="middle" class="font nodeTitle">Stage 1 Actor</text>
+    <text x="787" y="1540" text-anchor="middle" class="font nodeSub">initialize answer training</text>
+    <text x="787" y="1568" text-anchor="middle" class="font tiny">search policy retained</text>
+  </g>
+  <path d="M930 1512 H976" class="flowPurple"/>
+
+  <!-- Stage 3: DPO objective -->
+  <g>
+    <rect x="984" y="1368" width="622" height="278" rx="24" class="dashGroup"/>
+    <rect x="1012" y="1344" width="258" height="48" rx="14" fill="#6d28d9" filter="url(#softShadow)"/>
+    <text x="1141" y="1376" text-anchor="middle" class="font groupTitle inverse">answer objective</text>
+
+    <rect x="1032" y="1424" width="214" height="82" rx="16" fill="#f0fdf4" stroke="#22c55e" stroke-width="2.8"/>
+    <text x="1139" y="1458" text-anchor="middle" class="font small">chosen</text>
+    <text x="1139" y="1485" text-anchor="middle" class="font tiny">increase likelihood</text>
+    <rect x="1032" y="1532" width="214" height="82" rx="16" fill="#f8fafc" stroke="#94a3b8" stroke-width="2.8"/>
+    <text x="1139" y="1566" text-anchor="middle" class="font small">rejected</text>
+    <text x="1139" y="1593" text-anchor="middle" class="font tiny">decrease preference</text>
+
+    <rect x="1334" y="1434" width="220" height="166" rx="18" fill="url(#distillGrad)" stroke="#8b5cf6" stroke-width="3.1"/>
+    <text x="1444" y="1480" text-anchor="middle" class="font nodeTitle">DPO loss</text>
+    <text x="1444" y="1516" text-anchor="middle" class="font small">chosen &gt; rejected</text>
+    <text x="1444" y="1554" text-anchor="middle" class="font tiny">plus optional chosen-answer</text>
+    <text x="1444" y="1578" text-anchor="middle" class="font tiny">SFT auxiliary loss</text>
+    <path d="M1254 1465 H1326" class="flowGreen"/>
+    <path d="M1254 1573 H1326" class="flow"/>
+  </g>
+
+  <!-- Stage 3: update and final actor -->
+  <path d="M1444 1428 V1328 H788 V1420" class="flowPurple"/>
+  <rect x="1018" y="1308" width="230" height="36" rx="18" fill="#ffffff" stroke="#ddd6fe" stroke-width="1.5"/>
+  <text x="1133" y="1332" text-anchor="middle" class="font arrowText">preference-policy update</text>
+  <path d="M1614 1512 H1672" class="flowPurple"/>
+  <g filter="url(#softShadow)">
+    <rect x="1680" y="1426" width="292" height="174" rx="18" fill="url(#actorGrad)" stroke="#3b82f6" stroke-width="3.3"/>
+    <rect x="1704" y="1448" width="92" height="28" rx="14" fill="#ffffff" stroke="#bfdbfe" stroke-width="1.4"/>
+    <text x="1750" y="1468" text-anchor="middle" class="font tag">distilled</text>
+    <text x="1826" y="1510" text-anchor="middle" class="font nodeTitle">SPAD Actor</text>
+    <text x="1826" y="1540" text-anchor="middle" class="font nodeSub">search-policy checkpoint</text>
+    <text x="1826" y="1566" text-anchor="middle" class="font nodeSub">+ grounded answer ability</text>
+  </g>
+
+  <!-- Stage 3: capabilities and final agent -->
+  <path d="M1980 1488 H2040" class="flowBlue"/>
+  <path d="M1980 1542 H2040" class="flowPurple"/>
+  <g filter="url(#softShadow)">
+    <rect x="2048" y="1378" width="300" height="106" rx="18" fill="url(#actorGrad)" stroke="#3b82f6" stroke-width="3"/>
+    <circle cx="2082" cy="1412" r="14" fill="#2563eb"/>
+    <path d="M2075 1412 L2080 1417 L2089 1407" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="2198" y="1424" text-anchor="middle" class="font nodeTitle">Search policy</text>
+    <text x="2198" y="1454" text-anchor="middle" class="font nodeSub">retained from Stage 1</text>
+  </g>
+  <g filter="url(#softShadow)">
+    <rect x="2048" y="1538" width="300" height="106" rx="18" fill="url(#distillGrad)" stroke="#8b5cf6" stroke-width="3"/>
+    <circle cx="2082" cy="1572" r="14" fill="#7c3aed"/>
+    <path d="M2075 1572 L2080 1577 L2089 1567" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="2198" y="1584" text-anchor="middle" class="font nodeTitle">Answer ability</text>
+    <text x="2198" y="1614" text-anchor="middle" class="font nodeSub">distilled from teacher</text>
+  </g>
+  <path d="M2356 1431 C2410 1431 2414 1480 2448 1506" class="flowBlue"/>
+  <path d="M2356 1591 C2410 1591 2414 1544 2448 1518" class="flowPurple"/>
+  <g filter="url(#softShadow)">
+    <rect x="2456" y="1440" width="216" height="148" rx="74" fill="#f8fafc" stroke="#0f766e" stroke-width="3.5"/>
+    <text x="2564" y="1500" text-anchor="middle" class="font nodeTitle">Final SPAD</text>
+    <text x="2564" y="1530" text-anchor="middle" class="font nodeTitle">Agent</text>
+    <text x="2564" y="1562" text-anchor="middle" class="font tiny">agentic RAG inference</text>
+  </g>
+
+  <!-- Footer principle -->
+  <rect x="120" y="1782" width="1510" height="74" rx="18" fill="#ffffff" fill-opacity="0.84" stroke="#e2e8f0" stroke-width="2" filter="url(#softShadow)"/>
+  <text x="154" y="1812" class="font tag">CORE PRINCIPLE</text>
+  <text x="154" y="1838" class="font small">A strong teacher evaluates whether the search evidence is answerable; the small actor is not penalized for weak answer wording during search-policy learning.</text>
+
+  <!-- Legend -->
+  <rect x="1680" y="1782" width="992" height="74" rx="18" fill="#ffffff" fill-opacity="0.84" stroke="#e2e8f0" stroke-width="2" filter="url(#softShadow)"/>
+  <circle cx="1720" cy="1819" r="10" fill="#3b82f6"/>
+  <text x="1740" y="1826" class="font tiny">actor / policy</text>
+  <circle cx="1882" cy="1819" r="10" fill="#22c55e"/>
+  <text x="1902" y="1826" class="font tiny">retrieval / evidence</text>
+  <circle cx="2084" cy="1819" r="10" fill="#f97316"/>
+  <text x="2104" y="1826" class="font tiny">teacher</text>
+  <circle cx="2208" cy="1819" r="10" fill="#fb7185"/>
+  <text x="2228" y="1826" class="font tiny">reward</text>
+  <circle cx="2338" cy="1819" r="10" fill="#8b5cf6"/>
+  <text x="2358" y="1826" class="font tiny">distillation</text>
+  <circle cx="2492" cy="1819" r="10" fill="#94a3b8"/>
+  <text x="2512" y="1826" class="font tiny">artifact / flow</text>
+</svg>

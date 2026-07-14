@@ -26,6 +26,13 @@ import aiohttp
 import pandas as pd
 from transformers import AutoTokenizer
 
+from agentic_iter_rag.metrics.answer_metrics import (
+    answer_group_metrics,
+    groups_from_ground_truth,
+    legacy_exact_match,
+    legacy_token_f1,
+    normalize_answer,
+)
 from agentic_iter_rag.trajectory.enhanced import (
     CONTEXT_FORMAT_VERSION,
     ENHANCED_TRAJECTORY_SCHEMA_VERSION,
@@ -253,34 +260,12 @@ def resolve_ranker_paths(
     return model_path, encoder_path
 
 
-def normalize_answer(text: str) -> str:
-    def remove_articles(s: str) -> str:
-        return re.sub(r"\b(a|an|the)\b", " ", s)
-
-    def remove_punc(s: str) -> str:
-        return "".join(ch for ch in s if ch not in set(string.punctuation))
-
-    return " ".join(remove_articles(remove_punc((text or "").lower())).split())
-
-
 def exact_match(prediction: str, answers: list[str]) -> float:
-    pred = normalize_answer(prediction)
-    return float(any(pred == normalize_answer(answer) for answer in answers))
+    return legacy_exact_match(prediction, answers)
 
 
 def token_f1(prediction: str, answers: list[str]) -> float:
-    def one_f1(answer: str) -> float:
-        pred_tokens = normalize_answer(prediction).split()
-        answer_tokens = normalize_answer(answer).split()
-        common = Counter(pred_tokens) & Counter(answer_tokens)
-        num_same = sum(common.values())
-        if num_same == 0 or not pred_tokens or not answer_tokens:
-            return 0.0
-        precision = num_same / len(pred_tokens)
-        recall = num_same / len(answer_tokens)
-        return 2 * precision * recall / (precision + recall)
-
-    return max((one_f1(answer) for answer in answers), default=0.0)
+    return legacy_token_f1(prediction, answers)
 
 
 def extract_answer(text: str) -> str:
@@ -473,15 +458,26 @@ def build_failed_result(row: dict[str, Any], idx: int, exc: Exception, elapsed_s
         prompt_messages = []
     try:
         reward_model = coerce_dict(row.get("reward_model", {}))
-        answers = coerce_answers((reward_model.get("ground_truth") or {}).get("target"))
+        ground_truth = reward_model.get("ground_truth") or {}
+        answers, groups, structured_eligible, answer_semantics = groups_from_ground_truth(ground_truth)
     except Exception:
         answers = []
+        groups = []
+        structured_eligible = False
+        answer_semantics = ""
     error_type = classify_infer_error(exc)
     metrics = {
         "index": idx,
         "data_source": data_source,
         "em": 0.0,
         "f1": 0.0,
+        "legacy_em": 0.0,
+        "legacy_f1": 0.0,
+        "structured_em": 0.0,
+        "answer_group_f1": 0.0,
+        "answer_group_recall": 0.0,
+        "structured_eligible": structured_eligible,
+        "required_group_count": len(groups),
         "tool_calls": 0,
         "agent_turns": 0,
         "agent_decision_total_s": 0.0,
@@ -507,6 +503,8 @@ def build_failed_result(row: dict[str, Any], idx: int, exc: Exception, elapsed_s
         "reranked_top5_chunks": [],
         "final_answer": "",
         "ground_truth_answer": answers,
+        "required_answer_groups": groups,
+        "answer_semantics": answer_semantics,
         "status": "failed",
         "error_type": error_type,
         "error_message": str(exc),
@@ -1044,7 +1042,8 @@ async def infer_one(
     prompt_messages = coerce_messages(row["prompt"])
     reward_model = coerce_dict(row.get("reward_model", {}))
     extra_info = coerce_dict(row.get("extra_info", {}))
-    answers = coerce_answers((reward_model.get("ground_truth") or {}).get("target"))
+    ground_truth = reward_model.get("ground_truth") or {}
+    answers, answer_groups, structured_eligible, answer_semantics = groups_from_ground_truth(ground_truth)
     initial_query = extract_question(prompt_messages, extra_info)
 
     messages = [dict(item) for item in prompt_messages]
@@ -1314,11 +1313,25 @@ async def infer_one(
     recall_doc_counts = [float(record.get("num_recall_docs", 0.0)) for record in stage_records]
     ranked_doc_counts = [float(record.get("num_ranked_docs", 0.0)) for record in stage_records]
     visible_doc_counts = [float(record.get("num_agent_visible_docs", 0.0)) for record in stage_records]
+    answer_scores = answer_group_metrics(
+        final_answer,
+        answers,
+        answer_groups,
+        structured_eligible=structured_eligible,
+    )
     metrics = {
         "index": idx,
         "data_source": data_source,
-        "em": exact_match(final_answer, answers),
-        "f1": token_f1(final_answer, answers),
+        "em": answer_scores.legacy_em,
+        "f1": answer_scores.legacy_f1,
+        "legacy_em": answer_scores.legacy_em,
+        "legacy_f1": answer_scores.legacy_f1,
+        "structured_em": answer_scores.structured_em,
+        "answer_group_f1": answer_scores.answer_group_f1,
+        "answer_group_recall": answer_scores.answer_group_recall,
+        "structured_eligible": answer_scores.structured_eligible,
+        "matched_group_count": answer_scores.matched_group_count,
+        "required_group_count": answer_scores.required_group_count,
         "tool_calls": tool_calls,
         "agent_turns": agent_turns,
         "agent_decision_total_s": agent_total_s,
@@ -1344,6 +1357,9 @@ async def infer_one(
         "source_index": idx,
         "question": initial_query,
         "gold_answers": answers,
+        "required_answer_groups": answer_groups,
+        "answer_semantics": answer_semantics,
+        "structured_reward_eligible": structured_eligible,
         "agent_model": str(args.agent_model) if args.agent_model else None,
         "agent_model_role": "trained_agent",
         "context_format_version": CONTEXT_FORMAT_VERSION,
@@ -1376,6 +1392,8 @@ async def infer_one(
         "reranked_top5_chunks": final_top5_by_call,
         "final_answer": final_answer,
         "ground_truth_answer": answers,
+        "required_answer_groups": answer_groups,
+        "answer_semantics": answer_semantics,
         "status": status,
         "metrics": metrics,
         "stage_records": stage_records,
@@ -1490,6 +1508,8 @@ def summarize_group(rows: list[dict[str, Any]]) -> dict[str, float]:
     keys = [
         "em",
         "f1",
+        "legacy_em",
+        "legacy_f1",
         "tool_calls",
         "agent_decision_avg_s",
         "agent_decision_total_s",
@@ -1505,6 +1525,11 @@ def summarize_group(rows: list[dict[str, Any]]) -> dict[str, float]:
     result = {"n": float(len(rows))}
     for key in keys:
         result[key] = avg([float(row.get(key, 0.0)) for row in rows])
+    structured_rows = [row for row in rows if bool(row.get("structured_eligible", False))]
+    result["structured_n"] = float(len(structured_rows))
+    result["structured_eligible_rate"] = len(structured_rows) / len(rows) if rows else 0.0
+    for key in ("structured_em", "answer_group_f1", "answer_group_recall"):
+        result[key] = avg([float(row.get(key, 0.0)) for row in structured_rows])
     return result
 
 
@@ -1540,9 +1565,17 @@ def fmt(value: float) -> str:
 
 
 def effect_table(summary: dict[str, dict[str, float]]) -> str:
-    lines = ["| Scope | N | EM | F1 |", "|---|---:|---:|---:|"]
+    lines = [
+        "| Scope | N | Legacy EM | Legacy F1 | Structured N | Structured EM | Group F1 | Group Recall |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|",
+    ]
     for name, row in summary.items():
-        lines.append(f"| {name} | {int(row.get('n', 0))} | {fmt(row.get('em', 0.0))} | {fmt(row.get('f1', 0.0))} |")
+        lines.append(
+            f"| {name} | {int(row.get('n', 0))} | {fmt(row.get('legacy_em', row.get('em', 0.0)))} | "
+            f"{fmt(row.get('legacy_f1', row.get('f1', 0.0)))} | {int(row.get('structured_n', 0))} | "
+            f"{fmt(row.get('structured_em', 0.0))} | {fmt(row.get('answer_group_f1', 0.0))} | "
+            f"{fmt(row.get('answer_group_recall', 0.0))} |"
+        )
     return "\n".join(lines)
 
 

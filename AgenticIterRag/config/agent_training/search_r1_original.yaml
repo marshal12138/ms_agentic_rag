@@ -1,0 +1,184 @@
+# Search-R1 original reward baseline under train_agent.impl=spad_rag.
+
+name: search_r1_original
+impl: spad_rag
+
+sub_stage_order:
+  - search_policy_rl
+  - answer_refresh_data
+  - answer_distillation
+
+resume_from_sub_stage: null
+stop_after_sub_stage: search_policy_rl
+skip_sub_stages: []
+force_rerun_sub_stages: []
+default_backend: smoke
+
+refs:
+  train_files: data.train_files
+  val_files: data.val_files
+  init_actor_model: model.path
+  max_prompt_length: data.max_prompt_length
+  max_response_length: data.max_response_length
+
+teacher_answerer:
+  default_service_profile: glm47_single_vllm
+  # Search-R1 reward 不调用 teacher；保留该值供共享 Stage2 配置使用。
+  prompt_version: spad_teacher_evidence_status_answer_v2
+  insufficient_answer: 证据不足无法作答
+  request:
+    temperature: 0.0
+    top_p: 1.0
+    max_tokens: 512
+    timeout_seconds: 180
+    chat_template_kwargs:
+      enable_thinking: false
+  service_profiles:
+    glm47_single_vllm:
+      backend_type: vllm_container
+      model_path: /data01/ms_wksp/agent_up_to_date/models/llm/GLM-4.7-Flash
+      served_model_name: GLM-4.7-Flash
+      trust_remote_code: true
+      container_image: m.daocloud.io/quay.io/ascend/vllm-ascend:v0.21.0rc1
+      container_name: spad_glm47_vllm_8067
+      tensor_parallel_size: 2
+      gpu_memory_utilization: 0.95
+      max_model_len: 32000
+      kv_cache_dtype: auto
+      moe_backend: auto
+      disable_custom_all_reduce: true
+      endpoint: http://127.0.0.1:8067/v1/chat/completions
+
+reward:
+  type: search_r1_original
+  search_r1_original:
+    score: 1.0
+    format_score: 0.0
+
+outputs:
+  search_policy_actor_checkpoint: null
+  search_policy_rollout_manifest: null
+  search_policy_reward_manifest: null
+  answer_refresh_manifest: null
+  answer_distill_dataset_manifest: null
+  answer_distilled_actor_checkpoint: null
+  spad_manifest: null
+
+sub_stages:
+  search_policy_rl:
+    enabled: true
+    backend: smoke
+    smoke:
+      max_samples: -1
+      total_training_steps: 1
+    trainer:
+      method: grpo
+      # 与 SPAD 对齐：保留组内中心化，但不按 UID 组内 std 缩放 advantage。
+      norm_adv_by_std_in_grpo: false
+      total_epochs: 1
+      total_training_steps: null
+      train_batch_size: 64
+      actor_batch_size: 64
+      ppo_mini_batch_size: 64
+      actor_micro_batch_size_per_gpu: 2
+      log_prob_micro_batch_size_per_gpu: 4
+      n_samples_per_prompt: 8
+      data_shuffle: true
+      data_seed: 42
+      val_batch_size: 8
+      train_max_samples: data.train_max_samples
+      val_max_samples: data.val_max_samples
+      learning_rate: 1.0e-6
+      save_freq: 5
+      test_freq: -1
+      logger: ["console"]
+      auto_stop_services: true
+      agent_loop_num_workers: 8
+      teacher_batch_workers: 16
+      rollout_gpu_memory_utilization: 0.55
+      max_num_seqs: 32
+      max_prompt_length: 12000
+      max_response_length: 4096
+      rollout_max_model_len: 16096
+      max_num_batched_tokens: 24576
+      dataloader_num_workers: 0
+      enable_chunked_prefill: true
+      enable_prefix_caching: true
+      enforce_eager: false
+    rollout:
+      stop_sequences: ["</tool_call>", "</answer>"]
+      include_stop_str_in_output: true
+      turn_max_tokens: 512
+      max_assistant_turns: 6
+      max_user_turns: 6
+      max_tool_response_length: 4096
+      visible_top_m: 5
+      max_doc_chars: 2000
+    outputs:
+      actor_checkpoint: null
+      rollout_jsonl: null
+      reward_jsonl: null
+      manifest: null
+
+  answer_refresh_data:
+    enabled: true
+    backend: smoke
+    auto_stop_services: true
+    smoke:
+      max_samples: -1
+    rollout:
+      stop_sequences: []
+      max_assistant_turns: 6
+      max_user_turns: 6
+      max_model_len: 16096
+      visible_top_m: 5
+      max_doc_chars: 2000
+    dataset:
+      version: null
+      overwrite: false
+      output_schema: spad_answer_distill_pair_v1
+    inputs:
+      actor_checkpoint: null
+    outputs:
+      dataset_jsonl: null
+      dataset_manifest: null
+      manifest: null
+
+  answer_distillation:
+    enabled: true
+    phase_order:
+      - sft
+      - dpo
+    inputs:
+      init_actor_checkpoint: null
+      dataset_manifest: null
+    outputs:
+      checkpoint: null
+      manifest: null
+    phases:
+      sft:
+        enabled: false
+        backend: smoke
+        train_batch_size: 64
+        micro_batch_size_per_gpu: 4
+        learning_rate: 1.0e-6
+        total_epochs: 1
+        total_training_steps: null
+        loss_weight: 1.0
+        outputs:
+          checkpoint: null
+          manifest: null
+      dpo:
+        enabled: true
+        backend: smoke
+        train_batch_size: 64
+        micro_batch_size_per_gpu: 4
+        learning_rate: 1.0e-6
+        total_epochs: 1
+        total_training_steps: null
+        beta: 0.1
+        pairwise_loss_weight: 1.0
+        chosen_sft_loss_weight: 0.2
+        outputs:
+          checkpoint: null
+          manifest: null

@@ -1,6 +1,6 @@
 # AIR v1 LLM reranker stage2 训练效率消融 overlay。
 # 目标：
-#   1. 固定 train_batch_size=64、rollout_n=4，按 2026-07-07 最新消融要求控制单步样本量。
+#   1. 固定 train_batch_size=64、rollout_n=8，按 2026-07-07 最新消融要求控制单步样本量。
 #   2. 只跑 5 个 training step，快速比较 stage2 单步耗时和 OOM 风险。
 #   3. 先消融 reranker actor / rollout 侧效率，尽可能关闭 offload，并提高 vLLM 显存利用率。
 #   4. stage1 默认关闭，只执行 stage2_agentic，不重新构建数据集。
@@ -10,7 +10,7 @@
 main_run:
   project:
     # 本次 5-step stage2 训练配置名；采样参数对齐 CoSearch 训练 rollout 默认值，不再做温度消融。
-    experiment_name: agentic_iter_rag_v1_stage2_ablation_reranker_efficiency_n4_cosearch_sampling_5step
+    experiment_name: agentic_iter_rag_v1_stage2_ablation_reranker_efficiency_n8_cosearch_sampling_5step
 
 pipeline:
   # 直接从训练 stage 开始，不重跑 generate_traces / build_reranker_dataset / build_reranker_branch_dataset。
@@ -58,9 +58,9 @@ reranker_training:
       train_batch_size: 64
       ppo_mini_batch_size: 64
 
-      # rollout_n 固定为 4；每 step reranker rollout 数为 64*4=256，后续效率消融不再改这个维度。
-      n_samples_per_prompt: 4
-      val_n_samples_per_prompt: 4
+      # rollout_n 固定为 8；每 step reranker rollout 数为 64*8=512，后续效率消融不再改这个维度。
+      n_samples_per_prompt: 8
+      val_n_samples_per_prompt: 8
 
       # 每次消融只跑 5 个真实 training step。
       total_training_steps: 5
@@ -126,7 +126,7 @@ reranker_training:
         - "</rerank>"
       include_stop_str_in_output: true
 
-      # 继续保留 64 个 agent loop worker，让 256 条 reranker rollout 和 continuation reward 有足够并发。
+      # 继续保留 64 个 agent loop worker，让 512 条 reranker rollout 和 continuation reward 有足够并发。
       agent_loop_num_workers: 64
 
       # 5-step 消融阶段不需要频繁 checkpoint；结束时仍由 trainer 产出最后可审计目录。

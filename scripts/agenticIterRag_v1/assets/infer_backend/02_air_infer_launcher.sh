@@ -101,6 +101,13 @@ RANKER_CUDA_VISIBLE_DEVICES="${RANKER_CUDA_VISIBLE_DEVICES:-${RANK_GPU_ID}}"
 AGENT_GPU_IDS="${AGENT_GPU_IDS:-6}"
 AGENT_TP_SIZE="${AGENT_TP_SIZE:-$(awk -F',' '{print NF}' <<< "${AGENT_GPU_IDS}")}"
 AGENT_PORT="${AGENT_PORT:-8040}"
+AGENT_INSTANCE_COUNT="${AGENT_INSTANCE_COUNT:-}"
+AGENT_BACKEND_BASE_PORT="${AGENT_BACKEND_BASE_PORT:-}"
+AGENT_PROXY_STRATEGY="${AGENT_PROXY_STRATEGY:-least_inflight}"
+AGENT_PROXY_TIMEOUT="${AGENT_PROXY_TIMEOUT:-${REQUEST_TIMEOUT:-180}}"
+AGENT_PROXY_FAILURE_COOLDOWN_SECONDS="${AGENT_PROXY_FAILURE_COOLDOWN_SECONDS:-10}"
+AGENT_PROXY_LATENCY_EWMA_ALPHA="${AGENT_PROXY_LATENCY_EWMA_ALPHA:-0.2}"
+AGENT_PROXY_MAX_RETRIES_PER_REQUEST="${AGENT_PROXY_MAX_RETRIES_PER_REQUEST:-}"
 AGENT_SERVED_MODEL="${AGENT_SERVED_MODEL:-air-agent}"
 VLLM_STARTUP_TIMEOUT="${VLLM_STARTUP_TIMEOUT:-1800}"
 GPU_MEMORY_UTILIZATION="${GPU_MEMORY_UTILIZATION:-0.60}"
@@ -184,6 +191,10 @@ RECALL_SERVICE_PID=""
 RECALL_PROXY_PID=""
 RECALL_BACKEND_PIDS=()
 RECALL_BACKEND_LOGS=()
+AGENT_PROXY_PID=""
+AGENT_PROXY_LOG="${AGENT_PROXY_LOG:-${LOG_DIR}/${RUN_NAME}.agent_proxy.log}"
+AGENT_BACKEND_PGIDS=()
+AGENT_BACKEND_LOGS=()
 AGENT_PGID=""
 
 is_truthy() {
@@ -194,6 +205,34 @@ is_truthy() {
 }
 
 cleanup() {
+  if [[ -n "${AGENT_PROXY_PID}" ]] && kill -0 "-${AGENT_PROXY_PID}" 2>/dev/null; then
+    kill -TERM "-${AGENT_PROXY_PID}" 2>/dev/null || true
+    for _ in {1..20}; do
+      if ! kill -0 "-${AGENT_PROXY_PID}" 2>/dev/null; then
+        break
+      fi
+      sleep 0.5
+    done
+    if kill -0 "-${AGENT_PROXY_PID}" 2>/dev/null; then
+      kill -KILL "-${AGENT_PROXY_PID}" 2>/dev/null || true
+    fi
+    wait "${AGENT_PROXY_PID}" 2>/dev/null || true
+  fi
+  for pgid in "${AGENT_BACKEND_PGIDS[@]:-}"; do
+    if [[ -n "${pgid}" ]] && kill -0 "-${pgid}" 2>/dev/null; then
+      kill -TERM "-${pgid}" 2>/dev/null || true
+      for _ in {1..20}; do
+        if ! kill -0 "-${pgid}" 2>/dev/null; then
+          break
+        fi
+        sleep 0.5
+      done
+      if kill -0 "-${pgid}" 2>/dev/null; then
+        kill -KILL "-${pgid}" 2>/dev/null || true
+      fi
+      wait "${pgid}" 2>/dev/null || true
+    fi
+  done
   if [[ -n "${AGENT_PGID}" ]] && kill -0 "-${AGENT_PGID}" 2>/dev/null; then
     kill -TERM "-${AGENT_PGID}" 2>/dev/null || true
     for _ in {1..20}; do
@@ -368,20 +407,26 @@ wait_for_recall_health_url() {
   return 1
 }
 
-run_recall_preflight() {
+run_recall_preflight_url() {
+  local url="$1"
+  local label="$2"
   local output status
   if output="$("${PY}" "${ASSETS_DIR}/00_check_air_tool_retrieval.py" \
-      --url "${RETRIEVAL_SERVICE_URL}" \
+      --url "${url}" \
       --query "${RETRIEVAL_PREFLIGHT_QUERY}" \
       --top-n "${RECALL_FINAL_TOP_N}" \
       --top-m "${SEARCH_TOOL_FINAL_TOP_M}" \
       --expect-contains "${RETRIEVAL_PREFLIGHT_EXPECT}" 2>&1)"; then
-    echo "recall retrieval semantic preflight passed: top_n=${RECALL_FINAL_TOP_N} top_m=${SEARCH_TOOL_FINAL_TOP_M}"
+    echo "recall retrieval semantic preflight passed: label=${label} url=${url} top_n=${RECALL_FINAL_TOP_N} top_m=${SEARCH_TOOL_FINAL_TOP_M}"
     return 0
   fi
   status=$?
   printf '%s\n' "${output}" >&2
   return "${status}"
+}
+
+run_recall_preflight() {
+  run_recall_preflight_url "${RETRIEVAL_SERVICE_URL}" "service"
 }
 
 start_balanced_recall_service() {
@@ -521,8 +566,8 @@ start_balanced_recall_service() {
     exit 2
   fi
   if is_truthy "${RECALL_QUERY_PREFLIGHT}"; then
-    if ! run_recall_preflight; then
-      echo "ERROR: recall retrieval semantic preflight failed through proxy; aborting." >&2
+    if ! run_recall_preflight_url "${backend_urls[0]}" "first_backend"; then
+      echo "ERROR: recall retrieval semantic preflight failed on first backend; aborting." >&2
       exit 2
     fi
   else
@@ -592,23 +637,25 @@ wait_for_vllm() {
   done
 }
 
-start_agent_vllm() {
+start_agent_vllm_backend() {
   local model_path="$1"
-  local log="${RUNTIME_LOG_DIR}/agent_vllm_${AGENT_PORT}.log"
-  if check_vllm "${AGENT_PORT}"; then
-    echo "ERROR: agent vLLM port ${AGENT_PORT} is already serving a model; vLLM reuse is disabled for infer." >&2
+  local gpu_ids="$2"
+  local port="$3"
+  local log="$4"
+  if check_vllm "${port}"; then
+    echo "ERROR: agent vLLM port ${port} is already serving a model; vLLM reuse is disabled for infer." >&2
     echo "       Stop the existing service or choose another AGENT_PORT before rerunning." >&2
     exit 4
   fi
-  echo "starting agent vLLM server on ${AIR_ACCELERATOR} devices ${AGENT_GPU_IDS}; model=${model_path}; log=${log}"
-  setsid env $(air_accel_env_visible_devices_cmd "${AGENT_GPU_IDS}") \
+  echo "starting agent vLLM backend on ${AIR_ACCELERATOR} devices ${gpu_ids}; port=${port}; tp=${AGENT_TP_SIZE}; model=${model_path}; log=${log}"
+  setsid env $(air_accel_env_visible_devices_cmd "${gpu_ids}") \
     VLLM_DISABLE_FLASHINFER=1 \
     VLLM_USE_FLASHINFER_SAMPLER=0 \
     VLLM_ATTENTION_BACKEND="${VLLM_ATTENTION_BACKEND:-FLASH_ATTN}" \
     TOKENIZERS_PARALLELISM=false \
     "${PY}" -m vllm.entrypoints.openai.api_server \
       --host 127.0.0.1 \
-      --port "${AGENT_PORT}" \
+      --port "${port}" \
       --model "${model_path}" \
       --served-model-name "${AGENT_SERVED_MODEL}" \
       --tensor-parallel-size "${AGENT_TP_SIZE}" \
@@ -619,7 +666,100 @@ start_agent_vllm() {
       --dtype bfloat16 \
       --enforce-eager > "${log}" 2>&1 &
   AGENT_PGID="$!"
-  wait_for_vllm "${AGENT_PORT}" "${AGENT_PGID}" "${log}"
+}
+
+start_agent_vllm_proxy() {
+  local -a backend_base_urls
+  local backend_url
+  local max_retries
+  max_retries="${AGENT_PROXY_MAX_RETRIES_PER_REQUEST:-${#AGENT_BACKEND_PGIDS[@]}}"
+  for backend_url in "$@"; do
+    backend_base_urls+=(--backend "${backend_url}")
+  done
+  echo "starting agent data-parallel proxy: port=${AGENT_PORT}; strategy=${AGENT_PROXY_STRATEGY}; backends=$*; log=${AGENT_PROXY_LOG}"
+  setsid env PYTHONPATH="${PROJECT_ROOT}:${PROJECT_ROOT}/verl:${PYTHONPATH:-}" \
+    "${PY}" "${PROJECT_ROOT}/agentic_iter_rag/reranker_training/frozen_agent_proxy.py" \
+      --host 127.0.0.1 \
+      --port "${AGENT_PORT}" \
+      --timeout "${AGENT_PROXY_TIMEOUT}" \
+      --strategy "${AGENT_PROXY_STRATEGY}" \
+      --failure-cooldown-seconds "${AGENT_PROXY_FAILURE_COOLDOWN_SECONDS}" \
+      --latency-ewma-alpha "${AGENT_PROXY_LATENCY_EWMA_ALPHA}" \
+      --max-retries-per-request "${max_retries}" \
+      "${backend_base_urls[@]}" > "${AGENT_PROXY_LOG}" 2>&1 &
+  AGENT_PROXY_PID="$!"
+  wait_for_vllm "${AGENT_PORT}" "${AGENT_PROXY_PID}" "${AGENT_PROXY_LOG}"
+}
+
+start_agent_vllm() {
+  local model_path="$1"
+  local -a agent_gpu_ids backend_urls
+  local agent_instance_count backend_base_port idx gpu_id backend_port backend_log pgid
+  IFS=',' read -r -a agent_gpu_ids <<< "${AGENT_GPU_IDS}"
+  for idx in "${!agent_gpu_ids[@]}"; do
+    agent_gpu_ids[$idx]="${agent_gpu_ids[$idx]//[[:space:]]/}"
+  done
+  if [[ -z "${AGENT_INSTANCE_COUNT}" ]]; then
+    if [[ "${AGENT_TP_SIZE}" == "1" ]]; then
+      agent_instance_count="${#agent_gpu_ids[@]}"
+    else
+      agent_instance_count=1
+    fi
+  else
+    agent_instance_count="${AGENT_INSTANCE_COUNT}"
+  fi
+  if ! [[ "${agent_instance_count}" =~ ^[0-9]+$ ]] || (( agent_instance_count < 1 )); then
+    echo "ERROR: AGENT_INSTANCE_COUNT must be a positive integer; got ${agent_instance_count}" >&2
+    exit 4
+  fi
+
+  if (( agent_instance_count == 1 )); then
+    local log="${RUNTIME_LOG_DIR}/agent_vllm_${AGENT_PORT}.log"
+    start_agent_vllm_backend "${model_path}" "${AGENT_GPU_IDS}" "${AGENT_PORT}" "${log}"
+    wait_for_vllm "${AGENT_PORT}" "${AGENT_PGID}" "${log}"
+    return 0
+  fi
+
+  if [[ "${AGENT_TP_SIZE}" != "1" ]]; then
+    echo "ERROR: agent data-parallel inference requires AGENT_TP_SIZE=1; got AGENT_TP_SIZE=${AGENT_TP_SIZE}" >&2
+    exit 4
+  fi
+  if (( agent_instance_count > ${#agent_gpu_ids[@]} )); then
+    echo "ERROR: AGENT_INSTANCE_COUNT=${agent_instance_count} exceeds AGENT_GPU_IDS count=${#agent_gpu_ids[@]}" >&2
+    exit 4
+  fi
+
+  backend_base_port="${AGENT_BACKEND_BASE_PORT:-$((AGENT_PORT + 1))}"
+  if check_vllm "${AGENT_PORT}"; then
+    echo "ERROR: agent proxy port ${AGENT_PORT} is already serving a model; choose another AGENT_PORT." >&2
+    exit 4
+  fi
+  echo "starting ${agent_instance_count} data-parallel agent vLLM replicas; proxy_port=${AGENT_PORT}; backend_base_port=${backend_base_port}; devices=${AGENT_GPU_IDS}; tp=1"
+
+  for ((idx=0; idx<agent_instance_count; idx++)); do
+    gpu_id="${agent_gpu_ids[$idx]}"
+    if [[ -z "${gpu_id}" ]]; then
+      echo "ERROR: empty gpu id in AGENT_GPU_IDS=${AGENT_GPU_IDS}" >&2
+      exit 4
+    fi
+    backend_port=$((backend_base_port + idx))
+    if check_vllm "${backend_port}"; then
+      echo "ERROR: agent backend port ${backend_port} is already serving a model; choose another AGENT_BACKEND_BASE_PORT." >&2
+      exit 4
+    fi
+    backend_log="${RUNTIME_LOG_DIR}/agent_vllm_replica${idx}_${AIR_ACCELERATOR}${gpu_id}_port${backend_port}.log"
+    start_agent_vllm_backend "${model_path}" "${gpu_id}" "${backend_port}" "${backend_log}"
+    AGENT_BACKEND_PGIDS+=("${AGENT_PGID}")
+    AGENT_BACKEND_LOGS+=("${backend_log}")
+    backend_urls+=("http://127.0.0.1:${backend_port}")
+  done
+
+  for idx in "${!backend_urls[@]}"; do
+    pgid="${AGENT_BACKEND_PGIDS[$idx]}"
+    wait_for_vllm "$((backend_base_port + idx))" "${pgid}" "${AGENT_BACKEND_LOGS[$idx]}"
+  done
+  AGENT_PGID=""
+  start_agent_vllm_proxy "${backend_urls[@]}"
 }
 
 require_path() {
@@ -760,6 +900,11 @@ write_shell_report() {
 - AIR_ACCELERATOR: ${AIR_ACCELERATOR}
 - $(air_accel_visible_devices_var): ${AGENT_GPU_IDS}
 - AGENT_GPU_IDS: ${AGENT_GPU_IDS}
+- AGENT_TP_SIZE: ${AGENT_TP_SIZE}
+- AGENT_INSTANCE_COUNT: ${AGENT_INSTANCE_COUNT:-auto}
+- AGENT_BACKEND_BASE_PORT: ${AGENT_BACKEND_BASE_PORT:-$((AGENT_PORT + 1))}
+- AGENT_PROXY_LOG: ${AGENT_PROXY_LOG}
+- AGENT_PROXY_STRATEGY: ${AGENT_PROXY_STRATEGY}
 - RANK_GPU_ID: ${RANK_GPU_ID}
 - RANKER_CUDA_VISIBLE_DEVICES: ${RANKER_CUDA_VISIBLE_DEVICES}
 - RANKER_DEVICE: ${RANKER_DEVICE}
@@ -832,6 +977,12 @@ AUTO_STOP_RECALL_SERVICE=${AUTO_STOP_RECALL_SERVICE}
 AGENT_GPU_IDS=${AGENT_GPU_IDS}
 AGENT_TP_SIZE=${AGENT_TP_SIZE}
 AGENT_PORT=${AGENT_PORT}
+AGENT_INSTANCE_COUNT=${AGENT_INSTANCE_COUNT}
+AGENT_BACKEND_BASE_PORT=${AGENT_BACKEND_BASE_PORT}
+AGENT_PROXY_LOG=${AGENT_PROXY_LOG}
+AGENT_PROXY_STRATEGY=${AGENT_PROXY_STRATEGY}
+AGENT_PROXY_TIMEOUT=${AGENT_PROXY_TIMEOUT}
+AGENT_PROXY_MAX_RETRIES_PER_REQUEST=${AGENT_PROXY_MAX_RETRIES_PER_REQUEST}
 AGENT_SERVED_MODEL=${AGENT_SERVED_MODEL}
 RANK_GPU_ID=${RANK_GPU_ID}
 RANKER_CUDA_VISIBLE_DEVICES=${RANKER_CUDA_VISIBLE_DEVICES}
@@ -943,6 +1094,10 @@ if [[ "${DRY_RUN:-0}" == "1" ]]; then
   echo "AIR_ACCELERATOR=${AIR_ACCELERATOR}"
   echo "$(air_accel_visible_devices_var)=${AGENT_GPU_IDS}"
   echo "AGENT_GPU_IDS=${AGENT_GPU_IDS}"
+  echo "AGENT_TP_SIZE=${AGENT_TP_SIZE}"
+  echo "AGENT_INSTANCE_COUNT=${AGENT_INSTANCE_COUNT:-auto}"
+  echo "AGENT_BACKEND_BASE_PORT=${AGENT_BACKEND_BASE_PORT:-$((AGENT_PORT + 1))}"
+  echo "AGENT_PROXY_LOG=${AGENT_PROXY_LOG}"
   echo "RANK_GPU_ID=${RANK_GPU_ID}"
   echo "RANKER_CUDA_VISIBLE_DEVICES=${RANKER_CUDA_VISIBLE_DEVICES}"
   echo "RANKER_DEVICE=${RANKER_DEVICE}"

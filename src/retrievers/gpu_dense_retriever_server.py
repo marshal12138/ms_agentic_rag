@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import threading
 import time
 from typing import List, Optional
 
@@ -216,6 +217,7 @@ class QueryRequest(BaseModel):
 app = FastAPI()
 retriever: GpuTorchFlatRetriever
 default_topk: int
+retriever_lock = threading.Lock()
 
 
 @app.get("/gpu_status")
@@ -233,11 +235,30 @@ def gpu_status():
 @app.post("/retrieve")
 def retrieve_endpoint(request: QueryRequest):
     topk = request.topk or default_topk
-    if request.return_scores:
-        results, scores = retriever.batch_search(request.queries, num=topk, return_score=True)
-    else:
-        results = retriever.batch_search(request.queries, num=topk, return_score=False)
-        scores = None
+    queued_at = time.time()
+    with retriever_lock:
+        wait_s = time.time() - queued_at
+        search_started_at = time.time()
+        if request.return_scores:
+            results, scores = retriever.batch_search(request.queries, num=topk, return_score=True)
+        else:
+            results = retriever.batch_search(request.queries, num=topk, return_score=False)
+            scores = None
+        search_s = time.time() - search_started_at
+    print(
+        json.dumps(
+            {
+                "event": "gpu_retriever_request",
+                "query_count": len(request.queries),
+                "topk": topk,
+                "return_scores": request.return_scores,
+                "wait_s": round(wait_s, 6),
+                "search_s": round(search_s, 6),
+            },
+            ensure_ascii=False,
+        ),
+        flush=True,
+    )
     resp = []
     for i, single_result in enumerate(results):
         if request.return_scores:

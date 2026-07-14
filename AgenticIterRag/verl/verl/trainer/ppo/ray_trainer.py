@@ -19,6 +19,7 @@ This trainer supports model-agonistic model initialization with huggingface
 """
 
 import json
+import hashlib
 import os
 import uuid
 from collections import defaultdict
@@ -158,6 +159,57 @@ def apply_kl_penalty(data: DataProto, kl_ctrl: core_algos.AdaptiveKLController, 
     metrics = {"actor/reward_kl_penalty": current_kl, "actor/reward_kl_penalty_coeff": beta}
 
     return data, metrics
+
+
+def _compute_reward_extra_metrics(reward_extra_infos_dict: dict[str, Any]) -> dict[str, float]:
+    """Aggregate numeric reward-extra fields for step-level logging."""
+
+    metrics: dict[str, float] = {}
+    numeric_values: dict[str, np.ndarray] = {}
+    for key, values in reward_extra_infos_dict.items():
+        value_list = list(values)
+        if not value_list:
+            continue
+        converted: list[float] = []
+        for value in value_list:
+            if isinstance(value, (bool, np.bool_)):
+                converted.append(float(value))
+            elif isinstance(value, (int, float, np.integer, np.floating)):
+                numeric = float(value)
+                if np.isfinite(numeric):
+                    converted.append(numeric)
+            else:
+                break
+        if len(converted) != len(value_list):
+            continue
+
+        arr = np.asarray(converted, dtype=np.float64)
+        numeric_values[key] = arr
+        metrics[f"reward_extra/{key}/mean"] = float(np.mean(arr))
+        if key.endswith("_count"):
+            metrics[f"reward_extra/{key}/sum"] = float(np.sum(arr))
+
+    teacher_called = numeric_values.get("teacher_called_count")
+    if teacher_called is not None:
+        teacher_called_sum = float(np.sum(teacher_called))
+        if teacher_called_sum > 0:
+            for key in ("teacher_format_error_count", "bad_stop_count"):
+                values = numeric_values.get(key)
+                if values is not None:
+                    rate_name = key.removesuffix("_count")
+                    metrics[f"reward_extra/{rate_name}/rate_over_teacher_called"] = float(
+                        np.sum(values) / teacher_called_sum
+                    )
+    return metrics
+
+
+def _as_object_vector(values: Any) -> np.ndarray:
+    """Preserve one arbitrary Python object per rollout without NumPy shape inference."""
+
+    items = list(values)
+    array = np.empty(len(items), dtype=object)
+    array[:] = items
+    return array
 
 
 def compute_response_mask(data: DataProto):
@@ -450,6 +502,7 @@ class RayPPOTrainer:
         """Dump rollout/validation samples as JSONL."""
         os.makedirs(dump_path, exist_ok=True)
         filename = os.path.join(dump_path, f"{self.global_steps}.jsonl")
+        temporary_filename = f"{filename}.tmp"
 
         n = len(inputs)
         base_data = {
@@ -466,13 +519,130 @@ class RayPPOTrainer:
 
         lines = []
         for i in range(n):
-            entry = {k: self._make_json_serializable(v[i]) for k, v in base_data.items()}
-            lines.append(json.dumps(entry, ensure_ascii=False))
+            uid = str(base_data.get("uid", [""] * n)[i] or "")
+            try:
+                entry = {k: self._make_json_serializable(v[i]) for k, v in base_data.items()}
+                lines.append(json.dumps(entry, ensure_ascii=False))
+            except Exception as exc:
+                raise RuntimeError(
+                    f"failed to serialize rollout uid={uid!r} step={self.global_steps}: {exc}"
+                ) from exc
 
-        with open(filename, "w") as f:
+        if os.path.exists(filename):
+            raise FileExistsError(f"refusing to overwrite rollout shard: {filename}")
+        with open(temporary_filename, "w", encoding="utf-8") as f:
             f.write("\n".join(lines) + "\n")
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temporary_filename, filename)
 
         print(f"Dumped generations to {filename}")
+
+    @staticmethod
+    def _rollout_sha256(path: str) -> str:
+        digest = hashlib.sha256()
+        with open(path, "rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+
+    def _update_rollout_manifest(self, rollout_data_dir: str, records: list[dict[str, Any]]) -> None:
+        manifest_path = os.path.join(rollout_data_dir, "manifest.json")
+        shard_path = os.path.join(rollout_data_dir, f"{self.global_steps}.jsonl")
+        rollout_n = int(self.config.actor_rollout_ref.rollout.n)
+        train_batch_size = int(self.config.data.train_batch_size)
+        expected_per_shard = train_batch_size * rollout_n
+        expected_steps = int(self.total_training_steps)
+        expected_rollouts = expected_steps * expected_per_shard
+
+        if len(records) != expected_per_shard:
+            raise ValueError(
+                f"rollout shard {self.global_steps} has {len(records)} rows; expected {expected_per_shard}"
+            )
+        uid_counts: dict[str, int] = defaultdict(int)
+        for record in records:
+            uid = str(record.get("uid") or "")
+            if not uid:
+                raise ValueError(f"rollout shard {self.global_steps} contains an empty uid")
+            uid_counts[uid] += 1
+        invalid_groups = {uid: count for uid, count in uid_counts.items() if count != rollout_n}
+        if invalid_groups:
+            raise ValueError(
+                f"rollout shard {self.global_steps} requires {rollout_n} rows per uid; got {invalid_groups}"
+            )
+
+        field_nonempty_counts = {}
+        for key in (
+            "input",
+            "output",
+            "gts",
+            "tool_call_details",
+            "assistant_turn_records",
+            "raw_prompt",
+            "search_count",
+            "teacher_messages",
+            "teacher_raw_content",
+        ):
+            field_nonempty_counts[key] = sum(bool(record.get(key)) for record in records)
+        teacher_called_count = sum(bool(record.get("teacher_called")) for record in records)
+        teacher_skipped_count = sum(
+            not bool(record.get("teacher_called")) and bool(record.get("teacher_skip_reason"))
+            for record in records
+        )
+        teacher_error_count = sum(bool(record.get("teacher_format_error")) for record in records)
+        shard_info = {
+            "step": int(self.global_steps),
+            "path": shard_path,
+            "record_count": len(records),
+            "group_count": len(uid_counts),
+            "first_uid": str(records[0]["uid"]),
+            "last_uid": str(records[-1]["uid"]),
+            "bytes": os.path.getsize(shard_path),
+            "sha256": self._rollout_sha256(shard_path),
+            "field_nonempty_counts": field_nonempty_counts,
+            "teacher_called_count": teacher_called_count,
+            "teacher_skipped_count": teacher_skipped_count,
+            "teacher_error_count": teacher_error_count,
+            "completed": True,
+        }
+
+        if os.path.exists(manifest_path):
+            with open(manifest_path, encoding="utf-8") as handle:
+                manifest = json.load(handle)
+        else:
+            manifest = {
+                "version": "verl-full-rollout-v1",
+                "expected_steps": expected_steps,
+                "expected_prompt_count": expected_steps * train_batch_size,
+                "expected_group_count": expected_steps * train_batch_size,
+                "expected_rollout_count": expected_rollouts,
+                "n_samples_per_prompt": rollout_n,
+                "train_batch_size": train_batch_size,
+                "shards": [],
+            }
+        if any(int(item["step"]) == int(self.global_steps) for item in manifest["shards"]):
+            raise ValueError(f"rollout manifest already contains step {self.global_steps}")
+        manifest["shards"].append(shard_info)
+        manifest["shards"].sort(key=lambda item: int(item["step"]))
+        manifest["actual_step_count"] = len(manifest["shards"])
+        manifest["actual_prompt_count"] = sum(item["group_count"] for item in manifest["shards"])
+        manifest["actual_group_count"] = manifest["actual_prompt_count"]
+        manifest["actual_rollout_count"] = sum(item["record_count"] for item in manifest["shards"])
+        manifest["teacher_called_count"] = sum(item["teacher_called_count"] for item in manifest["shards"])
+        manifest["teacher_skipped_count"] = sum(item["teacher_skipped_count"] for item in manifest["shards"])
+        manifest["teacher_error_count"] = sum(item["teacher_error_count"] for item in manifest["shards"])
+        manifest["completed"] = (
+            manifest["actual_step_count"] == expected_steps
+            and manifest["actual_rollout_count"] == expected_rollouts
+            and manifest["actual_group_count"] == manifest["expected_group_count"]
+        )
+        temporary_manifest = f"{manifest_path}.tmp"
+        with open(temporary_manifest, "w", encoding="utf-8") as handle:
+            json.dump(manifest, handle, ensure_ascii=False, indent=2, sort_keys=True)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary_manifest, manifest_path)
 
     def _log_rollout_data(
         self, batch: DataProto, reward_extra_infos_dict: dict, timing_raw: dict, rollout_data_dir: str
@@ -492,13 +662,38 @@ class RayPPOTrainer:
 
 
             reward_extra_infos_to_dump = reward_extra_infos_dict.copy()
-            if "request_id" in batch.non_tensor_batch:
-                reward_extra_infos_dict.setdefault(
-                    "request_id",
-                    batch.non_tensor_batch["request_id"].tolist(),
-                )
-            if "uid" in batch.non_tensor_batch:
-                reward_extra_infos_to_dump["uid"] = batch.non_tensor_batch["uid"]
+            rollout_log_keys = (
+                "uid",
+                "request_id",
+                "__num_turns__",
+                "raw_prompt",
+                "tool_call_details",
+                "messages",
+                "initial_query",
+                "answers",
+                "assistant_turn_records",
+                "trajectory_failure_reason",
+                "trajectory_timeout_s",
+                "data_source",
+                "extra_info",
+            )
+            for key in rollout_log_keys:
+                if key in batch.non_tensor_batch:
+                    reward_extra_infos_to_dump[key] = batch.non_tensor_batch[key]
+
+            uid_seen: dict[str, int] = defaultdict(int)
+            rollout_indices = []
+            for uid in reward_extra_infos_to_dump.get("uid", []):
+                uid_text = str(uid)
+                rollout_indices.append(uid_seen[uid_text])
+                uid_seen[uid_text] += 1
+            reward_extra_infos_to_dump["rollout_index"] = rollout_indices
+            reward_extra_infos_to_dump["run_id"] = [
+                str(self.config.trainer.experiment_name)
+            ] * len(inputs)
+            reward_extra_infos_to_dump["actor_checkpoint"] = [
+                str(self.config.actor_rollout_ref.model.path)
+            ] * len(inputs)
 
             self._dump_generations(
                 inputs=inputs,
@@ -508,6 +703,13 @@ class RayPPOTrainer:
                 reward_extra_infos_dict=reward_extra_infos_to_dump,
                 dump_path=rollout_data_dir,
             )
+            records = []
+            shard_path = os.path.join(rollout_data_dir, f"{self.global_steps}.jsonl")
+            with open(shard_path, encoding="utf-8") as handle:
+                for line in handle:
+                    if line.strip():
+                        records.append(json.loads(line))
+            self._update_rollout_manifest(rollout_data_dir, records)
 
     def _maybe_log_val_generations(self, inputs, outputs, scores):
         """Log a table of validation samples to the configured logger (wandb or swanlab)"""
@@ -1305,7 +1507,9 @@ class RayPPOTrainer:
                         batch.batch["token_level_scores"] = reward_tensor
 
                         if reward_extra_infos_dict:
-                            batch.non_tensor_batch.update({k: np.array(v) for k, v in reward_extra_infos_dict.items()})
+                            batch.non_tensor_batch.update(
+                                {k: _as_object_vector(v) for k, v in reward_extra_infos_dict.items()}
+                            )
 
                         # compute rewards. apply_kl_penalty if available
                         if self.config.algorithm.use_kl_in_reward:
@@ -1428,6 +1632,7 @@ class RayPPOTrainer:
                 )
                 # collect metrics
                 metrics.update(compute_data_metrics(batch=batch, use_critic=self.use_critic))
+                metrics.update(_compute_reward_extra_metrics(reward_extra_infos_dict))
                 metrics.update(compute_timing_metrics(batch=batch, timing_raw=timing_raw))
                 # TODO: implement actual tflpo and theoretical tflpo
                 n_gpus = self.resource_pool_manager.get_n_gpus()

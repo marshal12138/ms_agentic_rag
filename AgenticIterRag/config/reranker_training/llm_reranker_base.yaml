@@ -26,8 +26,8 @@ trainer:
   # 训练 epoch 数。
   total_epochs: 1
 
-  # 训练 batch size。
-  train_batch_size: 16
+  # 训练 batch size；AIR smoke / ablation / formal 默认不低于 64。
+  train_batch_size: 64
 
   # 每卡 micro batch size。
   micro_batch_size_per_gpu: 1

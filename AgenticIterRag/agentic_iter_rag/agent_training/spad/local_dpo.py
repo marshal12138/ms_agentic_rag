@@ -113,6 +113,7 @@ def run_local_dpo(
     model_path: str,
     dataset_jsonl: str,
     output_dir: str | Path,
+    log_dir: str | Path | None = None,
     phase_cfg: dict[str, Any],
     resource_plan: dict[str, Any],
 ) -> dict[str, Any]:
@@ -127,8 +128,14 @@ def run_local_dpo(
         tokenizer.pad_token = tokenizer.eos_token
     apply_kwargs = dict(phase_cfg.get("apply_chat_template_kwargs") or {"enable_thinking": False})
     max_length = int(phase_cfg.get("max_length", 4096))
-    batch_size = int(phase_cfg.get("train_batch_size", 1))
-    total_steps = int(phase_cfg.get("total_training_steps") or max(1, math.ceil(len(rows) / batch_size)))
+    batch_size = int(phase_cfg.get("train_batch_size", 64))
+    micro_batch_size = max(1, int(phase_cfg.get("micro_batch_size_per_gpu", batch_size)))
+    configured_total_steps = phase_cfg.get("total_training_steps")
+    total_epochs = int(phase_cfg.get("total_epochs", 1))
+    if configured_total_steps is None or int(configured_total_steps) <= 0:
+        total_steps = max(1, math.ceil(len(rows) / batch_size)) * total_epochs
+    else:
+        total_steps = int(configured_total_steps)
     beta = float(phase_cfg.get("beta", 0.1))
     pairwise_weight = float(phase_cfg.get("pairwise_loss_weight", 1.0))
     sft_weight = float(phase_cfg.get("chosen_sft_loss_weight", 0.2))
@@ -152,50 +159,70 @@ def run_local_dpo(
 
     metrics: list[dict[str, Any]] = []
     for step in range(1, total_steps + 1):
-        batch_rows = [rows[(step - 1) * batch_size + idx % len(rows)] for idx in range(batch_size)]
-        chosen_items = [
-            _tokenize_pair(
-                tokenizer=tokenizer,
-                prompt_messages=row["messages_before_final_answer"],
-                response=row["chosen"],
-                apply_kwargs=apply_kwargs,
-                max_length=max_length,
-            )
-            for row in batch_rows
-        ]
-        rejected_items = [
-            _tokenize_pair(
-                tokenizer=tokenizer,
-                prompt_messages=row["messages_before_final_answer"],
-                response=row["rejected"],
-                apply_kwargs=apply_kwargs,
-                max_length=max_length,
-            )
-            for row in batch_rows
-        ]
-        chosen_batch = _move_batch(_pad_batch(chosen_items, tokenizer.pad_token_id), device)
-        rejected_batch = _move_batch(_pad_batch(rejected_items, tokenizer.pad_token_id), device)
-
-        policy_chosen, chosen_nll = _sequence_logps(policy, chosen_batch)
-        policy_rejected, _ = _sequence_logps(policy, rejected_batch)
-        with torch.no_grad():
-            ref_chosen, _ = _sequence_logps(ref, chosen_batch)
-            ref_rejected, _ = _sequence_logps(ref, rejected_batch)
-        logits = beta * ((policy_chosen - policy_rejected) - (ref_chosen - ref_rejected))
-        dpo_loss = -F.logsigmoid(logits).mean()
-        loss = pairwise_weight * dpo_loss + sft_weight * chosen_nll
+        batch_rows = [rows[((step - 1) * batch_size + idx) % len(rows)] for idx in range(batch_size)]
         optimizer.zero_grad(set_to_none=True)
-        loss.backward()
+        loss_sum = 0.0
+        dpo_loss_sum = 0.0
+        chosen_nll_sum = 0.0
+        policy_margin_sum = 0.0
+        ref_margin_sum = 0.0
+        seen = 0
+        for start in range(0, len(batch_rows), micro_batch_size):
+            micro_rows = batch_rows[start : start + micro_batch_size]
+            scale = len(micro_rows) / max(1, len(batch_rows))
+            chosen_items = [
+                _tokenize_pair(
+                    tokenizer=tokenizer,
+                    prompt_messages=row["messages_before_final_answer"],
+                    response=row["chosen"],
+                    apply_kwargs=apply_kwargs,
+                    max_length=max_length,
+                )
+                for row in micro_rows
+            ]
+            rejected_items = [
+                _tokenize_pair(
+                    tokenizer=tokenizer,
+                    prompt_messages=row["messages_before_final_answer"],
+                    response=row["rejected"],
+                    apply_kwargs=apply_kwargs,
+                    max_length=max_length,
+                )
+                for row in micro_rows
+            ]
+            chosen_batch = _move_batch(_pad_batch(chosen_items, tokenizer.pad_token_id), device)
+            rejected_batch = _move_batch(_pad_batch(rejected_items, tokenizer.pad_token_id), device)
+
+            policy_chosen, chosen_nll = _sequence_logps(policy, chosen_batch)
+            policy_rejected, _ = _sequence_logps(policy, rejected_batch)
+            with torch.no_grad():
+                ref_chosen, _ = _sequence_logps(ref, chosen_batch)
+                ref_rejected, _ = _sequence_logps(ref, rejected_batch)
+            logits = beta * ((policy_chosen - policy_rejected) - (ref_chosen - ref_rejected))
+            dpo_loss = -F.logsigmoid(logits).mean()
+            loss = pairwise_weight * dpo_loss + sft_weight * chosen_nll
+            (loss * scale).backward()
+
+            weight = len(micro_rows)
+            seen += weight
+            loss_sum += float(loss.detach().cpu()) * weight
+            dpo_loss_sum += float(dpo_loss.detach().cpu()) * weight
+            chosen_nll_sum += float(chosen_nll.detach().cpu()) * weight
+            policy_margin_sum += float((policy_chosen - policy_rejected).mean().detach().cpu()) * weight
+            ref_margin_sum += float((ref_chosen - ref_rejected).mean().detach().cpu()) * weight
+
         torch.nn.utils.clip_grad_norm_(policy.parameters(), float(phase_cfg.get("clip_grad_norm", 1.0)))
         optimizer.step()
+        denom = max(1, seen)
         metrics.append(
             {
                 "step": step,
-                "loss": float(loss.detach().cpu()),
-                "dpo_loss": float(dpo_loss.detach().cpu()),
-                "chosen_nll": float(chosen_nll.detach().cpu()),
-                "policy_margin": float((policy_chosen - policy_rejected).mean().detach().cpu()),
-                "ref_margin": float((ref_chosen - ref_rejected).mean().detach().cpu()),
+                "loss": loss_sum / denom,
+                "dpo_loss": dpo_loss_sum / denom,
+                "chosen_nll": chosen_nll_sum / denom,
+                "policy_margin": policy_margin_sum / denom,
+                "ref_margin": ref_margin_sum / denom,
+                "micro_batch_size_per_gpu": micro_batch_size,
             }
         )
 
@@ -203,10 +230,14 @@ def run_local_dpo(
     out.mkdir(parents=True, exist_ok=True)
     policy.save_pretrained(out)
     tokenizer.save_pretrained(out)
-    write_json(out / "spad_local_dpo_metrics.json", {"metrics": metrics, "elapsed_s": time.time() - started})
+    metrics_dir = Path(log_dir) if log_dir is not None else out
+    metrics_dir.mkdir(parents=True, exist_ok=True)
+    metrics_path = metrics_dir / "spad_local_dpo_metrics.json"
+    write_json(metrics_path, {"metrics": metrics, "elapsed_s": time.time() - started})
     return {
         "checkpoint": str(out),
         "metrics": metrics,
+        "metrics_path": str(metrics_path),
         "elapsed_s": time.time() - started,
         "device": str(device),
         "sample_count": len(rows),

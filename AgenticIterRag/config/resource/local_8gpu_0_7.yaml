@@ -14,7 +14,7 @@ defaults:
   wait_for_gpus:
     enable: true
     ids: null
-    interval_seconds: 30
+    interval_seconds: 300
     label: AgenticIterRag v1 GPU wait
 
 stage_resources:
@@ -29,7 +29,7 @@ stage_resources:
             trainer:
               gpu_ids: [0, 1, 2, 3]
               n_gpus_per_node: 4
-              tensor_parallel_size: 4
+              tensor_parallel_size: 1
             services:
               teacher_answerer:
                 profile: glm47_single_vllm
@@ -65,23 +65,78 @@ stage_resources:
           answer_refresh_data:
             services:
               actor_vllm:
-                gpu_ids: [0, 1, 2, 3]
-                tensor_parallel_size: 4
-                port: 8340
-                served_model_name: spad-refresh-actor
-                auto_start: true
-                auto_stop: true
+                common:
+                  auto_start: true
+                  auto_stop: true
+                  wait_seconds: 600
+                  gpu_memory_utilization: 0.80
+                  max_model_len: 13024
+                  max_num_seqs: 32
+                  max_num_batched_tokens: 32768
+                  enable_prefix_caching: true
+                  enable_chunked_prefill: true
+                  enforce_eager: false
+                  tensor_parallel_size: 1
+                replicas:
+                  - name: spad-refresh-actor-0
+                    gpu_ids: [0]
+                    port: 8340
+                    served_model_name: spad-refresh-actor-0
+                  - name: spad-refresh-actor-1
+                    gpu_ids: [1]
+                    port: 8341
+                    served_model_name: spad-refresh-actor-1
+                  - name: spad-refresh-actor-2
+                    gpu_ids: [2]
+                    port: 8342
+                    served_model_name: spad-refresh-actor-2
+                  - name: spad-refresh-actor-3
+                    gpu_ids: [3]
+                    port: 8343
+                    served_model_name: spad-refresh-actor-3
+                  - name: spad-refresh-actor-4
+                    gpu_ids: [4]
+                    port: 8344
+                    served_model_name: spad-refresh-actor-4
+                  - name: spad-refresh-actor-5
+                    gpu_ids: [5]
+                    port: 8345
+                    served_model_name: spad-refresh-actor-5
               teacher_answerer:
                 profile: glm47_single_vllm
-                gpu_ids: [4, 5]
-                tensor_parallel_size: 2
-                port: 8067
-                endpoint: http://127.0.0.1:8067/v1/chat/completions
-                served_model_name: GLM-4.7-Flash
-                auto_start: true
-                auto_stop: true
-                preflight: true
-                wait_seconds: 600
+                common:
+                  tensor_parallel_size: 2
+                  served_model_name: GLM-4.7-Flash
+                  auto_start: true
+                  auto_stop: true
+                  preflight: true
+                  wait_seconds: 600
+                  max_num_seqs: 128
+                  max_num_batched_tokens: 65536
+                  enable_prefix_caching: true
+                  enable_chunked_prefill: true
+                  enforce_eager: false
+                replicas:
+                  - name: spad_glm47_vllm_8067
+                    container_name: spad_glm47_vllm_8067
+                    gpu_ids: [0, 1]
+                    port: 8067
+                    endpoint: http://127.0.0.1:8067/v1/chat/completions
+                  - name: spad_glm47_vllm_8068
+                    container_name: spad_glm47_vllm_8068
+                    gpu_ids: [2, 3]
+                    port: 8068
+                    endpoint: http://127.0.0.1:8068/v1/chat/completions
+                  - name: spad_glm47_vllm_8069
+                    container_name: spad_glm47_vllm_8069
+                    gpu_ids: [4, 5]
+                    port: 8069
+                    endpoint: http://127.0.0.1:8069/v1/chat/completions
+                  - name: spad_glm47_vllm_8070
+                    container_name: spad_glm47_vllm_8070
+                    gpu_ids: [6, 7]
+                    port: 8070
+                    endpoint: http://127.0.0.1:8070/v1/chat/completions
               recall:
                 backend_type: npu
                 instance_count: 2
@@ -104,14 +159,20 @@ stage_resources:
 
           answer_distillation:
             phases:
-              sft:
+              grpo:
                 trainer:
                   gpu_ids: [0, 1, 2, 3, 4, 5, 6, 7]
                   n_gpus_per_node: 8
+                  tensor_parallel_size: 1
+              sft:
+                trainer:
+                  gpu_ids: [0]
+                  n_gpus_per_node: 1
               dpo:
                 trainer:
                   gpu_ids: [0, 1, 2, 3, 4, 5, 6, 7]
                   n_gpus_per_node: 8
+                  tensor_parallel_size: 1
 
   generate_traces:
     services:

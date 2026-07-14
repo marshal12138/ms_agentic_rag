@@ -266,3 +266,109 @@ Reward：
 4. Stage 3 SFT 默认关闭，但代码和配置保留接口。
 5. Stage 3 DPO 默认开启，loss 包含 pairwise DPO loss 和 chosen-answer SFT loss。
 6. 正式训练启动后只人工确认第一个 training step 正常，不持续值守整个训练。
+
+## 9. 2026-07-10 Stage2 高吞吐重构补充
+
+详细计划已落盘：
+
+```text
+docs/AgenticIterRag_v1/planing/260710a_spad_stage2_two_phase_efficiency_rework_plan.md
+```
+
+本补充覆盖原计划中 Stage2 单实例/串行实现，不保留旧单实例 Stage2 执行路径。旧 `actor_vllm.gpu_ids/port` 和 `teacher_answerer.gpu_ids/port` 配置只作为启动前失败校验对象，不再作为兼容运行路径。
+
+### 9.1 Stage2 两阶段拆分
+
+Stage2 拆为两个 phase：
+
+1. `trajectory_rollout`：只运行 actor 多轮 rollout + search，生产 actor final answer、rejected answer、`messages_before_final_answer` 和 evidence 中间样本，不调用 teacher。
+2. `teacher_labeling`：读取 Phase A trajectory，过滤失败样本，并发调用 teacher 生产 chosen answer，写出 Stage3 可用 DPO pair。
+
+### 9.2 默认资源布局
+
+Phase A：
+
+1. actor replicas：NPU0/1/2/3/4/5，每卡一个 Qwen3-1.7B vLLM，TP=1，ports 8340-8345。
+2. recall workers：NPU6/7，保持 dense retriever 双 worker。
+3. actor 目标 inflight：6 replicas * 16 = 96，峰值 6 * 24 = 144。
+4. retrieval batch：32 queries 或 50ms flush。
+
+Phase B：
+
+1. teacher replicas：4 个 GLM4.7 TP=2 服务。
+2. NPU 分配：[0,1] port 8067、[2,3] port 8068、[4,5] port 8069、[6,7] port 8070。
+3. teacher 目标 inflight：4 replicas * 4 = 16，峰值 4 * 6 = 24。
+
+Phase A 完成后关闭 actor 和 recall，再启动 Phase B teacher。actor 和 teacher 不同时抢占同一批 NPU。
+
+### 9.3 配置修改范围
+
+需要修改：
+
+1. `AgenticIterRag/config/agent_training/spad_rag_base.yaml`
+2. `AgenticIterRag/config/resource/local_8gpu_0_7.yaml`
+3. `tasks/train_tasks/agenticIterRag/configs/spad_qwen3_1_7b_glm47_formal_overlay.yaml`
+
+新增配置：
+
+1. `answer_refresh_data.phase_order`
+2. `answer_refresh_data.resume_from_phase`
+3. `answer_refresh_data.stop_after_phase`
+4. `answer_refresh_data.resume_existing`
+5. `answer_refresh_data.phases.trajectory_rollout.scheduler`
+6. `answer_refresh_data.phases.teacher_labeling.scheduler`
+7. `services.actor_vllm.replicas`
+8. `services.actor_vllm.common`
+9. `services.teacher_answerer.replicas`
+
+### 9.4 产物和 Stage3 契约
+
+Stage2 必须写出：
+
+1. `answer_refresh_actor_trajectories.jsonl`
+2. `refresh_rollouts.jsonl`
+3. `answer_distill_pairs.jsonl`
+4. `answer_distill_dataset_manifest.json`
+5. `stage2_stats.json`
+6. `stage2_resource_monitor.jsonl`
+
+`answer_distill_pairs.jsonl` 只包含 kept DPO pair，每行必须包含：
+
+1. `messages_before_final_answer`
+2. `chosen`
+3. `rejected`
+
+`chosen` 不允许为空，不允许含 `<status>`，不允许与 `rejected` 完全相同。无效 pair 过滤并计数；最终 kept 为 0 时 Stage2 失败。
+
+### 9.5 失败过滤和统计
+
+单条样本失败不使整个 Stage2 失败，必须写入对应 JSONL 并计数。系统级失败只包括服务不可用、输入/manifest 损坏、Phase A 无可进入 teacher 的 trajectory、Phase B kept=0、输出写入失败等。
+
+Phase A 统计至少包含：
+
+1. `total`
+2. `trajectory_completed`
+3. `skipped_actor_no_finish`
+4. `skipped_actor_missing_tool_call`
+5. `skipped_actor_invalid_tool_call`
+6. `skipped_no_search_evidence`
+7. `actor_errors`
+8. `search_errors`
+9. `timeout_errors`
+10. `written_trajectories`
+
+Phase B 统计至少包含：
+
+1. `total_trajectories`
+2. `eligible_for_teacher`
+3. `teacher_completed`
+4. `kept`
+5. `skipped_no_actor_final`
+6. `skipped_no_evidence`
+7. `skipped_teacher_format`
+8. `skipped_evidence_insufficient`
+9. `skipped_teacher_f1`
+10. `skipped_chosen_equals_rejected`
+11. `teacher_errors`
+12. `timeout_errors`
+13. `schema_invalid_pairs`

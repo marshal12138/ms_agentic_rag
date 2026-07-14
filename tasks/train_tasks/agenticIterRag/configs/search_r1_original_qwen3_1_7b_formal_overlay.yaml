@@ -1,0 +1,96 @@
+# Search-R1 original reward baseline for Qwen3-1.7B formal Stage 1 training.
+
+main_run:
+  project:
+    experiment_name: agentic_iter_rag_v1_search_r1_original_qwen3_1_7b_formal
+  config_groups:
+    pipeline: offline_two_stage
+    agent_training: search_r1_original
+    model: qwen3_1_7b
+    rollout: air_async_qwen3_1_7b
+
+pipeline:
+  resume_from_stage: train_agent
+  stop_after_stage: train_agent
+  skip_stages: []
+  force_rerun_stages: [train_agent]
+  stage_configs:
+    train_agent:
+      enabled: true
+      impl: spad_rag
+      impl_config_ref: agent_training
+
+agent_training:
+  default_backend: smoke
+  resume_from_sub_stage: search_policy_rl
+  stop_after_sub_stage: search_policy_rl
+  skip_sub_stages: []
+  force_rerun_sub_stages: [search_policy_rl]
+  reward:
+    type: search_r1_original
+    search_r1_original:
+      score: 1.0
+      format_score: 0.0
+  teacher_answerer:
+    default_service_profile: glm47_single_vllm
+  sub_stages:
+    search_policy_rl:
+      enabled: true
+      backend: verl
+      trainer:
+        total_epochs: 1
+        total_training_steps: -1
+        train_batch_size: 64
+        ppo_mini_batch_size: 64
+        actor_micro_batch_size_per_gpu: 2
+        log_prob_micro_batch_size_per_gpu: 4
+        n_samples_per_prompt: 8
+        train_max_samples: 512
+        val_max_samples: 8
+        val_batch_size: 8
+        save_freq: 10
+        test_freq: -1
+        agent_loop_num_workers: 8
+        teacher_batch_workers: 16
+        rollout_gpu_memory_utilization: 0.55
+        max_num_seqs: 32
+        max_prompt_length: 12000
+        max_response_length: 4096
+        rollout_max_model_len: 16096
+        max_num_batched_tokens: 24576
+        dataloader_num_workers: 0
+        enable_chunked_prefill: true
+        enable_prefix_caching: true
+        enforce_eager: false
+        use_torch_compile: false
+        auto_stop_services: true
+        ray_num_cpus: 48
+        rollout_progress_interval: 30
+        trajectory_timeout_seconds: 900
+        timeout_seconds: 86400
+        logger: ["console"]
+      rollout:
+        stop_sequences: ["</tool_call>", "</answer>"]
+        include_stop_str_in_output: true
+        turn_max_tokens: 512
+        max_assistant_turns: 6
+        max_user_turns: 6
+        max_tool_response_length: 4096
+
+resource:
+  stage_resources:
+    train_agent:
+      impls:
+        spad_rag:
+          sub_stages:
+            search_policy_rl:
+              trainer:
+                gpu_ids: [0, 1, 2, 3]
+                n_gpus_per_node: 4
+                tensor_parallel_size: 1
+              services:
+                teacher_answerer:
+                  gpu_ids: []
+                  tensor_parallel_size: 1
+                  auto_start: false
+                  preflight: false

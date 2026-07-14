@@ -1,0 +1,66 @@
+{
+  "version": "newdata-model-eval-run-spec-v1",
+  "models": {
+    "base": {
+      "role": "base",
+      "scale": "base",
+      "stage": "base",
+      "runs": [
+        "260711-newdata512-base-retry1-run1",
+        "260711-newdata512-base-retry1-run2",
+        "260711-newdata512-base-retry1-run3"
+      ]
+    },
+    "search_r1_512": {
+      "role": "search_r1",
+      "scale": 512,
+      "stage": "step8",
+      "runs": [
+        "260711-newdata512-search-r1-run1",
+        "260711-newdata512-search-r1-run2",
+        "260711-newdata512-search-r1-run3"
+      ]
+    },
+    "search_r1_5100": {
+      "role": "search_r1",
+      "scale": 5100,
+      "stage": "step79",
+      "runs": [
+        "260711-newdata5100-search-r1-retry1-run1",
+        "260711-newdata5100-search-r1-retry1-run2",
+        "260711-newdata5100-search-r1-retry1-run3"
+      ]
+    },
+    "spad_512_stage1": {
+      "role": "spad",
+      "scale": 512,
+      "stage": "stage1_step8",
+      "runs": [
+        "260711-newdata512-spad-stage1-run1",
+        "260711-newdata512-spad-stage1-run2",
+        "260711-newdata512-spad-stage1-run3"
+      ]
+    },
+    "spad_512_stage3": {
+      "role": "spad",
+      "scale": 512,
+      "stage": "stage3_grpo_final",
+      "runs": [
+        "260711-newdata512-spad-stage3-retry1-run1",
+        "260711-newdata512-spad-stage3-retry1-run2",
+        "260711-newdata512-spad-stage3-retry1-run3"
+      ]
+    }
+  },
+  "comparisons": [
+    ["base", "search_r1_512"],
+    ["base", "search_r1_5100"],
+    ["search_r1_512", "search_r1_5100"],
+    ["base", "spad_512_stage1"],
+    ["base", "spad_512_stage3"],
+    ["search_r1_512", "spad_512_stage1"],
+    ["spad_512_stage1", "spad_512_stage3"],
+    ["spad_512_stage1", "search_r1_5100"],
+    ["spad_512_stage3", "search_r1_5100"]
+  ]
+}

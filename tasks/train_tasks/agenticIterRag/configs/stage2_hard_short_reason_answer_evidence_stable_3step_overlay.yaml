@@ -1,13 +1,13 @@
 # AIR v1 LLM reranker stage2 conservative stability ablation.
-# Changes versus the unstable n4 formal run:
+# Changes versus the previous unstable formal run:
 # - use short-reason prompt re-rendered hard subset
 # - lower LR and stronger KL
 # - shorter reranker response cap
-# - lower sampling temperature while keeping rollout.n=4
+# - lower sampling temperature while keeping rollout.n=8
 
 main_run:
   project:
-    experiment_name: agentic_iter_rag_v1_stage2_hard_short_reason_ans_ev_w02_lr5e6_kl02_n4_3step
+    experiment_name: agentic_iter_rag_v1_stage2_hard_short_reason_ans_ev_w02_lr5e6_kl02_n8_3step
 
 pipeline:
   resume_from_stage: train_llm_reranker
@@ -48,8 +48,8 @@ reranker_training:
 
       train_batch_size: 64
       ppo_mini_batch_size: 64
-      n_samples_per_prompt: 4
-      val_n_samples_per_prompt: 4
+      n_samples_per_prompt: 8
+      val_n_samples_per_prompt: 8
 
       total_training_steps: 3
       total_epochs: 1

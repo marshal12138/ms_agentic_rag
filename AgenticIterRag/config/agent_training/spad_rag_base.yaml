@@ -19,7 +19,7 @@ sub_stage_order:
 resume_from_sub_stage: null
 
 # 执行到哪个 SPAD 子阶段后停止；null 表示执行到最后。
-stop_after_sub_stage: null
+stop_after_sub_stage: search_policy_rl
 
 # 需要跳过的 SPAD 子阶段列表。
 skip_sub_stages: []
@@ -52,8 +52,8 @@ teacher_answerer:
   # 默认 teacher 服务 profile。
   default_service_profile: glm47_single_vllm
 
-  # Teacher prompt 版本。
-  prompt_version: spad_teacher_evidence_answer_v1
+  # Teacher prompt 版本：v1 为 500-run 历史排版，v2 为当前层级 evidence 排版。
+  prompt_version: spad_teacher_evidence_status_answer_v2
 
   # 证据不足时 teacher 必须输出的短答案。
   insufficient_answer: 证据不足无法作答
@@ -62,7 +62,7 @@ teacher_answerer:
   request:
     temperature: 0.0
     top_p: 1.0
-    max_tokens: 1024
+    max_tokens: 512
     timeout_seconds: 180
     chat_template_kwargs:
       enable_thinking: false
@@ -81,16 +81,31 @@ teacher_answerer:
       max_model_len: 32000
       kv_cache_dtype: auto
       moe_backend: auto
+      enforce_eager: true
       disable_custom_all_reduce: true
       endpoint: http://127.0.0.1:8067/v1/chat/completions
 
 # Stage 1 reward 默认参数。
 reward:
+  type: spad_em_teacher_backoff
+  spad_em_teacher_backoff:
+    partial_reward: 0.1
+  # 独立 stable reward 变体：Actor 合法闭合且 Teacher 证据状态受支持时，
+  # 按 Teacher answer 与 gold aliases 的最大 token F1 加分；基础 backoff 不受影响。
+  spad_em_teacher_backoff_gold_token_f1_bonus:
+    partial_reward: 0.1
+    gold_token_f1_bonus: 0.1
   # teacher answer F1 的权重。
   teacher_f1_weight: 1.0
 
-  # 每次 search 的成本。
+  # search 成本；Stage 1 reward 中首搜免费，从第二次 search 开始扣。
   search_cost: 0.02
+
+  # 免费 search 次数；默认 1 表示首搜免费，从第二次 search 开始扣 search_cost。
+  free_search_count: 1
+
+  # Stage 1 最大可执行搜索轮数；max_assistant_turns=6 时，前 5 轮可用于 search，最后 1 轮用于 stop/answer。
+  max_search_turns: 5
 
   # 格式错误惩罚。
   invalid_format_penalty: -0.5
@@ -106,6 +121,14 @@ reward:
 
   # 没有合法停止惩罚。
   no_finish_penalty: -0.5
+
+  # 合法停止但 teacher 判断证据不足/模糊时的惩罚。
+  bad_stop:
+    enabled: true
+    insufficient_answer: 证据不足无法作答
+    penalty: -0.20
+    max_budget_failed_penalty: -0.15
+    teacher_format_error_penalty: -0.1
 
 # SPAD-RAG 实现级输出；由 train_agent runtime 写入。
 outputs:
@@ -128,12 +151,17 @@ sub_stages:
 
     # smoke 后端只验证数据、reward schema 和 manifest，不更新模型参数。
     smoke:
-      max_samples: 8
+      max_samples: -1
       total_training_steps: 1
 
     # 真实 Stage 1 训练参数；默认参考 CAR 搜索 agent 训练实践。
+    # smoke / ablation / formal 只应主要改变 total_training_steps：
+    #   smoke=1, ablation=3-5, formal=-1/null(full run)。
+    # 不要把 train_batch_size 降到 8，也不要把 n_samples_per_prompt 降到 2。
     trainer:
       method: grpo
+      # 保留 UID 组内中心化，但不按组内 std 缩放，使 0.1 backoff 真正弱于 1.0 EM。
+      norm_adv_by_std_in_grpo: false
       total_epochs: 1
       total_training_steps: null
       train_batch_size: 64
@@ -142,6 +170,8 @@ sub_stages:
       actor_micro_batch_size_per_gpu: 2
       log_prob_micro_batch_size_per_gpu: 4
       n_samples_per_prompt: 8
+      data_shuffle: true
+      data_seed: 42
       val_batch_size: 8
       train_max_samples: data.train_max_samples
       val_max_samples: data.val_max_samples
@@ -151,13 +181,34 @@ sub_stages:
       logger: ["console"]
       # 每个 sub-stage 结束后自动释放本 stage 启动的服务；复用到的 existing/external 服务不会被停止。
       auto_stop_services: true
+      agent_loop_num_workers: 8
+      teacher_batch_workers: 16
+      rollout_gpu_memory_utilization: 0.55
+      max_num_seqs: 32
+      max_prompt_length: 12000
+      max_response_length: 4096
+      rollout_max_model_len: 16096
+      max_num_batched_tokens: 24576
+      dataloader_num_workers: 0
+      enable_chunked_prefill: true
+      enable_prefix_caching: true
+      enforce_eager: false
+      reward_manager: batch
+      # 同一 UID 的 n 条 rollout 完成后立即判定奖励，与其他 UID 的生成重叠。
+      stream_group_reward: true
+      # 每个 rollout worker 同时执行的组奖励数；组内最多 n 个 teacher 请求。
+      stream_group_max_inflight: 1
+      preserve_full_rollout_logs: true
 
     rollout:
-      # Stage 1 在生成到 <answer> 后停止，并保留 stop string 作为停止动作 credit。
-      stop_sequences: ["<answer>"]
+      # Stage 1 在生成完一次 search action 或生成到 <answer> 后停止，并保留 stop string 作为动作 credit。
+      stop_sequences: ["</tool_call>", "</answer>"]
       include_stop_str_in_output: true
+      # 单个 assistant turn 的生成上限；全局 response budget 仍由 trainer.max_response_length 控制。
+      turn_max_tokens: 512
       max_assistant_turns: 6
       max_user_turns: 6
+      max_tool_response_length: 4096
       visible_top_m: 5
       max_doc_chars: 2000
 
@@ -177,17 +228,52 @@ sub_stages:
     # 每个 sub-stage 结束后自动释放本 stage 启动的服务；复用到的 existing/external 服务不会被停止。
     auto_stop_services: true
 
-    # smoke 后端构造少量 chosen/rejected 样本，用于验证 Stage 3 数据契约。
+    # Stage 2 默认拆为 actor trajectory rollout 与 teacher labeling 两个 phase。
+    phase_order:
+      - trajectory_rollout
+      - teacher_labeling
+    resume_from_phase: null
+    stop_after_phase: null
+    resume_existing: true
+
+    resource_monitor:
+      interval_seconds: 30
+
+    # smoke 后端构造 chosen/rejected 样本，用于验证 Stage 3 数据契约；默认不截断数据。
     smoke:
-      max_samples: 8
+      max_samples: -1
 
     rollout:
       # Stage 2 不在 <answer> 处 stop，要保留 actor answer 作为 rejected。
       stop_sequences: []
       max_assistant_turns: 6
       max_user_turns: 6
+      max_model_len: 16096
       visible_top_m: 5
       max_doc_chars: 2000
+
+    phases:
+      trajectory_rollout:
+        scheduler:
+          trajectory_submit_batch_size: 96
+          inflight_per_actor: 16
+          max_inflight_per_actor: 24
+          retrieval_query_batch_size: 32
+          retrieval_flush_interval_ms: 50
+          progress_log_interval: 20
+          request_timeout_s: 180
+      teacher_labeling:
+        backend: offline_vllm_batch
+        scheduler:
+          offline_shard_count: 4
+          offline_batch_size: 64
+          max_num_seqs: 128
+          max_num_batched_tokens: 65536
+          enable_prefix_caching: true
+          enable_chunked_prefill: true
+          enforce_eager: false
+          progress_log_interval: 20
+          offline_poll_interval_s: 5
 
     dataset:
       version: null
@@ -206,10 +292,9 @@ sub_stages:
     # 是否启用 Stage 3。
     enabled: true
 
-    # Stage 3 内部 phase 顺序；SFT 默认关闭，DPO 默认开启。
+    # Stage 3 默认使用 Gold-answer F1 GRPO；DPO 继续保留为可选消融。
     phase_order:
-      - sft
-      - dpo
+      - grpo
 
     inputs:
       init_actor_checkpoint: null
@@ -220,11 +305,35 @@ sub_stages:
       manifest: null
 
     phases:
+      grpo:
+        enabled: true
+        backend: verl
+        reward_type: gold_answer_f1
+        train_batch_size: 64
+        ppo_mini_batch_size: 64
+        actor_micro_batch_size_per_gpu: 2
+        log_prob_micro_batch_size_per_gpu: 4
+        n_samples_per_prompt: 8
+        learning_rate: 1.0e-6
+        total_epochs: 1
+        total_training_steps: null
+        save_freq: 1000000
+        max_prompt_length: 12000
+        max_response_length: 1024
+        rollout_max_model_len: 13024
+        stop_sequences: ["</answer>"]
+        apply_chat_template_kwargs:
+          enable_thinking: false
+        outputs:
+          checkpoint: null
+          manifest: null
+
       sft:
         enabled: false
+        # 后端：smoke / verl。verl 目前只生成 dry-run 计划，不启动真实训练。
         backend: smoke
         train_batch_size: 64
-        micro_batch_size_per_gpu: 2
+        micro_batch_size_per_gpu: 4
         learning_rate: 1.0e-6
         total_epochs: 1
         total_training_steps: null
@@ -235,9 +344,10 @@ sub_stages:
 
       dpo:
         enabled: true
+        # 后端：smoke / local_dpo / verl。verl 使用 SPAD offline DPO recipe，TP=1，按资源配置做数据并行。
         backend: smoke
         train_batch_size: 64
-        micro_batch_size_per_gpu: 2
+        micro_batch_size_per_gpu: 4
         learning_rate: 1.0e-6
         total_epochs: 1
         total_training_steps: null

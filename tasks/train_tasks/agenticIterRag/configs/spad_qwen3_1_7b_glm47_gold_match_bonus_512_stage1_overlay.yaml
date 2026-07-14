@@ -1,0 +1,26 @@
+main_run:
+  project:
+    experiment_name: agentic_iter_rag_v1_spad_qwen3_1_7b_newdata_512_gold_token_f1_bonus_stage1
+
+agent_training:
+  resume_from_sub_stage: search_policy_rl
+  stop_after_sub_stage: search_policy_rl
+  skip_sub_stages: []
+  force_rerun_sub_stages: [search_policy_rl]
+
+  reward:
+    type: spad_em_teacher_backoff_gold_token_f1_bonus
+    spad_em_teacher_backoff_gold_token_f1_bonus:
+      partial_reward: 0.1
+      gold_token_f1_bonus: 0.1
+
+  sub_stages:
+    search_policy_rl:
+      enabled: true
+      backend: verl
+      trainer:
+        stream_group_max_inflight: 2
+    answer_refresh_data:
+      enabled: false
+    answer_distillation:
+      enabled: false

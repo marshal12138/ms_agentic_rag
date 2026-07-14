@@ -3,7 +3,7 @@
 
 main_run:
   project:
-    experiment_name: agentic_iter_rag_v1_stage2_hard_short_reason_ans_ev_w02_lr5e6_kl02_n4_1epoch
+    experiment_name: agentic_iter_rag_v1_stage2_hard_short_reason_ans_ev_w02_lr5e6_kl02_n8_1epoch
 
 pipeline:
   resume_from_stage: train_llm_reranker
@@ -44,8 +44,8 @@ reranker_training:
 
       train_batch_size: 64
       ppo_mini_batch_size: 64
-      n_samples_per_prompt: 4
-      val_n_samples_per_prompt: 4
+      n_samples_per_prompt: 8
+      val_n_samples_per_prompt: 8
 
       total_training_steps: 6
       total_epochs: 1

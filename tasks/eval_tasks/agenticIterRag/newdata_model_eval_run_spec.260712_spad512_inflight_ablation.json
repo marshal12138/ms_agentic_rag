@@ -1,0 +1,34 @@
+{
+  "version": "newdata-model-eval-run-spec-v1",
+  "models": {
+    "spad_512_stable_original_inflight1": {
+      "role": "spad",
+      "scale": 512,
+      "stage": "stage1_step8",
+      "runs": [
+        "260712-newdata3500-fastio-spad-512-stage1-run1"
+      ]
+    },
+    "spad_512_stable_repeat_inflight1": {
+      "role": "spad",
+      "scale": 512,
+      "stage": "stage1_step8",
+      "runs": [
+        "260712-newdata3500-fastio-spad-512-stage1-stable-repeat-inflight1-run1"
+      ]
+    },
+    "spad_512_stable_ablation_inflight2": {
+      "role": "spad",
+      "scale": 512,
+      "stage": "stage1_step8",
+      "runs": [
+        "260712-newdata3500-fastio-spad-512-stage1-stable-inflight2-ablation-run1"
+      ]
+    }
+  },
+  "comparisons": [
+    ["spad_512_stable_original_inflight1", "spad_512_stable_repeat_inflight1"],
+    ["spad_512_stable_repeat_inflight1", "spad_512_stable_ablation_inflight2"],
+    ["spad_512_stable_original_inflight1", "spad_512_stable_ablation_inflight2"]
+  ]
+}

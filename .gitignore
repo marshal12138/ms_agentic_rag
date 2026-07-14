@@ -38,6 +38,8 @@ src/checkpoints/__pycache__/
 **/tmp_prompt_check/
 **/wandb/
 **/.hydra/
+/pipelines/formal/agenticIterRag/teacher_PE/cache*/
+/pipelines/formal/agenticIterRag/teacher_PE/runtime/
 /extra-info/
 AgenticDynamicRecallRag/method_validation_check/result/
 *.log

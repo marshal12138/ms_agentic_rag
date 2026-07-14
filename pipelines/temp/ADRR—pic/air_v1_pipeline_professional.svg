@@ -1,0 +1,323 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2600" height="1760" viewBox="0 0 2600 1760" role="img" aria-labelledby="title desc">
+  <title id="title">AgenticIterRag AIR v1 Training and Inference Pipeline</title>
+  <desc id="desc">A professional four-stage schematic for AgenticIterRag AIR v1: search-agent training, reranker data production, LLM reranker training, and assembled inference with trained agent and trained reranker.</desc>
+  <defs>
+    <linearGradient id="pageBg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#fbfdff"/>
+      <stop offset="54%" stop-color="#f7fafc"/>
+      <stop offset="100%" stop-color="#eef7f3"/>
+    </linearGradient>
+    <linearGradient id="laneGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#f8fafc"/>
+    </linearGradient>
+    <linearGradient id="modelGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#eff6ff"/>
+      <stop offset="100%" stop-color="#dbeafe"/>
+    </linearGradient>
+    <linearGradient id="serviceGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f0fdf4"/>
+      <stop offset="100%" stop-color="#dcfce7"/>
+    </linearGradient>
+    <linearGradient id="rewardGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#fff7ed"/>
+      <stop offset="100%" stop-color="#ffe4e6"/>
+    </linearGradient>
+    <linearGradient id="dataGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ecfdf5"/>
+      <stop offset="100%" stop-color="#d1fae5"/>
+    </linearGradient>
+    <linearGradient id="artifactGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f8fafc"/>
+      <stop offset="100%" stop-color="#e2e8f0"/>
+    </linearGradient>
+    <filter id="shadow" x="-16%" y="-28%" width="132%" height="164%">
+      <feDropShadow dx="0" dy="16" stdDeviation="16" flood-color="#0f172a" flood-opacity="0.12"/>
+    </filter>
+    <filter id="softShadow" x="-14%" y="-24%" width="128%" height="150%">
+      <feDropShadow dx="0" dy="7" stdDeviation="9" flood-color="#0f172a" flood-opacity="0.10"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 14 14" refX="12" refY="7" markerWidth="7.5" markerHeight="7.5" orient="auto-start-reverse">
+      <path d="M1,1 L13,7 L1,13" fill="none" stroke="#94a3b8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <marker id="arrowBlue" viewBox="0 0 14 14" refX="12" refY="7" markerWidth="7.5" markerHeight="7.5" orient="auto-start-reverse">
+      <path d="M1,1 L13,7 L1,13" fill="none" stroke="#3b82f6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <marker id="arrowGreen" viewBox="0 0 14 14" refX="12" refY="7" markerWidth="7.5" markerHeight="7.5" orient="auto-start-reverse">
+      <path d="M1,1 L13,7 L1,13" fill="none" stroke="#22c55e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <marker id="arrowRed" viewBox="0 0 14 14" refX="12" refY="7" markerWidth="7.5" markerHeight="7.5" orient="auto-start-reverse">
+      <path d="M1,1 L13,7 L1,13" fill="none" stroke="#fb7185" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <style>
+      .font { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; letter-spacing: 0; }
+      .title { font-size: 40px; font-weight: 780; fill: #0f172a; }
+      .subtitle { font-size: 22px; font-weight: 540; fill: #64748b; }
+      .stageNo { font-size: 17px; font-weight: 780; fill: #ffffff; }
+      .stageTitle { font-size: 25px; font-weight: 760; fill: #0f172a; }
+      .stageSub { font-size: 17px; font-weight: 560; fill: #64748b; }
+      .nodeTitle { font-size: 24px; font-weight: 720; fill: #1e293b; }
+      .nodeSub { font-size: 16px; font-weight: 560; fill: #64748b; }
+      .groupTitle { font-size: 20px; font-weight: 720; fill: #334155; }
+      .tag { font-size: 15px; font-weight: 760; fill: #475569; }
+      .arrowText { font-size: 16px; font-weight: 640; fill: #64748b; }
+      .smallText { font-size: 16px; font-weight: 600; fill: #334155; }
+      .tiny { font-size: 14px; font-weight: 620; fill: #64748b; }
+      .flow { fill: none; stroke: #94a3b8; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#arrow); }
+      .flowBlue { fill: none; stroke: #3b82f6; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#arrowBlue); }
+      .flowGreen { fill: none; stroke: #22c55e; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#arrowGreen); }
+      .flowRed { fill: none; stroke: #fb7185; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#arrowRed); }
+      .thinFlow { fill: none; stroke: #cbd5e1; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#arrow); }
+      .dashGroup { fill: #ffffff; fill-opacity: 0.62; stroke: #334155; stroke-width: 2.8; stroke-dasharray: 9 11; }
+    </style>
+  </defs>
+
+  <rect width="2600" height="1760" fill="url(#pageBg)"/>
+  <path d="M0 1485 C356 1380 748 1540 1110 1462 C1538 1370 1792 1500 2600 1350 L2600 1760 L0 1760 Z" fill="#ffffff" opacity="0.62"/>
+  <g opacity="0.34">
+    <path d="M140 180 H2460" stroke="#e2e8f0" stroke-width="1.1"/>
+    <path d="M140 500 H2460" stroke="#e2e8f0" stroke-width="1.1"/>
+    <path d="M140 820 H2460" stroke="#e2e8f0" stroke-width="1.1"/>
+    <path d="M140 1140 H2460" stroke="#e2e8f0" stroke-width="1.1"/>
+    <path d="M140 1460 H2460" stroke="#e2e8f0" stroke-width="1.1"/>
+    <path d="M430 92 V1660" stroke="#e2e8f0" stroke-width="1.1"/>
+    <path d="M780 92 V1660" stroke="#e2e8f0" stroke-width="1.1"/>
+    <path d="M1130 92 V1660" stroke="#e2e8f0" stroke-width="1.1"/>
+    <path d="M1480 92 V1660" stroke="#e2e8f0" stroke-width="1.1"/>
+    <path d="M1830 92 V1660" stroke="#e2e8f0" stroke-width="1.1"/>
+    <path d="M2180 92 V1660" stroke="#e2e8f0" stroke-width="1.1"/>
+  </g>
+
+  <text x="126" y="92" class="font title">AgenticIterRag (AIR) v1 Pipeline</text>
+  <text x="126" y="130" class="font subtitle">Train the search agent, produce reranker data, train the LLM reranker, then assemble the final agentic RAG inference stack.</text>
+
+  <!-- Lane backgrounds -->
+  <rect x="92" y="188" width="2416" height="322" rx="30" fill="url(#laneGrad)" stroke="#e2e8f0" stroke-width="2" filter="url(#shadow)"/>
+  <rect x="92" y="544" width="2416" height="334" rx="30" fill="url(#laneGrad)" stroke="#e2e8f0" stroke-width="2" filter="url(#shadow)"/>
+  <rect x="92" y="912" width="2416" height="320" rx="30" fill="url(#laneGrad)" stroke="#e2e8f0" stroke-width="2" filter="url(#shadow)"/>
+  <rect x="92" y="1266" width="2416" height="326" rx="30" fill="url(#laneGrad)" stroke="#e2e8f0" stroke-width="2" filter="url(#shadow)"/>
+
+  <!-- Stage labels -->
+  <g>
+    <rect x="126" y="230" width="78" height="34" rx="17" fill="#2563eb"/>
+    <text x="165" y="253" text-anchor="middle" class="font stageNo">STAGE 1</text>
+    <text x="126" y="305" class="font stageTitle">Search-Agent Training</text>
+    <text x="126" y="337" class="font stageSub">train_agent</text>
+    <text x="126" y="369" class="font stageSub">Retriever-only search tool</text>
+  </g>
+  <g>
+    <rect x="126" y="587" width="78" height="34" rx="17" fill="#16a34a"/>
+    <text x="165" y="610" text-anchor="middle" class="font stageNo">STAGE 2</text>
+    <text x="126" y="662" class="font stageTitle">Reranker Data Production</text>
+    <text x="126" y="694" class="font stageSub">generate_traces</text>
+    <text x="126" y="724" class="font stageSub">build_reranker_dataset</text>
+  </g>
+  <g>
+    <rect x="126" y="954" width="78" height="34" rx="17" fill="#9333ea"/>
+    <text x="165" y="977" text-anchor="middle" class="font stageNo">STAGE 3</text>
+    <text x="126" y="1030" class="font stageTitle">LLM Reranker Training</text>
+    <text x="126" y="1062" class="font stageSub">train_llm_reranker</text>
+    <text x="126" y="1094" class="font stageSub">Continuation reward</text>
+  </g>
+  <g>
+    <rect x="126" y="1310" width="78" height="34" rx="17" fill="#0f766e"/>
+    <text x="165" y="1333" text-anchor="middle" class="font stageNo">STAGE 4</text>
+    <text x="126" y="1386" class="font stageTitle">Assembled AIR Inference</text>
+    <text x="126" y="1418" class="font stageSub">infer_matrix</text>
+    <text x="126" y="1450" class="font stageSub">Agent + retriever + reranker</text>
+  </g>
+
+  <!-- Shared component glyphs -->
+  <!-- Stage 1 nodes -->
+  <g filter="url(#softShadow)">
+    <path d="M450 250 C450 218 574 218 574 250 V362 C574 394 450 394 450 362 Z" fill="url(#dataGrad)" stroke="#22c55e" stroke-width="3.2"/>
+    <ellipse cx="512" cy="250" rx="62" ry="29" fill="#dcfce7" stroke="#22c55e" stroke-width="3.2"/>
+    <text x="512" y="313" text-anchor="middle" class="font nodeTitle">QA</text>
+    <text x="512" y="343" text-anchor="middle" class="font nodeSub">dataset</text>
+  </g>
+  <path d="M584 307 H704" class="flow"/>
+
+  <g filter="url(#softShadow)">
+    <rect x="710" y="224" width="266" height="112" rx="17" fill="url(#modelGrad)" stroke="#3b82f6" stroke-width="3.4"/>
+    <rect x="734" y="238" width="72" height="26" rx="13" fill="#ffffff" stroke="#bfdbfe" stroke-width="1.4"/>
+    <text x="770" y="257" text-anchor="middle" class="font tag">actor</text>
+    <text x="843" y="298" text-anchor="middle" class="font nodeTitle">Agent LLM</text>
+    <text x="843" y="322" text-anchor="middle" class="font nodeSub">search policy</text>
+  </g>
+
+  <g filter="url(#softShadow)">
+    <rect x="710" y="372" width="266" height="80" rx="16" fill="url(#serviceGrad)" stroke="#22c55e" stroke-width="3.2"/>
+    <text x="843" y="406" text-anchor="middle" class="font nodeTitle">Search Tool</text>
+    <text x="843" y="431" text-anchor="middle" class="font nodeSub">retriever only</text>
+  </g>
+  <path d="M843 336 V368" class="flowGreen"/>
+
+  <path d="M984 306 H1108" class="flowBlue"/>
+
+  <g filter="url(#softShadow)">
+    <rect x="1118" y="226" width="272" height="126" rx="17" fill="url(#rewardGrad)" stroke="#fb7185" stroke-width="3.2"/>
+    <rect x="1142" y="248" width="78" height="30" rx="15" fill="#ffffff" stroke="#fecdd3" stroke-width="1.4"/>
+    <text x="1181" y="269" text-anchor="middle" class="font tag">reward</text>
+    <text x="1254" y="304" text-anchor="middle" class="font nodeTitle">Search-Agent</text>
+    <text x="1254" y="330" text-anchor="middle" class="font nodeSub">reward function</text>
+  </g>
+  <path d="M1118 248 C1038 196 918 196 856 224" class="flowRed"/>
+  <text x="998" y="216" text-anchor="middle" class="font arrowText">GRPO update</text>
+
+  <path d="M1398 307 H1530" class="flow"/>
+  <g filter="url(#softShadow)">
+    <rect x="1536" y="238" width="284" height="138" rx="18" fill="url(#artifactGrad)" stroke="#cbd5e1" stroke-width="3"/>
+    <text x="1678" y="294" text-anchor="middle" class="font nodeTitle">Trained</text>
+    <text x="1678" y="327" text-anchor="middle" class="font nodeTitle">search agent</text>
+    <text x="1678" y="357" text-anchor="middle" class="font nodeSub">agent checkpoint</text>
+  </g>
+
+  <!-- Stage 2 nodes -->
+  <g filter="url(#softShadow)">
+    <path d="M450 676 C450 644 574 644 574 676 V788 C574 820 450 820 450 788 Z" fill="url(#dataGrad)" stroke="#22c55e" stroke-width="3.2"/>
+    <ellipse cx="512" cy="676" rx="62" ry="29" fill="#dcfce7" stroke="#22c55e" stroke-width="3.2"/>
+    <text x="512" y="738" text-anchor="middle" class="font nodeTitle">QA</text>
+    <text x="512" y="766" text-anchor="middle" class="font nodeSub">dataset</text>
+  </g>
+  <path d="M584 760 H704" class="flow"/>
+
+  <g filter="url(#softShadow)">
+    <rect x="710" y="704" width="286" height="112" rx="17" fill="url(#modelGrad)" stroke="#3b82f6" stroke-width="3.4"/>
+    <rect x="734" y="720" width="86" height="26" rx="13" fill="#ffffff" stroke="#bfdbfe" stroke-width="1.4"/>
+    <text x="777" y="739" text-anchor="middle" class="font tag">fixed</text>
+    <text x="853" y="776" text-anchor="middle" class="font nodeTitle">Trained Agent</text>
+    <text x="853" y="801" text-anchor="middle" class="font nodeSub">from Stage 1 policy</text>
+  </g>
+
+  <g>
+    <rect x="714" y="570" width="288" height="106" rx="14" class="dashGroup"/>
+    <text x="858" y="600" text-anchor="middle" class="font groupTitle">Search Function</text>
+    <rect x="768" y="622" width="180" height="42" rx="12" fill="url(#serviceGrad)" stroke="#22c55e" stroke-width="2.6"/>
+    <text x="858" y="650" text-anchor="middle" class="font smallText">retriever only</text>
+  </g>
+  <path d="M820 704 V680" class="flowGreen"/>
+
+  <path d="M1004 760 H1130" class="flow"/>
+  <g filter="url(#softShadow)">
+    <path d="M1140 704 C1140 673 1282 673 1282 704 V812 C1282 843 1140 843 1140 812 Z" fill="#f8fafc" stroke="#cbd5e1" stroke-width="3.1"/>
+    <ellipse cx="1211" cy="704" rx="71" ry="31" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="3.1"/>
+    <text x="1211" y="766" text-anchor="middle" class="font nodeTitle">Trajectories</text>
+    <text x="1211" y="794" text-anchor="middle" class="font nodeSub">trace + metrics</text>
+  </g>
+  <path d="M1288 760 H1410" class="flow"/>
+  <g filter="url(#softShadow)">
+    <path d="M1420 704 C1420 673 1592 673 1592 704 V812 C1592 843 1420 843 1420 812 Z" fill="#f8fafc" stroke="#cbd5e1" stroke-width="3.1"/>
+    <ellipse cx="1506" cy="704" rx="86" ry="31" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="3.1"/>
+    <text x="1506" y="752" text-anchor="middle" class="font nodeTitle">Reranker</text>
+    <text x="1506" y="781" text-anchor="middle" class="font nodeTitle">train set</text>
+    <text x="1506" y="810" text-anchor="middle" class="font nodeSub">input + train dataset</text>
+  </g>
+  <path d="M1598 760 H1730" class="flow"/>
+  <g filter="url(#softShadow)">
+    <rect x="1738" y="702" width="336" height="116" rx="18" fill="url(#artifactGrad)" stroke="#cbd5e1" stroke-width="3"/>
+    <text x="1906" y="750" text-anchor="middle" class="font nodeTitle">Reusable Data</text>
+    <text x="1906" y="782" text-anchor="middle" class="font nodeSub">trajectory/ + llm_reranker_train_set/</text>
+  </g>
+
+  <!-- Stage 3 nodes -->
+  <g filter="url(#softShadow)">
+    <path d="M450 988 C450 957 622 957 622 988 V1106 C622 1138 450 1138 450 1106 Z" fill="#f8fafc" stroke="#cbd5e1" stroke-width="3.1"/>
+    <ellipse cx="536" cy="988" rx="86" ry="31" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="3.1"/>
+    <text x="536" y="1039" text-anchor="middle" class="font nodeTitle">Reranker</text>
+    <text x="536" y="1070" text-anchor="middle" class="font nodeTitle">train set</text>
+    <text x="536" y="1100" text-anchor="middle" class="font nodeSub">from Stage 2</text>
+  </g>
+  <path d="M630 1050 H730" class="flow"/>
+
+  <g filter="url(#softShadow)">
+    <rect x="738" y="992" width="264" height="116" rx="18" fill="url(#modelGrad)" stroke="#3b82f6" stroke-width="3.4"/>
+    <rect x="762" y="1008" width="76" height="26" rx="13" fill="#ffffff" stroke="#bfdbfe" stroke-width="1.4"/>
+    <text x="800" y="1027" text-anchor="middle" class="font tag">train</text>
+    <text x="870" y="1058" text-anchor="middle" class="font nodeTitle">LLM</text>
+    <text x="870" y="1086" text-anchor="middle" class="font nodeTitle">Reranker</text>
+  </g>
+
+  <path d="M1010 1050 H1118" class="flow"/>
+  <text x="1064" y="1022" text-anchor="middle" class="font arrowText">rollout</text>
+
+  <g>
+    <rect x="1128" y="962" width="506" height="176" rx="16" class="dashGroup"/>
+    <text x="1381" y="936" text-anchor="middle" class="font groupTitle">Continuation Reward Function</text>
+    <rect x="1186" y="1004" width="196" height="92" rx="16" fill="url(#serviceGrad)" stroke="#22c55e" stroke-width="3"/>
+    <rect x="1208" y="1024" width="74" height="28" rx="14" fill="#ffffff" stroke="#bbf7d0" stroke-width="1.4"/>
+    <text x="1245" y="1044" text-anchor="middle" class="font tag">fixed</text>
+    <text x="1284" y="1070" text-anchor="middle" class="font smallText">agent LLM</text>
+    <rect x="1420" y="1004" width="162" height="92" rx="46" fill="#f8fafc" stroke="#cbd5e1" stroke-width="3"/>
+    <text x="1501" y="1046" text-anchor="middle" class="font smallText">final answer</text>
+    <text x="1501" y="1074" text-anchor="middle" class="font smallText">score</text>
+    <path d="M1388 1050 H1414" class="flowRed"/>
+  </g>
+  <path d="M1586 1050 H1718" class="flowRed"/>
+  <g filter="url(#softShadow)">
+    <rect x="1728" y="988" width="306" height="124" rx="18" fill="url(#artifactGrad)" stroke="#cbd5e1" stroke-width="3"/>
+    <text x="1881" y="1038" text-anchor="middle" class="font nodeTitle">Trained LLM</text>
+    <text x="1881" y="1071" text-anchor="middle" class="font nodeTitle">reranker</text>
+    <text x="1881" y="1101" text-anchor="middle" class="font nodeSub">ranking policy checkpoint</text>
+  </g>
+  <path d="M1740 1118 C1510 1208 1024 1198 904 1110" class="flowRed"/>
+  <text x="1330" y="1200" text-anchor="middle" class="font arrowText">GRPO / ranking-policy update</text>
+
+  <!-- Stage 4 nodes -->
+  <g filter="url(#softShadow)">
+    <rect x="440" y="1382" width="196" height="98" rx="49" fill="#f8fafc" stroke="#cbd5e1" stroke-width="3.4"/>
+    <text x="538" y="1442" text-anchor="middle" class="font nodeTitle">query</text>
+  </g>
+  <path d="M642 1431 H748" class="flow"/>
+  <g filter="url(#softShadow)">
+    <rect x="756" y="1376" width="292" height="110" rx="18" fill="url(#modelGrad)" stroke="#3b82f6" stroke-width="3.4"/>
+    <rect x="780" y="1394" width="86" height="26" rx="13" fill="#ffffff" stroke="#bfdbfe" stroke-width="1.4"/>
+    <text x="823" y="1413" text-anchor="middle" class="font tag">trained</text>
+    <text x="902" y="1442" text-anchor="middle" class="font nodeTitle">Agent LLM</text>
+    <text x="902" y="1468" text-anchor="middle" class="font nodeSub">reason + call search</text>
+  </g>
+
+  <g>
+    <rect x="1156" y="1308" width="450" height="172" rx="16" class="dashGroup"/>
+    <text x="1381" y="1290" text-anchor="middle" class="font groupTitle">AIR Search Function</text>
+    <rect x="1204" y="1362" width="158" height="82" rx="14" fill="url(#serviceGrad)" stroke="#22c55e" stroke-width="3"/>
+    <text x="1283" y="1412" text-anchor="middle" class="font smallText">retriever</text>
+    <rect x="1392" y="1362" width="166" height="82" rx="14" fill="url(#serviceGrad)" stroke="#22c55e" stroke-width="3"/>
+    <text x="1475" y="1396" text-anchor="middle" class="font smallText">trained LLM</text>
+    <text x="1475" y="1425" text-anchor="middle" class="font smallText">reranker</text>
+  </g>
+  <path d="M1048 1431 H1148" class="flowBlue"/>
+  <path d="M1586 1431 H1716" class="flowGreen"/>
+  <g filter="url(#softShadow)">
+    <rect x="1726" y="1382" width="226" height="98" rx="49" fill="#f8fafc" stroke="#cbd5e1" stroke-width="3.4"/>
+    <text x="1839" y="1426" text-anchor="middle" class="font nodeTitle">ranked</text>
+    <text x="1839" y="1456" text-anchor="middle" class="font nodeTitle">evidence</text>
+  </g>
+  <path d="M1728 1482 C1584 1550 1152 1552 944 1488" class="flowGreen"/>
+  <text x="1354" y="1572" text-anchor="middle" class="font arrowText">observation returned to agent</text>
+  <path d="M1956 1431 H2072" class="flow"/>
+  <g filter="url(#softShadow)">
+    <rect x="2082" y="1382" width="212" height="98" rx="49" fill="#f8fafc" stroke="#cbd5e1" stroke-width="3.4"/>
+    <text x="2188" y="1442" text-anchor="middle" class="font nodeTitle">answer</text>
+  </g>
+  <path d="M2298 1431 H2392" class="flow"/>
+  <g filter="url(#softShadow)">
+    <rect x="2398" y="1387" width="72" height="88" rx="14" fill="#ffffff" stroke="#e2e8f0" stroke-width="2.2"/>
+    <path d="M2417 1411 H2451" stroke="#94a3b8" stroke-width="3" stroke-linecap="round"/>
+    <path d="M2417 1434 H2451" stroke="#94a3b8" stroke-width="3" stroke-linecap="round"/>
+    <path d="M2417 1457 H2440" stroke="#94a3b8" stroke-width="3" stroke-linecap="round"/>
+    <text x="2434" y="1508" text-anchor="middle" class="font tiny">metrics</text>
+  </g>
+
+  <!-- Cross-stage artifacts are noted inside the downstream nodes to keep the diagram readable. -->
+
+  <!-- Legend -->
+  <rect x="126" y="1642" width="1020" height="70" rx="18" fill="#ffffff" fill-opacity="0.82" stroke="#e2e8f0" stroke-width="2" filter="url(#softShadow)"/>
+  <circle cx="172" cy="1677" r="11" fill="#3b82f6"/>
+  <text x="194" y="1684" class="font smallText">LLM / trainable policy</text>
+  <circle cx="448" cy="1677" r="11" fill="#22c55e"/>
+  <text x="470" y="1684" class="font smallText">search service / retriever</text>
+  <circle cx="748" cy="1677" r="11" fill="#fb7185"/>
+  <text x="770" y="1684" class="font smallText">reward signal</text>
+  <circle cx="942" cy="1677" r="11" fill="#94a3b8"/>
+  <text x="964" y="1684" class="font smallText">artifact / data flow</text>
+</svg>

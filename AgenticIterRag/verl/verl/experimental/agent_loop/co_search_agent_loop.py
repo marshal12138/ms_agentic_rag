@@ -17,6 +17,7 @@ import json
 import logging
 import os
 import re
+import time
 from enum import Enum
 from typing import Any, Optional
 from uuid import uuid4
@@ -33,6 +34,12 @@ from verl.utils.rollout_trace import rollout_trace_op
 
 logger = logging.getLogger(__file__)
 logger.setLevel(os.getenv("VERL_LOGGING_LEVEL", "WARN"))
+
+
+def _fatal_tool_error(exc: Exception) -> bool:
+    if os.getenv("AGENTIC_ITER_RAG_FAIL_FAST_TOOL_ERROR", "").strip().lower() in {"1", "true", "yes", "y", "on"}:
+        return True
+    return "fatal_recall_error:" in str(exc)
 
 
 class AgentState(Enum):
@@ -78,6 +85,7 @@ class AgentData:
         self.tool_rewards: list[float] = []
         self.user_turns = 0
         self.assistant_turns = 0
+        self.assistant_turn_records: list[dict[str, Any]] = []
 
         # Temporary state for tool calls
         self.tool_calls: list[FunctionCall] = []
@@ -212,6 +220,12 @@ class CoSearchAgentLoop(AgentLoopBase):
 
         output.extra_fields.update({"turn_scores": agent_data.turn_scores, "tool_rewards": agent_data.tool_rewards})
         output.extra_fields.update({"json_correct": agent_data.json_correct, "one_tool_call_per_assistant": agent_data.one_tool_call_per_assistant})
+        output.extra_fields.update(
+            {
+                "request_id": agent_data.request_id,
+                "assistant_turn_records": agent_data.assistant_turn_records,
+            }
+        )
 
         # For trajectory saving (Phase 1 alternating training):
         # Store tool call details and messages so TrajectorySaver can access them.
@@ -267,6 +281,14 @@ class CoSearchAgentLoop(AgentLoopBase):
 
         agent_data.assistant_turns += 1
         agent_data.response_ids = output.token_ids
+        raw_assistant_text = self.tokenizer.decode(output.token_ids, skip_special_tokens=False)
+        turn_record = {
+            "turn_index": agent_data.assistant_turns - 1,
+            "raw_generated_text": raw_assistant_text,
+            "executed_text": raw_assistant_text,
+            "truncated_after_tool_call": False,
+        }
+        agent_data.assistant_turn_records.append(turn_record)
         agent_data.prompt_ids += agent_data.response_ids
         agent_data.response_mask += [1] * len(agent_data.response_ids)
         if output.log_probs:
@@ -287,6 +309,9 @@ class CoSearchAgentLoop(AgentLoopBase):
         # Determine next state, we only allow 1 tool call per generation turn
         if agent_data.tool_calls and len(agent_data.tool_calls) == 1:
             self._truncate_after_first_tool_call(agent_data)
+            executed_text = self.tokenizer.decode(agent_data.response_ids, skip_special_tokens=False)
+            turn_record["executed_text"] = executed_text
+            turn_record["truncated_after_tool_call"] = executed_text != raw_assistant_text
             return AgentState.PROCESSING_TOOLS
 
         # Check whether we get the answer only after no valid tool call was found.
@@ -428,28 +453,48 @@ class CoSearchAgentLoop(AgentLoopBase):
         """Call tool and return tool response."""
         worker_id = os.getpid()
         tool, instance_id = None, None
+        tool_name = str(getattr(tool_call, "name", ""))
+        tool_args: dict[str, Any] = {}
+        started = time.perf_counter()
         try:
-            tool_name = tool_call.name
             tool_args = json.loads(tool_call.arguments)
             tool = self.tools[tool_name]
             kwargs = tools_kwargs.get(tool_name, {})
             
             instance_id, _ = await tool.create(create_kwargs=kwargs.get("create_kwargs", {}))
             tool_execution_response, tool_reward, res = await tool.execute(instance_id, tool_args)
+            res = dict(res or {})
+            res.update(
+                {
+                    "attempted_query": str(tool_args.get("query") or ""),
+                    "tool_call": {"name": tool_name, "arguments": dict(tool_args)},
+                    "tool_elapsed_s": time.perf_counter() - started,
+                }
+            )
         except Exception as e:
             logger.warning(f"[W{worker_id}-TOOL-{tool_name}] ERROR: {e}")
+            if _fatal_tool_error(e):
+                raise
             return (
                 AgentToolResponse(
                     text=f"Error when executing tool: {e}",
                 ),
                 0.0,
-                {"reranker_crashed": True},
+                {
+                    "reranker_crashed": True,
+                    "attempted_query": str(tool_args.get("query") or ""),
+                    "sub_query": "",
+                    "tool_call": {"name": tool_name, "arguments": dict(tool_args)},
+                    "tool_error": f"{type(e).__name__}: {e}",
+                    "tool_elapsed_s": time.perf_counter() - started,
+                },
             )
         finally:
             if tool and instance_id:
                 await tool.release(instance_id)
 
-        tool_response_text = tool_execution_response.text
+        raw_tool_response_text = tool_execution_response.text or ""
+        tool_response_text = raw_tool_response_text
         if tool_response_text and len(tool_response_text) > self.max_tool_response_length:
             if self.tool_response_truncate_side == "left":
                 tool_response_text = tool_response_text[: self.max_tool_response_length] + "...(truncated)"
@@ -488,10 +533,20 @@ class CoSearchAgentLoop(AgentLoopBase):
         # This only has meaningful data when save_top_n_documents=True in the search tool config.
         tool_call_detail = {
             "step_index": len(agent_data.tool_call_details),
+            "attempted_query": res.get("attempted_query", res.get("sub_query", "")),
+            "executed_query": res.get("sub_query", ""),
             "sub_query": res.get("sub_query", ""),
             "tool_score": res.get("tool_score", 0.0),
             "answer_in_docs": res.get("answer_in_docs", False),
             "reranker_crashed": res.get("reranker_crashed", False),
+            "tool_call": res.get("tool_call", {}),
+            "tool_error": res.get("tool_error", ""),
+            "tool_elapsed_s": res.get("tool_elapsed_s", 0.0),
+            "tool_observation": tool_response_text,
+            "tool_observation_before_truncation": raw_tool_response_text,
+            "observation_truncated": raw_tool_response_text != tool_response_text,
+            "observation_length_before": len(raw_tool_response_text),
+            "observation_length_after": len(tool_response_text),
         }
         # Only include top_n_documents if the tool saved them (save_top_n_documents=True)
         if "top_n_documents" in res:

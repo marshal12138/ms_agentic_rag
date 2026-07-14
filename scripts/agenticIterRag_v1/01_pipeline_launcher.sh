@@ -33,7 +33,7 @@ RUNTIME_ENV="$("${PY}" "${COMPILER}" \
 # shellcheck disable=SC1090
 source "${RUNTIME_ENV}"
 
-PIPELINE_TERMINAL_LOG="${PIPELINE_TERMINAL_LOG:-${LOG_DIR}/pipeline.terminal.log}"
+PIPELINE_TERMINAL_LOG="${PIPELINE_TERMINAL_LOG:-${PIPELINE_LOG_DIR:-${LOG_DIR}/pipeline}/pipeline.terminal.log}"
 mkdir -p "$(dirname "${PIPELINE_TERMINAL_LOG}")"
 
 RUNNER_ARGS=(

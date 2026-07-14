@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import asyncio
+import copy
 import heapq
 import logging
 import os
@@ -56,6 +57,25 @@ def _progress_interval(env_name: str, default: int) -> int:
         return max(1, int(os.getenv(env_name, str(default))))
     except ValueError:
         return default
+
+
+def _optional_timeout_seconds(env_name: str) -> float | None:
+    raw_value = os.getenv(env_name, "").strip()
+    if not raw_value:
+        return None
+    try:
+        value = float(raw_value)
+    except ValueError:
+        return None
+    return value if value > 0 else None
+
+
+def _object_vector(values: list[Any]) -> np.ndarray:
+    """Keep one arbitrary nested Python value per rollout."""
+
+    array = np.empty(len(values), dtype=object)
+    array[:] = values
+    return array
 
 
 def _wait_with_progress(futures, *, label: str, total_items: int, step: int, rollout_n: int = 1):
@@ -107,6 +127,69 @@ def _wait_with_progress(futures, *, label: str, total_items: int, step: int, rol
             )
             last_log = now
     return outputs
+
+
+def _normalize_dataproto_chunks_for_concat(chunks: list[DataProto]) -> None:
+    """Fill optional per-worker fields so DataProto.concat sees a stable schema."""
+
+    if not chunks:
+        return
+
+    all_non_tensor_keys = set()
+    all_reward_extra_keys = set()
+    for chunk in chunks:
+        all_non_tensor_keys.update(chunk.non_tensor_batch.keys())
+        all_reward_extra_keys.update(chunk.meta_info.get("reward_extra_keys", []))
+
+    for chunk in chunks:
+        chunk_len = len(chunk)
+        for key in all_non_tensor_keys:
+            if key not in chunk.non_tensor_batch:
+                values = np.empty(chunk_len, dtype=object)
+                values[:] = None
+                chunk.non_tensor_batch[key] = values
+        if "reward_extra_keys" in chunk.meta_info or all_reward_extra_keys:
+            chunk.meta_info["reward_extra_keys"] = sorted(all_reward_extra_keys)
+
+
+def _chunk_complete_uid_groups(prompts: DataProto, num_workers: int, expected_group_size: int) -> list[DataProto]:
+    """Split a rollout batch without placing one GRPO UID on multiple workers."""
+
+    if num_workers <= 0:
+        raise ValueError(f"num_workers must be positive, got {num_workers}")
+    raw_uids = prompts.non_tensor_batch.get("uid")
+    if raw_uids is None:
+        raise ValueError("stream group reward requires uid in the rollout batch")
+
+    ordered_groups: list[list[int]] = []
+    uid_to_group: dict[str, int] = {}
+    for index, raw_uid in enumerate(raw_uids):
+        uid = str(raw_uid)
+        if uid not in uid_to_group:
+            uid_to_group[uid] = len(ordered_groups)
+            ordered_groups.append([])
+        ordered_groups[uid_to_group[uid]].append(index)
+
+    invalid = {
+        str(raw_uids[indices[0]]): len(indices)
+        for indices in ordered_groups
+        if len(indices) != expected_group_size
+    }
+    if invalid:
+        raise ValueError(
+            f"stream group reward requires exactly {expected_group_size} rollouts per uid; got {invalid}"
+        )
+    if len(ordered_groups) < num_workers:
+        raise ValueError(
+            f"stream group reward has {len(ordered_groups)} uid groups for {num_workers} workers"
+        )
+
+    group_splits = np.array_split(np.arange(len(ordered_groups)), num_workers)
+    chunks: list[DataProto] = []
+    for group_split in group_splits:
+        indices = [index for group_index in group_split.tolist() for index in ordered_groups[group_index]]
+        chunks.append(prompts.select_idxs(indices))
+    return chunks
 
 
 def random_subsample_dataproto(data: DataProto, max_size: int) -> DataProto:
@@ -372,12 +455,32 @@ class AgentLoopWorkerBase:
                 self.processor.chat_template = self.config.actor_rollout_ref.model.custom_chat_template
             self.tokenizer.chat_template = self.config.actor_rollout_ref.model.custom_chat_template
 
-        self.reward_manager_worker = RewardManagerWorker.options(
-            scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
-                node_id=ray.get_runtime_context().get_node_id(),
-                soft=False,
-            ),
-        ).remote(self.config, self.reward_router_address)
+        needs_async_reward_worker = bool(self.config.reward_model.get("use_reward_loop", False)) or (
+            self.reward_router_address is not None
+            and bool(self.config.reward_model.get("enable_resource_pool", False))
+        )
+        self.reward_manager_worker = None
+        if needs_async_reward_worker:
+            self.reward_manager_worker = RewardManagerWorker.options(
+                scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
+                    node_id=ray.get_runtime_context().get_node_id(),
+                    soft=False,
+                ),
+            ).remote(self.config, self.reward_router_address)
+
+        self.stream_group_reward = bool(self.config.reward_model.get("stream_group_reward", False))
+        self.stream_group_reward_fn = None
+        if self.stream_group_reward:
+            if str(self.config.reward_model.get("reward_manager", "")) != "batch":
+                raise ValueError("stream group reward requires reward_model.reward_manager=batch")
+            from verl.trainer.ppo.reward import load_reward_manager
+
+            self.stream_group_reward_fn = load_reward_manager(
+                self.config,
+                self.tokenizer,
+                num_examine=0,
+                **self.config.reward_model.get("reward_kwargs", {}),
+            )
 
         trace_config = self.config.actor_rollout_ref.rollout.get("trace", {})
         RolloutTraceConfig.init(
@@ -470,13 +573,35 @@ class AgentLoopWorkerBase:
         task_to_idx = {task: idx for idx, task in enumerate(tasks)}
         pending = set(tasks)
         outputs = [None] * len(tasks)
+        start = time.time()
+        global_steps = batch.meta_info.get("global_steps", -1)
+        rollout_n = max(1, int(self.config.actor_rollout_ref.rollout.n))
+        uid_groups: dict[str, list[int]] = {}
+        reward_tasks: list[asyncio.Task] = []
+        reward_task_uids: set[str] = set()
+        reward_semaphore = asyncio.Semaphore(
+            max(1, int(self.config.reward_model.get("stream_group_max_inflight", 1)))
+        )
+        if self.stream_group_reward:
+            raw_uids = batch.non_tensor_batch.get("uid")
+            if raw_uids is None:
+                raise ValueError("stream group reward requires uid in the rollout worker batch")
+            for index, raw_uid in enumerate(raw_uids):
+                uid_groups.setdefault(str(raw_uid), []).append(index)
+            invalid_groups = {
+                uid: len(indices)
+                for uid, indices in uid_groups.items()
+                if len(indices) != rollout_n
+            }
+            if invalid_groups:
+                raise ValueError(
+                    f"stream group reward requires exactly {rollout_n} local rollouts per uid; "
+                    f"got {invalid_groups}"
+                )
         done_count = 0
         last_done_logged = 0
-        start = time.time()
         wait_interval = _progress_interval("COSEARCH_ROLLOUT_PROGRESS_INTERVAL", 60)
         item_interval = _progress_interval("COSEARCH_ROLLOUT_ITEM_PROGRESS_INTERVAL", 32)
-        global_steps = batch.meta_info.get("global_steps", -1)
-        rollout_n = max(1, self.config.actor_rollout_ref.rollout.n)
         total_prompts = len(batch) / rollout_n
         print(
             f"[rollout-progress][worker:{os.getpid()}] step={global_steps} started "
@@ -490,8 +615,27 @@ class AgentLoopWorkerBase:
                 return_when=asyncio.FIRST_COMPLETED,
             )
             for task in done:
-                outputs[task_to_idx[task]] = task.result()
+                completed_index = task_to_idx[task]
+                outputs[completed_index] = task.result()
                 done_count += 1
+                if self.stream_group_reward:
+                    uid = str(batch.non_tensor_batch["uid"][completed_index])
+                    group_indices = uid_groups[uid]
+                    if uid not in reward_task_uids and all(outputs[index] is not None for index in group_indices):
+                        reward_task_uids.add(uid)
+                        reward_tasks.append(
+                            asyncio.create_task(
+                                self._compute_stream_group_reward(
+                                    batch=batch,
+                                    outputs=outputs,
+                                    indices=group_indices,
+                                    uid=uid,
+                                    step=global_steps,
+                                    rollout_started=start,
+                                    semaphore=reward_semaphore,
+                                )
+                            )
+                        )
             now = time.time()
             if done and (done_count == len(batch) or done_count - last_done_logged >= item_interval):
                 print(
@@ -511,8 +655,75 @@ class AgentLoopWorkerBase:
                     flush=True,
                 )
 
+        if self.stream_group_reward:
+            if len(reward_tasks) != len(uid_groups):
+                raise RuntimeError(
+                    f"stream group reward scheduled {len(reward_tasks)}/{len(uid_groups)} uid groups"
+                )
+            await asyncio.gather(*reward_tasks)
+
         output = self._postprocess(outputs)
         return output
+
+    async def _compute_stream_group_reward(
+        self,
+        *,
+        batch: DataProto,
+        outputs: list[_InternalAgentLoopOutput | None],
+        indices: list[int],
+        uid: str,
+        step: int,
+        rollout_started: float,
+        semaphore: asyncio.Semaphore,
+    ) -> None:
+        """Compute one complete UID reward while other UID rollouts are still running."""
+
+        if self.stream_group_reward_fn is None:
+            raise RuntimeError("stream group reward function was not initialized")
+        group_outputs = [outputs[index] for index in indices]
+        if any(output is None for output in group_outputs):
+            raise RuntimeError(f"uid {uid} was submitted before all rollout outputs completed")
+
+        ready_offset_s = time.time() - rollout_started
+        async with semaphore:
+            reward_started = time.time()
+            group_data = self._postprocess(group_outputs)
+            group_input = batch.select_idxs(indices)
+            for key, values in group_input.non_tensor_batch.items():
+                if key not in group_data.non_tensor_batch:
+                    group_data.non_tensor_batch[key] = values
+
+            loop = asyncio.get_running_loop()
+            result = await loop.run_in_executor(
+                None,
+                lambda: self.stream_group_reward_fn(group_data, return_dict=True),
+            )
+            reward_wall_s = time.time() - reward_started
+
+        scores = result["reward_tensor"].sum(dim=-1).detach().cpu().tolist()
+        reward_extra_info = result.get("reward_extra_info", {})
+        finished_offset_s = time.time() - rollout_started
+        for position, output in enumerate(group_outputs):
+            output.reward_score = float(scores[position])
+            extras = {
+                key: values[position]
+                for key, values in reward_extra_info.items()
+            }
+            extras.update(
+                {
+                    "stream_group_reward_wall_s": float(reward_wall_s),
+                    "stream_group_ready_offset_s": float(ready_offset_s),
+                    "stream_group_finished_offset_s": float(finished_offset_s),
+                    "stream_group_worker_pid": int(os.getpid()),
+                }
+            )
+            output.extra_fields["reward_extra_info"] = extras
+        print(
+            f"[stream-group-reward][worker:{os.getpid()}] step={step} uid={uid} "
+            f"size={len(indices)} ready_s={ready_offset_s:.1f} reward_s={reward_wall_s:.1f} "
+            f"finished_s={finished_offset_s:.1f}",
+            flush=True,
+        )
 
     async def _run_agent_loop(
         self,
@@ -543,8 +754,23 @@ class AgentLoopWorkerBase:
                 tokenizer=self.tokenizer,
                 processor=self.processor,
             )
-            output: AgentLoopOutput = await agent_loop.run(sampling_params, **kwargs)
+            timeout_s = _optional_timeout_seconds("COSEARCH_TRAJECTORY_TIMEOUT_SECONDS")
+            try:
+                if timeout_s is None:
+                    output: AgentLoopOutput = await agent_loop.run(sampling_params, **kwargs)
+                else:
+                    output = await asyncio.wait_for(agent_loop.run(sampling_params, **kwargs), timeout=timeout_s)
+            except asyncio.TimeoutError:
+                output = await self._build_failed_agent_loop_output(
+                    kwargs=kwargs,
+                    reason="trajectory_timeout",
+                    elapsed_s=timeout_s or 0.0,
+                )
 
+            # Keep the original rollout uid for GRPO grouping and for
+            # DataProto.union alignment with the repeated trainer batch.
+            if "uid" in kwargs:
+                output.extra_fields["uid"] = kwargs["uid"]
             output.extra_fields["raw_prompt"] = kwargs["raw_prompt"]
 
             # Some AgentLoop may have already computed the reward score, e.g SWE-agent.
@@ -659,6 +885,8 @@ class AgentLoopWorkerBase:
         
             
             if output.reward_score is None and enable_async_reward:
+                if self.reward_manager_worker is None:
+                    raise RuntimeError("async reward is enabled but RewardManagerWorker was not initialized")
                 batch = TensorDict(
                     {
                         "prompts": prompt_output["input_ids"],  # [1, prompt_length]
@@ -682,8 +910,10 @@ class AgentLoopWorkerBase:
                 
                 result = await self.reward_manager_worker.compute_score.remote(data)
                 
-                output.reward_score = result["reward_score"]
-                output.extra_fields["reward_extra_info"] = result["reward_extra_info"]
+                reward_extra_info = result["reward_extra_info"]
+                if not bool(reward_extra_info.get("spad_dev_prefetch_only", False)):
+                    output.reward_score = result["reward_score"]
+                output.extra_fields["reward_extra_info"] = reward_extra_info
 
             return _InternalAgentLoopOutput(
                 prompt_ids=prompt_output["input_ids"],
@@ -700,6 +930,66 @@ class AgentLoopWorkerBase:
                 metrics=output.metrics,
                 extra_fields=output.extra_fields,
             )
+
+    async def _build_failed_agent_loop_output(
+        self,
+        *,
+        kwargs: dict[str, Any],
+        reason: str,
+        elapsed_s: float,
+    ) -> AgentLoopOutput:
+        """Build a zero-loss fallback sample when one trajectory exceeds the configured wall timeout."""
+
+        loop = asyncio.get_running_loop()
+        messages = list(kwargs.get("raw_prompt") or [])
+        response_text = f"<reason>{reason}</reason>\n<answer>"
+        if self.processor is not None:
+            raw_prompt = await loop.run_in_executor(
+                None,
+                lambda: self.processor.apply_chat_template(
+                    messages,
+                    add_generation_prompt=True,
+                    tokenize=False,
+                    **self.config.data.get("apply_chat_template_kwargs", {}),
+                ),
+            )
+            image_data = copy.deepcopy(kwargs.get("multi_modal_data", {}).get("image", None))
+            model_inputs = self.processor(text=[raw_prompt], images=image_data, return_tensors="pt")
+            prompt_ids = model_inputs.pop("input_ids").squeeze(0).tolist()
+            multi_modal_data = {"image": image_data} if image_data is not None else {}
+        else:
+            prompt_ids = await loop.run_in_executor(
+                None,
+                lambda: self.tokenizer.apply_chat_template(
+                    messages,
+                    add_generation_prompt=True,
+                    tokenize=True,
+                    **self.config.data.get("apply_chat_template_kwargs", {}),
+                ),
+            )
+            multi_modal_data = {}
+        response_ids = await loop.run_in_executor(
+            None,
+            lambda: self.tokenizer.encode(response_text, add_special_tokens=False),
+        )
+        response_ids = response_ids[: self.config.actor_rollout_ref.rollout.response_length]
+        extra_fields = {
+            "trajectory_failure_reason": reason,
+            "trajectory_timeout_s": float(elapsed_s),
+        }
+        if "uid" in kwargs:
+            extra_fields["uid"] = kwargs["uid"]
+        return AgentLoopOutput(
+            prompt_ids=prompt_ids,
+            response_ids=response_ids,
+            response_mask=[0] * len(response_ids),
+            multi_modal_data=multi_modal_data,
+            response_logprobs=None,
+            reward_score=None,
+            num_turns=1,
+            metrics=AgentLoopMetrics(generate_sequences=float(elapsed_s), tool_calls=0.0),
+            extra_fields=extra_fields,
+        )
 
     def _postprocess(self, inputs: list[_InternalAgentLoopOutput]) -> DataProto:
         """Process the padded outputs from _run_agent_loop and combine them into a batch."""
@@ -742,9 +1032,9 @@ class AgentLoopWorkerBase:
 
         # add reward_extra_info to non_tensor_batch
         reward_extra_infos = [input.extra_fields.get("reward_extra_info", {}) for input in inputs]
-        reward_extra_keys = list(reward_extra_infos[0].keys())
+        reward_extra_keys = sorted({key for info in reward_extra_infos for key in info.keys()})
         for key in reward_extra_keys:
-            non_tensor_batch[key] = np.array([info[key] for info in reward_extra_infos])
+            non_tensor_batch[key] = _object_vector([info.get(key) for info in reward_extra_infos])
 
         # Add multi_modal_inputs to non_tensor_batch if any samples have them
         multi_modal_inputs_list = [input.multi_modal_inputs for input in inputs]
@@ -922,7 +1212,14 @@ class AgentLoopManager:
         if self.reward_model_manager and self.config.reward_model.rollout.free_cache_engine:
             self.reward_model_manager.wake_up()
 
-        chunkes = prompts.chunk(len(self.agent_loop_workers))
+        if bool(self.config.reward_model.get("stream_group_reward", False)):
+            chunkes = _chunk_complete_uid_groups(
+                prompts,
+                num_workers=len(self.agent_loop_workers),
+                expected_group_size=int(self.config.actor_rollout_ref.rollout.n),
+            )
+        else:
+            chunkes = prompts.chunk(len(self.agent_loop_workers))
         futures = [
             worker.generate_sequences.remote(chunk)
             for worker, chunk in zip(self.agent_loop_workers, chunkes, strict=True)
@@ -934,6 +1231,7 @@ class AgentLoopManager:
             step=prompts.meta_info.get("global_steps", -1),
             rollout_n=self.config.actor_rollout_ref.rollout.n,
         )
+        _normalize_dataproto_chunks_for_concat(outputs)
         output = DataProto.concat(outputs)
         if self.config.actor_rollout_ref.rollout.free_cache_engine:
             self.sleep()
@@ -1310,9 +1608,9 @@ class SearchR1DualAgentLoopWorkerBase(AgentLoopWorkerBase):
 
         # add reward_extra_info to non_tensor_batch
         reward_extra_infos = [input.extra_fields.get("reward_extra_info", {}) for input in inputs]
-        reward_extra_keys = list(reward_extra_infos[0].keys())
+        reward_extra_keys = sorted({key for info in reward_extra_infos for key in info.keys()})
         for key in reward_extra_keys:
-            non_tensor_batch[key] = np.array([info[key] for info in reward_extra_infos])
+            non_tensor_batch[key] = _object_vector([info.get(key) for info in reward_extra_infos])
 
         # Add multi_modal_inputs to non_tensor_batch if any samples have them
         multi_modal_inputs_list = [input.multi_modal_inputs for input in inputs]
@@ -1555,6 +1853,8 @@ class SearchR1DualAgentLoopManager(AgentLoopManager):
         main_outputs = [output[0] for output in outputs]
         reranker_outputs = [output[1] for output in outputs]
         
+        _normalize_dataproto_chunks_for_concat(main_outputs)
+        _normalize_dataproto_chunks_for_concat(reranker_outputs)
         main_output = DataProto.concat(main_outputs)
         reranker_output = DataProto.concat(reranker_outputs)
         
@@ -1986,9 +2286,9 @@ class SearchR1RerankerAgentLoopWorkerBase(AgentLoopWorkerBase):
 
         # add reward_extra_info to non_tensor_batch
         reward_extra_infos = [input.extra_fields.get("reward_extra_info", {}) for input in inputs]
-        reward_extra_keys = list(reward_extra_infos[0].keys())
+        reward_extra_keys = sorted({key for info in reward_extra_infos for key in info.keys()})
         for key in reward_extra_keys:
-            non_tensor_batch[key] = np.array([info[key] for info in reward_extra_infos])
+            non_tensor_batch[key] = _object_vector([info.get(key) for info in reward_extra_infos])
 
         # Add multi_modal_inputs to non_tensor_batch if any samples have them
         multi_modal_inputs_list = [input.multi_modal_inputs for input in inputs]
@@ -2261,6 +2561,7 @@ class CoSearchAgentLoopManager(AgentLoopManager):
         if is_validate:
             # Main-only mode: workers return DataProto directly
             main_outputs = outputs
+            _normalize_dataproto_chunks_for_concat(main_outputs)
             main_output = DataProto.concat(main_outputs)
             
             # Calculate performance metrics
@@ -2282,6 +2583,8 @@ class CoSearchAgentLoopManager(AgentLoopManager):
             worker_reranker_metrics_list = [output.meta_info.pop("worker_reranker_metrics", {}) for output in reranker_outputs]
             aggregated_reranker_rollout_metrics = self._aggregate_reranker_metrics(worker_reranker_metrics_list)
             
+            _normalize_dataproto_chunks_for_concat(main_outputs)
+            _normalize_dataproto_chunks_for_concat(reranker_outputs)
             main_output = DataProto.concat(main_outputs)
             reranker_output = DataProto.concat(reranker_outputs)
             

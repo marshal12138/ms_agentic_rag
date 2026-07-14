@@ -1,0 +1,17 @@
+main_run:
+  project:
+    experiment_name: agentic_iter_rag_v1_spad_qwen3_1_7b_newdata_512_em_teacher_backoff_dev
+
+agent_training:
+  stop_after_sub_stage: search_policy_rl
+  force_rerun_sub_stages: [search_policy_rl]
+  reward:
+    type: spad_em_teacher_backoff_dev
+    spad_em_teacher_backoff_dev:
+      partial_reward: 0.1
+  sub_stages:
+    search_policy_rl:
+      trainer:
+        stream_group_reward: true
+        stream_group_max_inflight: 4
+

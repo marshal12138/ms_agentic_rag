@@ -1,0 +1,102 @@
+{
+  "version": "newdata-model-eval-run-spec-v1",
+  "models": {
+    "historical_search_r1_512_normtrue": {
+      "role": "search_r1_original",
+      "scale": 512,
+      "stage": "stage1_step8",
+      "runs": [
+        "260712-newdata3500-fastio-search-r1-512-run1"
+      ]
+    },
+    "historical_spad_512_stable_inflight1_normtrue": {
+      "role": "spad_em_teacher_backoff",
+      "scale": 512,
+      "stage": "stage1_step8",
+      "runs": [
+        "260712-newdata3500-fastio-spad-512-stage1-run1"
+      ]
+    },
+    "historical_spad_512_stable_inflight2_normtrue": {
+      "role": "spad_em_teacher_backoff",
+      "scale": 512,
+      "stage": "stage1_step8",
+      "runs": [
+        "260712-newdata3500-fastio-spad-512-stage1-stable-inflight2-ablation-run1"
+      ]
+    },
+    "historical_spad_512_gold_token_f1_v1_inflight2_normtrue": {
+      "role": "spad_em_teacher_backoff_gold_token_f1_bonus_v1",
+      "scale": 512,
+      "stage": "stage1_step8",
+      "runs": [
+        "260713-newdata3500-spad-512-gold-token-f1-bonus-stage1-run1"
+      ]
+    },
+    "search_r1_512_normfalse_rep1": {
+      "role": "search_r1_original",
+      "scale": 512,
+      "stage": "stage1_step8",
+      "runs": [
+        "260713-newdata3500-search-r1-512-normfalse-rep1-run1"
+      ]
+    },
+    "search_r1_512_normfalse_rep2": {
+      "role": "search_r1_original",
+      "scale": 512,
+      "stage": "stage1_step8",
+      "runs": [
+        "260713-newdata3500-search-r1-512-normfalse-rep2-run1"
+      ]
+    },
+    "spad_512_stable_inflight2_normfalse_rep1": {
+      "role": "spad_em_teacher_backoff",
+      "scale": 512,
+      "stage": "stage1_step8",
+      "runs": [
+        "260713-newdata3500-spad-512-stable-normfalse-rep1-run1"
+      ]
+    },
+    "spad_512_stable_inflight2_normfalse_rep2": {
+      "role": "spad_em_teacher_backoff",
+      "scale": 512,
+      "stage": "stage1_step8",
+      "runs": [
+        "260713-newdata3500-spad-512-stable-normfalse-rep2-run1"
+      ]
+    },
+    "spad_512_gold_token_f1_v2_inflight2_normfalse_rep1": {
+      "role": "spad_em_teacher_backoff_gold_token_f1_bonus_v2",
+      "scale": 512,
+      "stage": "stage1_step8",
+      "runs": [
+        "260713-newdata3500-spad-512-gold-token-f1-v2-normfalse-rep1-run1"
+      ]
+    },
+    "spad_512_gold_token_f1_v2_inflight2_normfalse_rep2": {
+      "role": "spad_em_teacher_backoff_gold_token_f1_bonus_v2",
+      "scale": 512,
+      "stage": "stage1_step8",
+      "runs": [
+        "260713-newdata3500-spad-512-gold-token-f1-v2-normfalse-rep2-run1"
+      ]
+    }
+  },
+  "comparisons": [
+    ["historical_search_r1_512_normtrue", "search_r1_512_normfalse_rep1"],
+    ["historical_search_r1_512_normtrue", "search_r1_512_normfalse_rep2"],
+    ["search_r1_512_normfalse_rep1", "search_r1_512_normfalse_rep2"],
+    ["historical_spad_512_stable_inflight2_normtrue", "spad_512_stable_inflight2_normfalse_rep1"],
+    ["historical_spad_512_stable_inflight2_normtrue", "spad_512_stable_inflight2_normfalse_rep2"],
+    ["spad_512_stable_inflight2_normfalse_rep1", "spad_512_stable_inflight2_normfalse_rep2"],
+    ["historical_spad_512_gold_token_f1_v1_inflight2_normtrue", "spad_512_gold_token_f1_v2_inflight2_normfalse_rep1"],
+    ["historical_spad_512_gold_token_f1_v1_inflight2_normtrue", "spad_512_gold_token_f1_v2_inflight2_normfalse_rep2"],
+    ["spad_512_gold_token_f1_v2_inflight2_normfalse_rep1", "spad_512_gold_token_f1_v2_inflight2_normfalse_rep2"],
+    ["search_r1_512_normfalse_rep1", "spad_512_stable_inflight2_normfalse_rep1"],
+    ["search_r1_512_normfalse_rep2", "spad_512_stable_inflight2_normfalse_rep2"],
+    ["spad_512_stable_inflight2_normfalse_rep1", "spad_512_gold_token_f1_v2_inflight2_normfalse_rep1"],
+    ["spad_512_stable_inflight2_normfalse_rep2", "spad_512_gold_token_f1_v2_inflight2_normfalse_rep2"],
+    ["historical_spad_512_stable_inflight1_normtrue", "spad_512_stable_inflight2_normfalse_rep1"],
+    ["historical_spad_512_stable_inflight1_normtrue", "spad_512_stable_inflight2_normfalse_rep2"]
+  ]
+}

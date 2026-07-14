@@ -125,7 +125,7 @@ reranker_training:
       # 每 10 个 step 保存一次 checkpoint；配合 max_actor_ckpt_to_keep=1，训练过程中也只保留最新一个 actor checkpoint。
       save_freq: 10
 
-      # stage2 reranker actor 使用 TP4；并发序列数提升到 128，避免 256 条 rollout 过度排队。
+      # stage2 reranker actor 使用 TP4；并发序列数提升到 128，避免 512 条 rollout 过度排队。
       max_num_seqs: 128
 
       # rollout token 合批预算提升到 64k，提高长 prompt 下的 NPU 利用率。

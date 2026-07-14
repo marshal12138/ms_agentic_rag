@@ -1,0 +1,26 @@
+{
+  "case_count": 237,
+  "question_group_count": 209,
+  "label_counts": {
+    "S": 104,
+    "I": 105,
+    "A": 28
+  },
+  "split_counts": {
+    "dev": 178,
+    "holdout": 59
+  },
+  "split_label_counts": {
+    "dev": {
+      "S": 79,
+      "I": 80,
+      "A": 19
+    },
+    "holdout": {
+      "S": 25,
+      "I": 25,
+      "A": 9
+    }
+  },
+  "benchmark_sha256": "3ce788a663b8a6efacf03f7bd7578f6956266f425b3e98ebfafe1e8e760636dc"
+}

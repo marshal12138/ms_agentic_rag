@@ -1,8 +1,8 @@
-# End-point hard-slice A2 ablation: answer + evidence-hit w=0.1, n=4, 3 steps.
+# End-point hard-slice A2 ablation: answer + evidence-hit w=0.1, n=8, 3 steps.
 
 main_run:
   project:
-    experiment_name: agentic_iter_rag_v1_endpoint_hard_short_reason_ans_ev_w01_n4_3step
+    experiment_name: agentic_iter_rag_v1_endpoint_hard_short_reason_ans_ev_w01_n8_3step
 
 pipeline:
   resume_from_stage: build_reranker_branch_dataset

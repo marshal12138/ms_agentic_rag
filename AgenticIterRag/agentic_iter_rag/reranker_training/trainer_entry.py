@@ -232,7 +232,11 @@ def trainer_output_dir(config: dict[str, Any], backend: str) -> Path:
     explicit = trainer_cfg.get("output_dir")
     if explicit:
         return Path(str(explicit))
-    artifact_root = Path(str(config["runtime_compiled"]["ARTIFACT_ROOT"]))
+    runtime = config.get("runtime_compiled") or {}
+    checkpoint_root = runtime.get("CHECKPOINT_ROOT")
+    if checkpoint_root:
+        return Path(str(checkpoint_root)) / "stages" / "train_llm_reranker" / f"reranker_model_{backend}"
+    artifact_root = Path(str(runtime["ARTIFACT_ROOT"]))
     return artifact_root / "stages" / "train_llm_reranker" / f"reranker_model_{backend}"
 
 
@@ -248,15 +252,33 @@ def phase_output_dir(config: dict[str, Any], backend: str, phase_name: str) -> P
 
 
 def runtime_service_dir(config: dict[str, Any], phase_name: str | None = None) -> Path:
-    artifact_root = Path(str(config["runtime_compiled"]["ARTIFACT_ROOT"]))
-    base = artifact_root / "stages" / "train_llm_reranker" / "runtime_services"
-    return base / phase_name if phase_name else base
+    runtime = config.get("runtime_compiled") or {}
+    log_root = runtime.get("LOG_DIR")
+    if log_root:
+        base = Path(str(log_root)) / "stages" / "train_llm_reranker"
+    else:
+        artifact_root = Path(str(runtime["ARTIFACT_ROOT"]))
+        base = artifact_root / "stages" / "train_llm_reranker" / "runtime_logs"
+    base = base / phase_name if phase_name else base
+    return base / "runtime_services"
 
 
 def training_report_dir(config: dict[str, Any], phase_name: str | None = None) -> Path:
-    artifact_root = Path(str(config["runtime_compiled"]["ARTIFACT_ROOT"]))
-    base = artifact_root / "stages" / "train_llm_reranker" / "training_reports"
-    return base / phase_name if phase_name else base
+    runtime = config.get("runtime_compiled") or {}
+    log_root = runtime.get("LOG_DIR")
+    if log_root:
+        base = Path(str(log_root)) / "stages" / "train_llm_reranker"
+    else:
+        artifact_root = Path(str(runtime["ARTIFACT_ROOT"]))
+        base = artifact_root / "stages" / "train_llm_reranker" / "runtime_logs"
+    base = base / phase_name if phase_name else base
+    return base / "training_reports"
+
+
+def verl_file_logger_metrics_path(config: dict[str, Any], phase_name: str) -> Path:
+    """Return the run-local VERL file logger metrics path for one training phase."""
+
+    return training_report_dir(config, phase_name) / "verl_file_logger.metrics.jsonl"
 
 
 def training_log_root(config: dict[str, Any]) -> Path:
@@ -269,7 +291,7 @@ def training_log_root(config: dict[str, Any]) -> Path:
     runtime = config.get("runtime_compiled") or {}
     log_dir = runtime.get("LOG_DIR")
     if log_dir:
-        return Path(str(log_dir)) / "train_llm_reranker"
+        return Path(str(log_dir)) / "stages" / "train_llm_reranker"
     artifact_root = Path(str(runtime["ARTIFACT_ROOT"]))
     return artifact_root / "stages" / "train_llm_reranker" / "runtime_logs"
 
@@ -666,6 +688,10 @@ def build_verl_command_plan(
     total_training_steps_override = training_schedule["resolved_total_training_steps"]
     rollout_data_dir = resolve_phase_dump_dir(config, phase_name, "rollout_data_dir", "rollout_data")
     validation_data_dir = resolve_phase_dump_dir(config, phase_name, "validation_data_dir", "validation_data")
+    logger_backends = [str(item) for item in trainer_cfg.get("logger", ["console"])]
+    verl_file_logger_metrics = verl_file_logger_metrics_path(config, phase_name) if "file" in logger_backends else None
+    if verl_file_logger_metrics is not None:
+        env_vars["VERL_FILE_LOGGER_PATH"] = str(verl_file_logger_metrics)
     val_rollout_n = int(trainer_cfg.get("val_n_samples_per_prompt", rollout_n))
     if bool(trainer_cfg.get("rollout_detail_logging_enabled", False)):
         detail_log_path = trainer_cfg.get("rollout_detail_log_path")
@@ -792,7 +818,7 @@ def build_verl_command_plan(
             bool(trainer_cfg.get("rollout_correction_use_policy_gradient", False)),
         ),
         scalar_override("trainer.critic_warmup", 0),
-        list_override("trainer.logger", [str(item) for item in trainer_cfg.get("logger", ["console"])]),
+        list_override("trainer.logger", logger_backends),
         scalar_override("trainer.project_name", str(trainer_cfg.get("project_name", "agentic_iter_rag_reranker"))),
         scalar_override("trainer.experiment_name", str(config["main_run"]["project"]["experiment_name"])),
         scalar_override("trainer.n_gpus_per_node", len(actor_gpu_ids)),
@@ -954,6 +980,7 @@ def build_verl_command_plan(
         "output_dir": str(output_dir),
         "rollout_data_dir": str(rollout_data_dir),
         "validation_data_dir": str(validation_data_dir),
+        "verl_file_logger_metrics_jsonl": str(verl_file_logger_metrics) if verl_file_logger_metrics else None,
         "training_schedule": training_schedule,
         "hydra_overrides": hydra_overrides,
         "env_vars": env_vars,
@@ -1149,6 +1176,9 @@ def write_verl_launch_script(
     overrides = [str(item) for item in plan["hydra_overrides"]]
 
     script = runtime_dir / "run_verl_reranker_grpo.sh"
+    verl_file_logger_path = plan.get("env_vars", {}).get("VERL_FILE_LOGGER_PATH")
+    if verl_file_logger_path:
+        Path(str(verl_file_logger_path)).parent.mkdir(parents=True, exist_ok=True)
     lines = [
         "#!/usr/bin/env bash",
         "set -euo pipefail",
@@ -1241,6 +1271,8 @@ def run_verl_training(
     validation_data_dir = Path(str(plan["validation_data_dir"]))
     rollout_data_dir.mkdir(parents=True, exist_ok=True)
     validation_data_dir.mkdir(parents=True, exist_ok=True)
+    if plan.get("verl_file_logger_metrics_jsonl"):
+        Path(str(plan["verl_file_logger_metrics_jsonl"])).parent.mkdir(parents=True, exist_ok=True)
     write_json(runtime_dir / "verl_command_plan.json", plan)
 
     services_cfg = phase_services_for_config(config)
@@ -1327,6 +1359,7 @@ def run_verl_training(
                 "verl_log": str(log_path),
                 "rollout_data_dir": str(rollout_data_dir),
                 "validation_data_dir": str(validation_data_dir),
+                "verl_file_logger_metrics_jsonl": plan.get("verl_file_logger_metrics_jsonl"),
                 "training_schedule": plan.get("training_schedule"),
                 **report_outputs,
             },
@@ -1349,6 +1382,7 @@ def run_verl_training(
             "verl_log": str(log_path),
             "rollout_data_dir": str(rollout_data_dir),
             "validation_data_dir": str(validation_data_dir),
+            "verl_file_logger_metrics_jsonl": plan.get("verl_file_logger_metrics_jsonl"),
             "training_schedule": plan.get("training_schedule"),
             **report_outputs,
             "config_hash": stable_config_hash(config["reranker_training"]),
@@ -1544,6 +1578,7 @@ def build_phase_plan_outputs(
             init_model = "<stage1_checkpoint_after_training>"
         phase_config = effective_phase_config(config, phase_name, phase_cfg, init_model=init_model)
         output_dir = phase_output_dir(phase_config, backend, phase_name)
+        output_dir.mkdir(parents=True, exist_ok=True)
         plan_agent_model = None
         if phase_cfg.get("reward_name") == "agentic_rag_rollout_reward":
             # dry-run/manifest 里的 continuation agent 必须来自 frozen search agent 配置，
@@ -1553,6 +1588,14 @@ def build_phase_plan_outputs(
             except Exception:
                 plan_agent_model = None
         plan = build_verl_command_plan(phase_config, branch_manifest, output_dir, agent_model=plan_agent_model)
+        dry_runtime_dir = runtime_service_dir(phase_config, phase_name)
+        dry_report_dir = training_report_dir(phase_config, phase_name)
+        dry_runtime_dir.mkdir(parents=True, exist_ok=True)
+        dry_report_dir.mkdir(parents=True, exist_ok=True)
+        Path(str(plan["rollout_data_dir"])).mkdir(parents=True, exist_ok=True)
+        Path(str(plan["validation_data_dir"])).mkdir(parents=True, exist_ok=True)
+        if plan.get("verl_file_logger_metrics_jsonl"):
+            Path(str(plan["verl_file_logger_metrics_jsonl"])).parent.mkdir(parents=True, exist_ok=True)
         phase_plans.append(
             {
                 "phase_name": phase_name,
@@ -1560,6 +1603,9 @@ def build_phase_plan_outputs(
                 "reward_name": phase_cfg.get("reward_name"),
                 "init_model": init_model,
                 "output_dir": str(output_dir),
+                "runtime_dir": str(dry_runtime_dir),
+                "training_report_dir": str(dry_report_dir),
+                "verl_file_logger_metrics_jsonl": plan.get("verl_file_logger_metrics_jsonl"),
                 "verl_command_plan": plan,
             }
         )

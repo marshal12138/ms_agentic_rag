@@ -63,6 +63,24 @@ def spad_runtime_root(config: dict[str, Any]) -> Path:
     return Path(str(artifact_root)) / "stages" / "train_agent" / "spad_rag"
 
 
+def spad_checkpoint_root(config: dict[str, Any]) -> Path:
+    """Return the run-local checkpoint root for SPAD-RAG train_agent models."""
+
+    checkpoint_root = config.get("runtime_compiled", {}).get("CHECKPOINT_ROOT")
+    if not checkpoint_root:
+        raise ValueError("runtime_compiled.CHECKPOINT_ROOT is required for SPAD-RAG")
+    return Path(str(checkpoint_root)) / "stages" / "train_agent" / "spad_rag"
+
+
+def spad_runtime_log_root(config: dict[str, Any]) -> Path:
+    """Return the run-local runtime log root for SPAD-RAG train_agent internals."""
+
+    log_root = config.get("runtime_compiled", {}).get("LOG_DIR")
+    if not log_root:
+        raise ValueError("runtime_compiled.LOG_DIR is required for SPAD-RAG")
+    return Path(str(log_root)) / "stages" / "train_agent" / "spad_rag"
+
+
 def input_train_files(config: dict[str, Any], spad_cfg: dict[str, Any]) -> list[str]:
     refs = spad_cfg.get("refs", {})
     value = resolve_ref(config, refs.get("train_files", "data.train_files"))

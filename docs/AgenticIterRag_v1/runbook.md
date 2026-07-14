@@ -79,9 +79,12 @@ dry-run 和真实运行都会写入：
 
 - `log/agenticIterRag/<run>/runtime_logs/`
 - `log/agenticIterRag/<run>/outputs/`
+- `checkpoints/AIR/<run>/`
 - `reports/agenticIterRag/`
 
-`runtime_logs/` 保存 pipeline 级日志和最终配置快照；`outputs/` 保存 pipeline manifest、execution plan、stage manifest、checkpoint 和 stage 产物。
+`runtime_logs/pipeline/` 保存 pipeline 级日志和最终配置快照；`runtime_logs/stages/` 保存 stage / sub-stage / phase 的运行日志。
+`outputs/` 保存 pipeline manifest、execution plan、stage manifest、dataset、rollout 等结构化产物。
+`checkpoints/AIR/<run>/` 保存本次 run 生产的模型 checkpoint，目录层级和 `outputs/stages/` 保持一致。
 
 pipeline 顶层 manifest 和 execution plan 位于本次 run 的 `outputs/` 目录下。每个内部 stage 的 manifest 位于：
 

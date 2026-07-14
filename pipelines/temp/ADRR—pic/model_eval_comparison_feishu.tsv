@@ -1,0 +1,5 @@
+Model	Success	EM	F1	Avg tool calls	Avg s/sample
+Qwen3-1.7B base	350/350	0.1543	0.2512	1.0171	6.6665
+SPAD Stage1 gs7	350/350	0.1486	0.2460	1.0000	6.1195
+SPAD Stage3 DPO final	350/350	0.1543	0.2519	1.0000	6.0730
+Search-R1 original gs7	350/350	0.1714	0.2665	1.0086	6.1658

@@ -111,8 +111,8 @@ reranker_training:
 
       train_batch_size: 64
       ppo_mini_batch_size: 64
-      n_samples_per_prompt: 4
-      val_n_samples_per_prompt: 4
+      n_samples_per_prompt: 8
+      val_n_samples_per_prompt: 8
 
       total_epochs: 1
       train_max_samples: -1
