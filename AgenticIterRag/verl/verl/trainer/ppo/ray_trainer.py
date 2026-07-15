@@ -281,6 +281,25 @@ def compute_advantage(
     elif adv_estimator == AdvantageEstimator.GRPO:
         # Initialize the mask for GRPO calculation
         grpo_calculation_mask = data.batch["response_mask"]
+        group_postnorm_scales = None
+        scale_key = str(
+            (config.get("group_postnorm_advantage_scale_key", "") if config is not None else "")
+            or ""
+        )
+        if scale_key:
+            if not norm_adv_by_std_in_grpo:
+                raise ValueError(
+                    "group post-normalization advantage scaling requires "
+                    "norm_adv_by_std_in_grpo=True"
+                )
+            if scale_key not in data.non_tensor_batch:
+                raise KeyError(
+                    f"configured group_postnorm_advantage_scale_key {scale_key!r} "
+                    "is missing from reward extra information"
+                )
+            group_postnorm_scales = np.asarray(
+                data.non_tensor_batch[scale_key], dtype=np.float64
+            )
 
         # Call compute_grpo_outcome_advantage with parameters matching its definition
         advantages, returns = core_algos.compute_grpo_outcome_advantage(
@@ -288,6 +307,7 @@ def compute_advantage(
             response_mask=grpo_calculation_mask,
             index=data.non_tensor_batch["uid"],
             norm_adv_by_std_in_grpo=norm_adv_by_std_in_grpo,
+            group_postnorm_scales=group_postnorm_scales,
         )
         data.batch["advantages"] = advantages
         data.batch["returns"] = returns
@@ -1549,6 +1569,29 @@ class RayPPOTrainer:
                             norm_adv_by_std_in_grpo=norm_adv_by_std_in_grpo,
                             config=self.config.algorithm,
                         )
+
+                        scale_key = str(
+                            self.config.algorithm.get(
+                                "group_postnorm_advantage_scale_key", ""
+                            )
+                            or ""
+                        )
+                        if scale_key:
+                            scales = np.asarray(
+                                batch.non_tensor_batch[scale_key], dtype=np.float64
+                            )
+                            response_mask = batch.batch["response_mask"]
+                            token_counts = response_mask.sum(dim=-1).clamp_min(1)
+                            applied = (
+                                batch.batch["advantages"] * response_mask
+                            ).sum(dim=-1) / token_counts
+                            applied_values = applied.detach().cpu().numpy()
+                            reward_extra_infos_dict["advantage_pre_group_scale"] = (
+                                applied_values / scales
+                            ).tolist()
+                            reward_extra_infos_dict["advantage_post_group_scale"] = (
+                                applied_values.tolist()
+                            )
 
                     # update critic
                     if self.use_critic:

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives"
-EVAL_ENTRY="${ROOT}/tasks/eval_tasks/agenticIterRag/eval_spad_agent_search_350.sh"
+EVAL_ENTRY="${ROOT}/tasks/eval_tasks/agenticIterRag/eval_agent_search.sh"
 DATA_PATH="${ROOT}/data/global_train_eval_data/350e/co_search_ablation.eval.parquet"
 RUN_SPEC="${ROOT}/tasks/eval_tasks/agenticIterRag/newdata_model_eval_run_spec.260711_512_formal.json"
 AGGREGATE_DIR="${ROOT}/reports/eval/agenticIterRag/260711-newdata512-formal-aggregate"

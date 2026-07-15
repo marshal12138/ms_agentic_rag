@@ -344,13 +344,20 @@ def _build_verl_plan(
     legacy_0710_reward = reward_type == "spad_teacher_f1_0710"
     current_group_reward = reward_type == "spad_em_teacher_backoff"
     gold_token_f1_bonus_reward = reward_type == "spad_em_teacher_backoff_gold_token_f1_bonus"
+    gold_token_f1_bonus_v3_reward = (
+        reward_type == "spad_em_teacher_backoff_gold_token_f1_bonus_v3"
+    )
     dev_group_reward = reward_type == "spad_em_teacher_backoff_dev"
     reward_module_name = (
         "search_policy_teacher_reward_0710.py"
         if legacy_0710_reward
         else (
-            "search_policy_teacher_reward_gold_match_bonus.py"
-            if gold_token_f1_bonus_reward
+            (
+                "search_policy_teacher_reward_gold_match_bonus_v3.py"
+                if gold_token_f1_bonus_v3_reward
+                else "search_policy_teacher_reward_gold_match_bonus.py"
+            )
+            if gold_token_f1_bonus_reward or gold_token_f1_bonus_v3_reward
             else (
                 "search_policy_teacher_reward_dev.py"
                 if dev_group_reward
@@ -378,7 +385,12 @@ def _build_verl_plan(
     }
     if legacy_0710_reward:
         reward_manager = "naive"
-    elif current_group_reward or gold_token_f1_bonus_reward or dev_group_reward:
+    elif (
+        current_group_reward
+        or gold_token_f1_bonus_reward
+        or gold_token_f1_bonus_v3_reward
+        or dev_group_reward
+    ):
         reward_manager = "batch"
     else:
         reward_manager = str(trainer_cfg.get("reward_manager") or "naive")
@@ -398,6 +410,14 @@ def _build_verl_plan(
         ]
     elif gold_token_f1_bonus_reward:
         reward_function_name = "compute_spad_em_teacher_backoff_gold_token_f1_bonus_batch"
+        stop_sequences = [
+            str(item)
+            for item in rollout_cfg.get("stop_sequences", ["</tool_call>", "</answer>"])
+        ]
+    elif gold_token_f1_bonus_v3_reward:
+        reward_function_name = (
+            "compute_spad_em_teacher_backoff_gold_token_f1_bonus_v3_batch"
+        )
         stop_sequences = [
             str(item)
             for item in rollout_cfg.get("stop_sequences", ["</tool_call>", "</answer>"])
@@ -542,6 +562,23 @@ def _build_verl_plan(
         _scalar_override("+ray_kwargs.ray_init.include_dashboard", False),
         _scalar_override("+ray_kwargs.ray_init.ignore_reinit_error", True),
     ]
+    if gold_token_f1_bonus_v3_reward:
+        if not bool(trainer_cfg.get("norm_adv_by_std_in_grpo", False)):
+            raise ValueError(
+                "Gold Token-F1 V3 requires norm_adv_by_std_in_grpo=true"
+            )
+        hydra_overrides.extend(
+            [
+                _scalar_override(
+                    "+algorithm.group_postnorm_advantage_scale_key",
+                    "advantage_postnorm_scale",
+                ),
+                _scalar_override(
+                    "+algorithm.group_postnorm_advantage_scale_version",
+                    "teacher_fallback_v1",
+                ),
+            ]
+        )
     hydra_overrides.extend(
         _dict_field_overrides("+custom_reward_function.reward_kwargs.reward_cfg", reward_kwargs["reward_cfg"])
     )
@@ -672,6 +709,7 @@ def _run_verl_backend(
                 in {
                     "spad_em_teacher_backoff",
                     "spad_em_teacher_backoff_gold_token_f1_bonus",
+                    "spad_em_teacher_backoff_gold_token_f1_bonus_v3",
                 },
             )
             checkpoint = str(_find_latest_checkpoint(Path(plan["output_dir"])))

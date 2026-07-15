@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# AIR SPAD agent search evaluation.
+# AIR agent search evaluation.
 # This entry calls only AgenticIterRag v1 inference code and does not call CAR scripts.
 
 ROOT="/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives"
@@ -11,13 +11,13 @@ export PYTHONPATH="${ROOT}/AgenticIterRag:${ROOT}/AgenticIterRag/verl:${PYTHONPA
 usage() {
   cat <<'EOF'
 Usage:
-  eval_spad_agent_search_350.sh --agent-model PATH [options]
+  eval_agent_search.sh --agent-model PATH [options]
 
 Options:
-  --agent-model PATH      Final SPAD actor checkpoint or HF model directory. Required.
+  --agent-model PATH      Final actor checkpoint or HF model directory. Required.
   --data-path PATH        Eval parquet. Default: data/AgenticIterRag/source/co_search_ablation.infer.parquet
   --max-samples N         Eval sample count. Default: 350
-  --task-name NAME        Output task name. Default: timestamped spad_agent_search_350
+  --task-name NAME        Output task name. Default: timestamped agent_search
   --repeat-id N           Independent repeat identifier recorded in the run manifest.
   --agent-gpu-ids IDS     Agent vLLM data-parallel replica devices. Default: 0,1,2,3,4,5
   --agent-instance-count N Agent replica count. Default: number of --agent-gpu-ids
@@ -35,7 +35,7 @@ EOF
 AGENT_MODEL="${AGENT_MODEL:-}"
 DATA_PATH="${DATA_PATH:-${ROOT}/data/AgenticIterRag/source/co_search_ablation.infer.parquet}"
 MAX_SAMPLES="${MAX_SAMPLES:-350}"
-TASK_NAME="${TASK_NAME:-$(date +%y%m%d-%H%M%S)-spad_agent_search_350}"
+TASK_NAME="${TASK_NAME:-$(date +%y%m%d-%H%M%S)-agent_search}"
 REPEAT_ID="${REPEAT_ID:-}"
 AGENT_GPU_IDS="${AGENT_GPU_IDS:-0,1,2,3,4,5}"
 AGENT_INSTANCE_COUNT="${AGENT_INSTANCE_COUNT:-}"
@@ -201,9 +201,9 @@ python "${ROOT}/scripts/cosearch_local/write_eval_run_manifest.py" \
 
 AIR_INFER_PRECOMPILED_ENV=1 \
 GROUP_NAME=agenticIterRag \
-INFER_TASK_NAME=spad_agent_search_eval \
+INFER_TASK_NAME=agent_search_eval \
 TASK_NAME="${TASK_NAME}" \
-RUN_NAME=spad_agent_search_eval \
+RUN_NAME=agent_search_eval \
 EXP_NAME="${TASK_NAME}" \
 DATA_PATH="${DATA_PATH}" \
 AGENT_MODEL="${AGENT_MODEL}" \
@@ -220,7 +220,7 @@ AGENT_INSTANCE_COUNT="${AGENT_INSTANCE_COUNT}" \
 AGENT_PORT="${AGENT_PORT}" \
 AGENT_BACKEND_BASE_PORT="${AGENT_BACKEND_BASE_PORT}" \
 AGENT_PROXY_STRATEGY=least_inflight \
-AGENT_SERVED_MODEL=air-spad-agent-eval \
+AGENT_SERVED_MODEL=air-agent-eval \
 GPU_MEMORY_UTILIZATION=0.70 \
 MAX_NUM_SEQS="${AGENT_MAX_NUM_SEQS}" \
 MAX_MODEL_LEN=12288 \

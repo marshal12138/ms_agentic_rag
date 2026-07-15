@@ -15,7 +15,13 @@ from agentic_iter_rag.agent_training.spad.search_policy_rl import _build_verl_pl
 
 
 class TeacherPromptVersionPropagationTest(unittest.TestCase):
-    def build_plan(self, root: Path, prompt_version: str, reward_type: str = "spad_em_teacher_backoff") -> dict:
+    def build_plan(
+        self,
+        root: Path,
+        prompt_version: str,
+        reward_type: str = "spad_em_teacher_backoff",
+        trainer_overrides: dict | None = None,
+    ) -> dict:
         config = {
             "data": {
                 "train_files": ["/data/train.parquet"],
@@ -35,7 +41,7 @@ class TeacherPromptVersionPropagationTest(unittest.TestCase):
             "reward": {"type": reward_type},
             "sub_stages": {
                 "search_policy_rl": {
-                    "trainer": {},
+                    "trainer": dict(trainer_overrides or {}),
                     "rollout": {},
                 }
             },
@@ -148,6 +154,46 @@ class TeacherPromptVersionPropagationTest(unittest.TestCase):
                 "search_policy_teacher_reward_gold_match_bonus.py"
             )
         )
+
+    def test_gold_token_f1_v3_selects_postnorm_scaled_batch_module(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            plan = self.build_plan(
+                Path(tmp),
+                DEFAULT_TEACHER_STATUS_PROMPT_VERSION,
+                reward_type="spad_em_teacher_backoff_gold_token_f1_bonus_v3",
+                trainer_overrides={"norm_adv_by_std_in_grpo": True},
+            )
+
+        overrides = plan["hydra_overrides"]
+        self.assertIn("algorithm.norm_adv_by_std_in_grpo=True", overrides)
+        self.assertIn(
+            "+algorithm.group_postnorm_advantage_scale_key=advantage_postnorm_scale",
+            overrides,
+        )
+        self.assertIn(
+            "+algorithm.group_postnorm_advantage_scale_version=teacher_fallback_v1",
+            overrides,
+        )
+        self.assertIn(
+            "custom_reward_function.name="
+            "compute_spad_em_teacher_backoff_gold_token_f1_bonus_v3_batch",
+            overrides,
+        )
+        self.assertTrue(
+            plan["reward_path"].endswith(
+                "search_policy_teacher_reward_gold_match_bonus_v3.py"
+            )
+        )
+
+    def test_gold_token_f1_v3_rejects_norm_false(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, self.assertRaisesRegex(
+            ValueError, "requires norm_adv_by_std_in_grpo=true"
+        ):
+            self.build_plan(
+                Path(tmp),
+                DEFAULT_TEACHER_STATUS_PROMPT_VERSION,
+                reward_type="spad_em_teacher_backoff_gold_token_f1_bonus_v3",
+            )
 
     def test_stage2_records_configured_prompt_version_in_sample_metadata(self) -> None:
         refresh_record, pair_record, _ = _teacher_label_result_from_raw(

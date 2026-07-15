@@ -1,0 +1,187 @@
+{
+  "step_count": 79,
+  "metrics": {
+    "reward": {
+      "mean": 0.30934799396539037,
+      "first_10_mean": 0.21594942212104798,
+      "last_10_mean": 0.31703036427497866,
+      "last_3_mean": 0.3354201515515645,
+      "min": 0.14827319979667664,
+      "min_step": 3,
+      "max": 0.44419923424720764,
+      "max_step": 68
+    },
+    "base_reward": {
+      "mean": 0.3025242286392405,
+      "first_10_mean": 0.20566406250000005,
+      "last_10_mean": 0.31109375,
+      "last_3_mean": 0.3307291666666667,
+      "min": 0.13535156250000002,
+      "min_step": 3,
+      "max": 0.44140625,
+      "max_step": 68
+    },
+    "em_reward": {
+      "mean": 0.28050830696202533,
+      "first_10_mean": 0.178515625,
+      "last_10_mean": 0.28984375,
+      "last_3_mean": 0.3111979166666667,
+      "min": 0.1015625,
+      "min_step": 3,
+      "max": 0.4296875,
+      "max_step": 68
+    },
+    "rollout_f1": {
+      "mean": 0.3520921873648112,
+      "first_10_mean": 0.26224195041980886,
+      "last_10_mean": 0.36304514122316645,
+      "last_3_mean": 0.37926347951701517,
+      "min": 0.19343512476498634,
+      "min_step": 1,
+      "max": 0.48834766578907207,
+      "max_step": 68
+    },
+    "teacher_bonus": {
+      "mean": 0.006823771652639904,
+      "first_10_mean": 0.010285363457008678,
+      "last_10_mean": 0.005936628000818089,
+      "last_3_mean": 0.004691002680311891,
+      "min": 0.001895788484613213,
+      "min_step": 30,
+      "max": 0.01369731294381788,
+      "max_step": 44
+    },
+    "teacher_fallback_rate": {
+      "mean": 0.5755537974683544,
+      "first_10_mean": 0.6625,
+      "last_10_mean": 0.565625,
+      "last_3_mean": 0.5520833333333334,
+      "min": 0.40625,
+      "min_step": 68,
+      "max": 0.765625,
+      "max_step": 12
+    },
+    "postnorm_scale_mean": {
+      "mean": 0.482001582278481,
+      "first_10_mean": 0.4037499999999999,
+      "last_10_mean": 0.4909374999999999,
+      "last_3_mean": 0.5031249999999999,
+      "min": 0.3109375,
+      "min_step": 12,
+      "max": 0.6343749999999999,
+      "max_step": 68
+    },
+    "search_count": {
+      "mean": 1.307184533227848,
+      "first_10_mean": 1.387890625,
+      "last_10_mean": 1.4658203125,
+      "last_3_mean": 1.4733072916666667,
+      "min": 1.11328125,
+      "min_step": 10,
+      "max": 1.97265625,
+      "max_step": 1
+    },
+    "pg_loss": {
+      "mean": 1.0052558561165976e-05,
+      "first_10_mean": -5.628937479557247e-05,
+      "last_10_mean": 3.0403077822782622e-05,
+      "last_3_mean": 4.863608388442723e-05,
+      "min": -0.00017138906198965742,
+      "min_step": 2,
+      "max": 0.00010871014231383924,
+      "max_step": 27
+    },
+    "grad_norm": {
+      "mean": 0.5522294742397115,
+      "first_10_mean": 0.6994623899459839,
+      "last_10_mean": 0.5182136833667755,
+      "last_3_mean": 0.5091533660888672,
+      "min": 0.3798559904098511,
+      "min_step": 12,
+      "max": 0.958370566368103,
+      "max_step": 1
+    }
+  },
+  "bins": [
+    {
+      "steps": "1-10",
+      "reward": 0.21594942212104798,
+      "em_reward": 0.178515625,
+      "rollout_f1": 0.26224195041980886,
+      "teacher_bonus": 0.010285363457008678,
+      "teacher_fallback_rate": 0.6625,
+      "postnorm_scale_mean": 0.4037499999999999,
+      "search_count": 1.387890625
+    },
+    {
+      "steps": "11-20",
+      "reward": 0.2842869579792023,
+      "em_reward": 0.2564453125,
+      "rollout_f1": 0.32939995105780995,
+      "teacher_bonus": 0.00715805395431353,
+      "teacher_fallback_rate": 0.596875,
+      "postnorm_scale_mean": 0.4628124999999999,
+      "search_count": 1.178515625
+    },
+    {
+      "steps": "21-30",
+      "reward": 0.3082877665758133,
+      "em_reward": 0.2826171875,
+      "rollout_f1": 0.3486337572765007,
+      "teacher_bonus": 0.004772148160317229,
+      "teacher_fallback_rate": 0.575,
+      "postnorm_scale_mean": 0.48249999999999993,
+      "search_count": 1.1763671875
+    },
+    {
+      "steps": "31-40",
+      "reward": 0.3468629851937294,
+      "em_reward": 0.3208984375,
+      "rollout_f1": 0.38775809773906744,
+      "teacher_bonus": 0.0062184636520574025,
+      "teacher_fallback_rate": 0.534375,
+      "postnorm_scale_mean": 0.5190624999999999,
+      "search_count": 1.2181640625
+    },
+    {
+      "steps": "41-50",
+      "reward": 0.3180533289909363,
+      "em_reward": 0.28515625,
+      "rollout_f1": 0.35955750409510157,
+      "teacher_bonus": 0.00807287131298646,
+      "teacher_fallback_rate": 0.578125,
+      "postnorm_scale_mean": 0.4796875,
+      "search_count": 1.246875
+    },
+    {
+      "steps": "51-60",
+      "reward": 0.33625934571027755,
+      "em_reward": 0.307421875,
+      "rollout_f1": 0.37586582834868715,
+      "teacher_bonus": 0.00651325231631966,
+      "teacher_fallback_rate": 0.553125,
+      "postnorm_scale_mean": 0.5021874999999999,
+      "search_count": 1.3595703125
+    },
+    {
+      "steps": "61-70",
+      "reward": 0.344807443022728,
+      "em_reward": 0.3197265625,
+      "rollout_f1": 0.38426934795657014,
+      "teacher_bonus": 0.0054715075135421285,
+      "teacher_fallback_rate": 0.5453125,
+      "postnorm_scale_mean": 0.5092187499999999,
+      "search_count": 1.446484375
+    },
+    {
+      "steps": "71-79",
+      "reward": 0.321491003036499,
+      "em_reward": 0.2947048611111111,
+      "rollout_f1": 0.37089093698718023,
+      "teacher_bonus": 0.006017928543677947,
+      "teacher_fallback_rate": 0.5572916666666666,
+      "postnorm_scale_mean": 0.4984374999999999,
+      "search_count": 1.4587673611111112
+    }
+  ]
+}

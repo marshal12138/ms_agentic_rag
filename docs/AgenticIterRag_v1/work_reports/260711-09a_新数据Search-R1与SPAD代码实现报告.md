@@ -104,7 +104,7 @@ Stage3 默认从 DPO 改为 Gold-answer F1 GRPO，同时保留 DPO 配置、代�
 
 ## 7. 评估缓存隔离
 
-`eval_spad_agent_search_350.sh` 现在拒绝复用非空 trace/runtime 目录或已有报告；每个模型、每次 repeat
+`eval_agent_search.sh` 现在拒绝复用非空 trace/runtime 目录或已有报告；每个模型、每次 repeat
 必须使用唯一 task name。每次评估在启动服务前记录：
 
 - eval parquet 内容 SHA。

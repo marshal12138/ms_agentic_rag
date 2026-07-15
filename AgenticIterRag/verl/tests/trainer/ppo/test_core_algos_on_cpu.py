@@ -219,6 +219,46 @@ def _rand_mask(batch_size: int, seq_len: int) -> torch.Tensor:
     return mask
 
 
+def test_grpo_group_postnorm_scales_apply_after_std_normalization():
+    rewards = torch.zeros((8, 2), dtype=torch.float32)
+    rewards[:, -1] = torch.tensor([1.0, 0.0, 0.0, 0.0, 0.2, 0.1, 0.0, 0.1])
+    response_mask = torch.ones_like(rewards)
+    index = np.asarray(["em"] * 4 + ["teacher"] * 4, dtype=object)
+    scales = np.asarray([1.0] * 4 + [0.1] * 4)
+
+    unscaled, _ = compute_grpo_outcome_advantage(
+        rewards,
+        response_mask,
+        index,
+        norm_adv_by_std_in_grpo=True,
+    )
+    scaled, returns = compute_grpo_outcome_advantage(
+        rewards,
+        response_mask,
+        index,
+        norm_adv_by_std_in_grpo=True,
+        group_postnorm_scales=scales,
+    )
+
+    assert torch.allclose(scaled[:4], unscaled[:4])
+    assert torch.allclose(scaled[4:], unscaled[4:] * 0.1)
+    assert torch.equal(scaled, returns)
+
+
+def test_grpo_group_postnorm_scales_reject_mixed_scale_within_uid():
+    rewards = torch.tensor([[1.0], [0.0]], dtype=torch.float32)
+    response_mask = torch.ones_like(rewards)
+    index = np.asarray(["same", "same"], dtype=object)
+
+    with pytest.raises(ValueError, match="constant within each GRPO group"):
+        compute_grpo_outcome_advantage(
+            rewards,
+            response_mask,
+            index,
+            group_postnorm_scales=np.asarray([0.1, 1.0]),
+        )
+
+
 @pytest.mark.parametrize(
     "batch_size,seq_len,num_groups,seed",
     [

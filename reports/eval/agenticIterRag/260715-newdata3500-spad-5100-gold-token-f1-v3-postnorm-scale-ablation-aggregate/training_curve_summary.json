@@ -1,0 +1,256 @@
+{
+  "run": "260715-005906-987696-pipeline-agentic_iter_rag_v1_spad_qwen3_1_7b_newdata_5100_gold_token_f1_v3_postnorm03_stage1",
+  "step_count": 79,
+  "rollout_count": 40448,
+  "uid_group_count": 5056,
+  "rollouts_per_step": [
+    512
+  ],
+  "group_sizes": [
+    8
+  ],
+  "scale_values": [
+    0.3,
+    1.0
+  ],
+  "group_size_violations": 0,
+  "mixed_scale_groups": 0,
+  "malformed_lines": 0,
+  "source_rollout_count": {
+    "teacher_fallback": 23312,
+    "actor_em": 17136
+  },
+  "global": {
+    "final_reward": 0.31215319362719984,
+    "base_reward": 0.30487539556961973,
+    "em_reward": 0.28164556962025317,
+    "legacy_f1": 0.3523924244322496,
+    "teacher_gold_token_f1_bonus": 0.007277798057579882,
+    "teacher_fallback_rate": 0.5763449367088608,
+    "mean_scale": 0.5965585443038006,
+    "search_count": 1.3605369857594938,
+    "duplicate_query_rate": 0.13842464398734178,
+    "teacher_called_rate": 0.575331289556962,
+    "advantage_pre_abs_mean": 0.40804052929789136,
+    "advantage_post_abs_mean": 0.27167492210412403,
+    "advantage_pre_sq_mean": 0.4641373016542371,
+    "advantage_post_sq_mean": 0.26099205298531
+  },
+  "first_10": {
+    "final_reward": 0.2177671772703654,
+    "base_reward": 0.20757812499999967,
+    "em_reward": 0.18046875,
+    "legacy_f1": 0.26663074361472855,
+    "teacher_gold_token_f1_bonus": 0.010189052270365455,
+    "teacher_fallback_rate": 0.659375,
+    "mean_scale": 0.5384375000000032,
+    "search_count": 1.388671875,
+    "duplicate_query_rate": 0.2001953125,
+    "teacher_called_rate": 0.6560546875,
+    "advantage_pre_abs_mean": 0.45337039529161605,
+    "advantage_post_abs_mean": 0.2858357856232033,
+    "advantage_pre_sq_mean": 0.5154149566361268,
+    "advantage_post_sq_mean": 0.26535507408442766
+  },
+  "last_10": {
+    "final_reward": 0.32872069191956876,
+    "base_reward": 0.32142578124999927,
+    "em_reward": 0.297265625,
+    "legacy_f1": 0.37060480325784345,
+    "teacher_gold_token_f1_bonus": 0.0072949106695691605,
+    "teacher_fallback_rate": 0.5734375,
+    "mean_scale": 0.5985937500000034,
+    "search_count": 1.562109375,
+    "duplicate_query_rate": 0.2294921875,
+    "teacher_called_rate": 0.573046875,
+    "advantage_pre_abs_mean": 0.40566881387782516,
+    "advantage_post_abs_mean": 0.2661544945972764,
+    "advantage_pre_sq_mean": 0.4593611094265261,
+    "advantage_post_sq_mean": 0.2528454096245934
+  },
+  "last_3": {
+    "final_reward": 0.33982468377976155,
+    "base_reward": 0.33437499999999926,
+    "em_reward": 0.3125,
+    "legacy_f1": 0.38067814432129693,
+    "teacher_gold_token_f1_bonus": 0.005449683779761907,
+    "teacher_fallback_rate": 0.5364583333333334,
+    "mean_scale": 0.6244791666666698,
+    "search_count": 1.5807291666666667,
+    "duplicate_query_rate": 0.23307291666666666,
+    "teacher_called_rate": 0.5364583333333334,
+    "advantage_pre_abs_mean": 0.4228167954069148,
+    "advantage_post_abs_mean": 0.2837887683417648,
+    "advantage_pre_sq_mean": 0.47850042595157216,
+    "advantage_post_sq_mean": 0.27530351712469486
+  },
+  "bins": [
+    {
+      "steps": "1-10",
+      "step_count": 10,
+      "final_reward": 0.2177671772703654,
+      "base_reward": 0.20757812499999967,
+      "em_reward": 0.18046875,
+      "legacy_f1": 0.26663074361472855,
+      "teacher_gold_token_f1_bonus": 0.010189052270365455,
+      "teacher_fallback_rate": 0.659375,
+      "mean_scale": 0.5384375000000032,
+      "search_count": 1.388671875,
+      "duplicate_query_rate": 0.2001953125,
+      "teacher_called_rate": 0.6560546875,
+      "advantage_pre_abs_mean": 0.45337039529161605,
+      "advantage_post_abs_mean": 0.2858357856232033,
+      "advantage_pre_sq_mean": 0.5154149566361268,
+      "advantage_post_sq_mean": 0.26535507408442766
+    },
+    {
+      "steps": "11-20",
+      "step_count": 10,
+      "final_reward": 0.2914559289722833,
+      "base_reward": 0.28443359374999955,
+      "em_reward": 0.2634765625,
+      "legacy_f1": 0.3340827551576409,
+      "teacher_gold_token_f1_bonus": 0.0070223352222834375,
+      "teacher_fallback_rate": 0.596875,
+      "mean_scale": 0.5821875000000032,
+      "search_count": 1.1994140625,
+      "duplicate_query_rate": 0.0625,
+      "teacher_called_rate": 0.5962890625,
+      "advantage_pre_abs_mean": 0.3846927691566332,
+      "advantage_post_abs_mean": 0.261485917247046,
+      "advantage_pre_sq_mean": 0.4333848400358045,
+      "advantage_post_sq_mean": 0.2505075629573775
+    },
+    {
+      "steps": "21-30",
+      "step_count": 10,
+      "final_reward": 0.30945752754815314,
+      "base_reward": 0.30410156249999937,
+      "em_reward": 0.2826171875,
+      "legacy_f1": 0.344779837603081,
+      "teacher_gold_token_f1_bonus": 0.005355965048153442,
+      "teacher_fallback_rate": 0.571875,
+      "mean_scale": 0.5996875000000031,
+      "search_count": 1.24140625,
+      "duplicate_query_rate": 0.0767578125,
+      "teacher_called_rate": 0.570703125,
+      "advantage_pre_abs_mean": 0.39350942586437065,
+      "advantage_post_abs_mean": 0.26730544227793873,
+      "advantage_pre_sq_mean": 0.45115842831862674,
+      "advantage_post_sq_mean": 0.26081611076581623
+    },
+    {
+      "steps": "31-40",
+      "step_count": 10,
+      "final_reward": 0.35257441677246326,
+      "base_reward": 0.34632812499999943,
+      "em_reward": 0.326171875,
+      "legacy_f1": 0.3866806787797814,
+      "teacher_gold_token_f1_bonus": 0.0062462917724636505,
+      "teacher_fallback_rate": 0.5296875,
+      "mean_scale": 0.629218750000003,
+      "search_count": 1.2515625,
+      "duplicate_query_rate": 0.0837890625,
+      "teacher_called_rate": 0.5287109375,
+      "advantage_pre_abs_mean": 0.3937766647315584,
+      "advantage_post_abs_mean": 0.27134302133345045,
+      "advantage_pre_sq_mean": 0.44705905580684674,
+      "advantage_post_sq_mean": 0.266667834417428
+    },
+    {
+      "steps": "41-50",
+      "step_count": 10,
+      "final_reward": 0.321792279226178,
+      "base_reward": 0.3138476562499992,
+      "em_reward": 0.287890625,
+      "legacy_f1": 0.3588778443208368,
+      "teacher_gold_token_f1_bonus": 0.007944622976178341,
+      "teacher_fallback_rate": 0.5734375,
+      "mean_scale": 0.5985937500000034,
+      "search_count": 1.28984375,
+      "duplicate_query_rate": 0.094140625,
+      "teacher_called_rate": 0.573046875,
+      "advantage_pre_abs_mean": 0.40017200762667937,
+      "advantage_post_abs_mean": 0.26349961844898645,
+      "advantage_pre_sq_mean": 0.4634591737262962,
+      "advantage_post_sq_mean": 0.25570248683550967
+    },
+    {
+      "steps": "51-60",
+      "step_count": 10,
+      "final_reward": 0.328748570067383,
+      "base_reward": 0.3211328124999992,
+      "em_reward": 0.296875,
+      "legacy_f1": 0.37134404314597125,
+      "teacher_gold_token_f1_bonus": 0.007615757567383348,
+      "teacher_fallback_rate": 0.5609375,
+      "mean_scale": 0.6073437500000033,
+      "search_count": 1.4255859375,
+      "duplicate_query_rate": 0.16015625,
+      "teacher_called_rate": 0.5603515625,
+      "advantage_pre_abs_mean": 0.41773712470814334,
+      "advantage_post_abs_mean": 0.27978645192376916,
+      "advantage_pre_sq_mean": 0.4744001838135114,
+      "advantage_post_sq_mean": 0.26912854276457154
+    },
+    {
+      "steps": "61-70",
+      "step_count": 10,
+      "final_reward": 0.34445177110810143,
+      "base_reward": 0.3380468749999993,
+      "em_reward": 0.3162109375,
+      "legacy_f1": 0.38294636989470254,
+      "teacher_gold_token_f1_bonus": 0.006404896108101835,
+      "teacher_fallback_rate": 0.546875,
+      "mean_scale": 0.6171875000000031,
+      "search_count": 1.5455078125,
+      "duplicate_query_rate": 0.2078125,
+      "teacher_called_rate": 0.5462890625,
+      "advantage_pre_abs_mean": 0.41169906145781476,
+      "advantage_post_abs_mean": 0.2779751841098914,
+      "advantage_pre_sq_mean": 0.46482872862200564,
+      "advantage_post_sq_mean": 0.2682671180706694
+    },
+    {
+      "steps": "71-79",
+      "step_count": 9,
+      "final_reward": 0.3330695096555013,
+      "base_reward": 0.3256076388888881,
+      "em_reward": 0.3014322916666667,
+      "legacy_f1": 0.3761754227755889,
+      "teacher_gold_token_f1_bonus": 0.00746187076661284,
+      "teacher_fallback_rate": 0.5711805555555556,
+      "mean_scale": 0.6001736111111144,
+      "search_count": 1.5625,
+      "duplicate_query_rate": 0.23133680555555555,
+      "teacher_called_rate": 0.5707465277777778,
+      "advantage_pre_abs_mean": 0.409514147351695,
+      "advantage_post_abs_mean": 0.2655560707314382,
+      "advantage_pre_sq_mean": 0.463310351232504,
+      "advantage_post_sq_mean": 0.25043609854238613
+    }
+  ],
+  "min_max": {
+    "final_reward": {
+      "min": [
+        0.14614035866477273,
+        1
+      ],
+      "max": [
+        0.4576094131562879,
+        30
+      ]
+    },
+    "teacher_fallback_rate": {
+      "min": [
+        0.375,
+        68
+      ],
+      "max": [
+        0.734375,
+        2
+      ]
+    }
+  },
+  "old_postnorm01_curve": "/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/reports/eval/agenticIterRag/260715-newdata3500-spad-5100-gold-token-f1-v3-aggregate/training_curve.csv"
+}

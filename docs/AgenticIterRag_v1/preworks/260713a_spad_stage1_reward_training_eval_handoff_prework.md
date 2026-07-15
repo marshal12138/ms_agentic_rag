@@ -547,14 +547,14 @@ tasks/eval_tasks/agenticIterRag/newdata_model_eval_run_spec.260713_gold_token_f1
 ### 10.1 正式评估入口
 
 ```text
-tasks/eval_tasks/agenticIterRag/eval_spad_agent_search_350.sh
+tasks/eval_tasks/agenticIterRag/eval_agent_search.sh
 scripts/agenticIterRag_v1/assets/infer_backend/02_air_infer_launcher.sh
 scripts/agenticIterRag_v1/assets/infer_backend/infer_air_vllm.py
 ```
 
-虽然 wrapper 名称保留 `_350`，它支持 `--data-path` 和 `--max-samples`，已用于 3500 评估。
+`eval_agent_search.sh` 支持 `--data-path` 和 `--max-samples`，可同时用于 350 和 3500 评估。
 
-SPAD 评估 wrapper 当前默认：
+通用 Agent 评估 wrapper 当前默认：
 
 ```text
 Actor NPU: 0,1,2,3,4,5
@@ -573,7 +573,7 @@ temperature/top_p: 0/1
 ```
 
 注意：更底层的通用 `02_air_infer_launcher.sh` 仍有自己的保守默认值；本轮“默认加速参数”指
-`eval_spad_agent_search_350.sh` 这个正式 SPAD 评估入口，不要混淆。
+`eval_agent_search.sh` 这个正式通用 Agent 评估入口，不要混淆。
 
 ### 10.2 I/O 瓶颈和 flush 修正
 
@@ -796,7 +796,7 @@ tasks/train_tasks/agenticIterRag/configs/spad_qwen3_1_7b_glm47_gold_match_bonus_
 ### 17.3 评估与聚合
 
 ```text
-tasks/eval_tasks/agenticIterRag/eval_spad_agent_search_350.sh
+tasks/eval_tasks/agenticIterRag/eval_agent_search.sh
 tasks/eval_tasks/agenticIterRag/run_260712_newdata3500_stage1_formal_4runs.sh
 tasks/eval_tasks/agenticIterRag/newdata_model_eval_run_spec.260712_spad512_inflight_ablation.json
 tasks/eval_tasks/agenticIterRag/newdata_model_eval_run_spec.260713_gold_token_f1_bonus.json

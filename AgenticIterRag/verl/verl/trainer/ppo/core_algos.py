@@ -268,6 +268,7 @@ def compute_grpo_outcome_advantage(
     index: np.ndarray,
     epsilon: float = 1e-6,
     norm_adv_by_std_in_grpo: bool = True,
+    group_postnorm_scales: Optional[np.ndarray] = None,
     config: Optional[AlgoConfig] = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """
@@ -285,6 +286,9 @@ def compute_grpo_outcome_advantage(
             small value to avoid division by zero
         norm_adv_by_std_in_grpo: `(bool)`
             whether to scale the GRPO advantage
+        group_postnorm_scales: `(Optional[np.ndarray])`
+            optional per-response scales applied after group normalization. Every
+            response in the same group must use the same positive finite scale.
         config: `(Optional[AlgoConfig])`
             algorithm configuration object
 
@@ -303,6 +307,27 @@ def compute_grpo_outcome_advantage(
     id2score = defaultdict(list)
     id2mean = {}
     id2std = {}
+    postnorm_scales = None
+
+    if group_postnorm_scales is not None:
+        postnorm_scales = np.asarray(group_postnorm_scales, dtype=np.float64)
+        if postnorm_scales.shape != (scores.shape[0],):
+            raise ValueError(
+                "group_postnorm_scales must have one value per response: "
+                f"shape={postnorm_scales.shape}, batch_size={scores.shape[0]}"
+            )
+        if not np.all(np.isfinite(postnorm_scales)) or np.any(postnorm_scales <= 0.0):
+            raise ValueError("group_postnorm_scales must contain positive finite values")
+
+        id2scale = {}
+        for i, group_id in enumerate(index):
+            scale = float(postnorm_scales[i])
+            if group_id in id2scale and not np.isclose(id2scale[group_id], scale):
+                raise ValueError(
+                    "group_postnorm_scales must be constant within each GRPO group: "
+                    f"group={group_id!r}, first={id2scale[group_id]}, current={scale}"
+                )
+            id2scale[group_id] = scale
 
     with torch.no_grad():
         bsz = scores.shape[0]
@@ -325,6 +350,8 @@ def compute_grpo_outcome_advantage(
                 scores[i] = (scores[i] - id2mean[index[i]]) / (id2std[index[i]] + epsilon)
             else:
                 scores[i] = scores[i] - id2mean[index[i]]
+            if postnorm_scales is not None:
+                scores[i] = scores[i] * float(postnorm_scales[i])
         
         scores = scores.unsqueeze(-1) * response_mask
 

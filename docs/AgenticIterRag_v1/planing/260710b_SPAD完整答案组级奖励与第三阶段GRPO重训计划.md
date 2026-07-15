@@ -1020,15 +1020,15 @@ base/formal YAML，并新增四个 scale overlay；以下三个 shell 入口文�
 ```text
 Search-R1 训练：tasks/train_tasks/agenticIterRag/run_260709g_AIR_search_r1_original_qwen3_1_7b_formal.sh
 SPAD 训练：tasks/train_tasks/agenticIterRag/run_260709f_AIR_spad_qwen3_1_7b_glm47_formal.sh
-统一 350 评估：tasks/eval_tasks/agenticIterRag/eval_spad_agent_search_350.sh
+统一 350 评估：tasks/eval_tasks/agenticIterRag/eval_agent_search.sh
 ```
 
-2026-07-11 记录的入口文件 SHA-256：
+入口文件 SHA-256（评估入口于 2026-07-15 重命名后同步更新）：
 
 ```text
 f45d11f1200eb8fbccb9329fb1f4132855e56df35966545c6c0560f62a7c655e  tasks/train_tasks/agenticIterRag/run_260709f_AIR_spad_qwen3_1_7b_glm47_formal.sh
 9fb730e4f9d029831b9e7a4e2e1f8f8e232c47d48187690cb4fc1e11ca0ee11f  tasks/train_tasks/agenticIterRag/run_260709g_AIR_search_r1_original_qwen3_1_7b_formal.sh
-7c5961dd1c1486c464f98d463c8e75a20d876170b3fa6e8dd25ff8799b194999  tasks/eval_tasks/agenticIterRag/eval_spad_agent_search_350.sh
+0ba9ebfff2a61ef6232bca248d1ab25c90eaa0ec29885357d86e490a4757e086  tasks/eval_tasks/agenticIterRag/eval_agent_search.sh
 ```
 
 代码和配置实现前后均执行：
@@ -1039,7 +1039,7 @@ cd /data01/ms_wksp/agent_up_to_date/CoSearch_derevitives
 sha256sum -c <<'EOF'
 f45d11f1200eb8fbccb9329fb1f4132855e56df35966545c6c0560f62a7c655e  tasks/train_tasks/agenticIterRag/run_260709f_AIR_spad_qwen3_1_7b_glm47_formal.sh
 9fb730e4f9d029831b9e7a4e2e1f8f8e232c47d48187690cb4fc1e11ca0ee11f  tasks/train_tasks/agenticIterRag/run_260709g_AIR_search_r1_original_qwen3_1_7b_formal.sh
-7c5961dd1c1486c464f98d463c8e75a20d876170b3fa6e8dd25ff8799b194999  tasks/eval_tasks/agenticIterRag/eval_spad_agent_search_350.sh
+0ba9ebfff2a61ef6232bca248d1ab25c90eaa0ec29885357d86e490a4757e086  tasks/eval_tasks/agenticIterRag/eval_agent_search.sh
 EOF
 ```
 
@@ -1263,8 +1263,8 @@ resource:
 
 ### 16.5 350 三次评估脚本
 
-评估统一调用现有 `eval_spad_agent_search_350.sh`。该入口虽然命名包含 SPAD，但接受任意 HF agent
-checkpoint，因此同样用于 Base 和 Search-R1。所有模型顺序执行，避免争用同一组 8 张卡和固定端口。
+评估统一调用现有 `eval_agent_search.sh`。该入口接受任意 HF agent checkpoint，因此同样
+用于 SPAD、Base 和 Search-R1。所有模型顺序执行，避免争用同一组 8 张卡和固定端口。
 
 运行前只能从各训练 run 的 manifest/phase manifest 中取得由训练入口自动登记的
 `hf_actor_checkpoint`，再显式设置以下变量；不能填写人工转换出来但未登记的目录：
@@ -1286,7 +1286,7 @@ set -euo pipefail
 
 ROOT=/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives
 PY=/data05/conda/envs/ms/ms_agt_rag/bin/python
-ENTRY="${ROOT}/tasks/eval_tasks/agenticIterRag/eval_spad_agent_search_350.sh"
+ENTRY="${ROOT}/tasks/eval_tasks/agenticIterRag/eval_agent_search.sh"
 DATA="${ROOT}/data/global_train_eval_data/350e/co_search_ablation.eval.parquet"
 BASE_MODEL="${ROOT}/models/llm/Qwen3-1.7B"
 DATE_TAG="$(date +%y%m%d)"
