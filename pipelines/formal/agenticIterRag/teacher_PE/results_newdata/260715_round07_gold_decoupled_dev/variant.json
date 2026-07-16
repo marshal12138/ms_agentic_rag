@@ -1,0 +1,8 @@
+{
+  "name": "gold_decoupled_status_answer_v3",
+  "family": "gold_aware_instruction_ablation",
+  "description": "Judge status without gold, then use supported gold only to normalize an S answer.",
+  "include_gold": true,
+  "layout": "gold_evidence_only",
+  "prompt_sha256": "1e71c7d3ff99ea7437b3c92fe15f84dd737e52eebde4cfe24fc07a0621479ff8"
+}

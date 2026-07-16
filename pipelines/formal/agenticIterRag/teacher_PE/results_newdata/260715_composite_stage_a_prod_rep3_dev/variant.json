@@ -1,0 +1,8 @@
+{
+  "name": "baseline_current_v2",
+  "family": "instruction_only",
+  "description": "Current production system instruction with the current v2 user layout.",
+  "include_gold": false,
+  "layout": "v2",
+  "prompt_sha256": "d3cca6c54a41e93bf30aaf1b6a4946a59c014c805bd7c280777e740efed09a70"
+}

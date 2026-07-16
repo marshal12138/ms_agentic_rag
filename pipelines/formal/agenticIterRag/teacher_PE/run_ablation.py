@@ -9,6 +9,7 @@ import hashlib
 import json
 import queue
 import re
+import string
 import threading
 import time
 import urllib.error
@@ -47,9 +48,9 @@ def sha256_json(value: Any) -> str:
     return hashlib.sha256(canonical_json(value).encode("utf-8")).hexdigest()
 
 
-def load_cases(split: str) -> list[dict[str, Any]]:
+def load_cases(split: str, benchmark_path: Path = BENCHMARK_PATH) -> list[dict[str, Any]]:
     cases: list[dict[str, Any]] = []
-    with BENCHMARK_PATH.open("r", encoding="utf-8") as handle:
+    with benchmark_path.open("r", encoding="utf-8") as handle:
         for line in handle:
             case = json.loads(line)
             if split == "all" or case["split"] == split:
@@ -113,7 +114,40 @@ def parse_teacher_response(content: str) -> dict[str, Any]:
     }
 
 
-def safe_ratio(numerator: int, denominator: int) -> float:
+def normalize_answer(text: Any) -> str:
+    value = str(text or "").lower()
+    value = "".join(character for character in value if character not in set(string.punctuation))
+    value = re.sub(r"\b(a|an|the)\b", " ", value)
+    return " ".join(value.split())
+
+
+def answer_exact_match(prediction: Any, gold_answers: list[Any]) -> float:
+    normalized = normalize_answer(prediction)
+    if not normalized:
+        return 0.0
+    return float(any(normalized == normalize_answer(answer) for answer in gold_answers))
+
+
+def answer_token_f1(prediction: Any, gold_answers: list[Any]) -> float:
+    prediction_tokens = normalize_answer(prediction).split()
+    if not prediction_tokens:
+        return 0.0
+    best = 0.0
+    for answer in gold_answers:
+        answer_tokens = normalize_answer(answer).split()
+        if not answer_tokens:
+            continue
+        common = Counter(prediction_tokens) & Counter(answer_tokens)
+        same = sum(common.values())
+        if not same:
+            continue
+        precision = same / len(prediction_tokens)
+        recall = same / len(answer_tokens)
+        best = max(best, 2 * precision * recall / (precision + recall))
+    return best
+
+
+def safe_ratio(numerator: float, denominator: int) -> float:
     return float(numerator / denominator) if denominator else 0.0
 
 
@@ -165,6 +199,40 @@ def score_predictions(predictions: list[dict[str, Any]]) -> dict[str, Any]:
         for row in predictions
         if int((row.get("api_usage") or {}).get("completion_tokens") or 0) > 0
     ]
+    manual_supported = [row for row in predictions if row["manual_label"] == "S"]
+    answered_manual_supported = [
+        row
+        for row in manual_supported
+        if row.get("parsed") and row.get("predicted_label") == "S"
+    ]
+    supported_gold_f1 = [
+        answer_token_f1(row.get("answer"), row.get("gold_answers") or [])
+        if row.get("parsed") and row.get("predicted_label") == "S"
+        else 0.0
+        for row in manual_supported
+    ]
+    supported_gold_em = [
+        answer_exact_match(row.get("answer"), row.get("gold_answers") or [])
+        if row.get("parsed") and row.get("predicted_label") == "S"
+        else 0.0
+        for row in manual_supported
+    ]
+    answered_gold_f1 = [
+        answer_token_f1(row.get("answer"), row.get("gold_answers") or [])
+        for row in answered_manual_supported
+    ]
+    answered_gold_em = [
+        answer_exact_match(row.get("answer"), row.get("gold_answers") or [])
+        for row in answered_manual_supported
+    ]
+    manual_answer_f1 = [
+        answer_token_f1(row.get("answer"), [row.get("manual_answer")])
+        if row.get("parsed") and row.get("predicted_label") == "S"
+        else 0.0
+        for row in manual_supported
+    ]
+    i_f1 = safe_ratio(2 * i_tp, 2 * i_tp + i_fp + i_fn)
+    gold_f1_coverage = safe_ratio(sum(supported_gold_f1), len(manual_supported))
 
     return {
         "case_count": total,
@@ -184,12 +252,31 @@ def score_predictions(predictions: list[dict[str, Any]]) -> dict[str, Any]:
             "missed_i_format_error": i_fn_format,
             "precision": safe_ratio(i_tp, i_tp + i_fp),
             "recall": safe_ratio(i_tp, i_tp + i_fn),
-            "f1": safe_ratio(2 * i_tp, 2 * i_tp + i_fp + i_fn),
+            "f1": i_f1,
             "accuracy": safe_ratio(i_tp + i_tn, total),
         },
         "tolerated_sa_confusion": tolerated_sa,
         "involved_i_errors": involved_i_errors,
         "format_error_count": total - parsed,
+        "answer_gold": {
+            "manual_supported_count": len(manual_supported),
+            "answered_manual_supported_count": len(answered_manual_supported),
+            "answered_manual_supported_rate": safe_ratio(
+                len(answered_manual_supported), len(manual_supported)
+            ),
+            "token_f1_coverage": gold_f1_coverage,
+            "exact_match_coverage": safe_ratio(sum(supported_gold_em), len(manual_supported)),
+            "conditional_token_f1": safe_ratio(
+                sum(answered_gold_f1), len(answered_manual_supported)
+            ),
+            "conditional_exact_match": safe_ratio(
+                sum(answered_gold_em), len(answered_manual_supported)
+            ),
+            "manual_answer_token_f1_coverage": safe_ratio(
+                sum(manual_answer_f1), len(manual_supported)
+            ),
+        },
+        "equal_weight_objective": 0.5 * i_f1 + 0.5 * gold_f1_coverage,
         "output_length": {
             "avg_reason_chars": safe_ratio(sum(reason_lengths), len(reason_lengths)),
             "avg_supported_answer_chars": safe_ratio(
@@ -203,6 +290,17 @@ def score_predictions(predictions: list[dict[str, Any]]) -> dict[str, Any]:
 
 def score_by_split(predictions: list[dict[str, Any]]) -> dict[str, Any]:
     result = {"selected": score_predictions(predictions)}
+    called = [row for row in predictions if row.get("teacher_called")]
+    controls = [row for row in predictions if not row.get("teacher_called")]
+    if called:
+        result["teacher_called"] = score_predictions(called)
+    if controls:
+        result["teacher_not_called_control"] = score_predictions(controls)
+    result["by_step_layer"] = {
+        layer: score_predictions([row for row in predictions if row.get("step_layer") == layer])
+        for layer in sorted({str(row.get("step_layer") or "") for row in predictions})
+        if layer
+    }
     for split in ("dev", "holdout"):
         subset = [row for row in predictions if row["split"] == split]
         if subset:
@@ -233,6 +331,7 @@ def render_report(run_metadata: dict[str, Any], metrics: dict[str, Any]) -> str:
     selected = metrics["selected"]
     i_metrics = selected["i_binary"]
     lengths = selected["output_length"]
+    answer_metrics = selected["answer_gold"]
     lines = [
         f"# Teacher Prompt Ablation: {run_metadata['variant']}",
         "",
@@ -252,6 +351,22 @@ def render_report(run_metadata: dict[str, Any], metrics: dict[str, Any]) -> str:
             f"{i_metrics['precision']:.4f} | {i_metrics['recall']:.4f} | {i_metrics['f1']:.4f} | "
             f"{i_metrics['accuracy']:.4f} | {selected['involved_i_errors']} | "
             f"{selected['tolerated_sa_confusion']} |"
+        ),
+        "",
+        "## Equal-Weight Objective",
+        "",
+        "The selection objective is `0.5 * I F1 + 0.5 * gold token-F1 coverage on manual-S cases`. "
+        "A manual-S case predicted as non-S or failing parse contributes zero answer score.",
+        "",
+        "| Equal objective | I F1 | Gold token-F1 coverage | Gold EM coverage | Answered manual-S | Conditional gold token-F1 | Manual-answer token-F1 coverage |",
+        "| ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        (
+            f"| {selected['equal_weight_objective']:.4f} | {i_metrics['f1']:.4f} | "
+            f"{answer_metrics['token_f1_coverage']:.4f} | "
+            f"{answer_metrics['exact_match_coverage']:.4f} | "
+            f"{answer_metrics['answered_manual_supported_count']}/{answer_metrics['manual_supported_count']} | "
+            f"{answer_metrics['conditional_token_f1']:.4f} | "
+            f"{answer_metrics['manual_answer_token_f1_coverage']:.4f} |"
         ),
         "",
         "## Confusion Matrix",
@@ -286,6 +401,41 @@ def render_report(run_metadata: dict[str, Any], metrics: dict[str, Any]) -> str:
             "",
         ]
     )
+    slice_rows = []
+    for slice_name in ("teacher_called", "teacher_not_called_control"):
+        if slice_name not in metrics:
+            continue
+        slice_metrics = metrics[slice_name]
+        slice_rows.append(
+            f"| {slice_name} | {slice_metrics['case_count']} | "
+            f"{slice_metrics['i_binary']['precision']:.4f} | "
+            f"{slice_metrics['i_binary']['recall']:.4f} | "
+            f"{slice_metrics['i_binary']['f1']:.4f} | "
+            f"{slice_metrics['answer_gold']['token_f1_coverage']:.4f} | "
+            f"{slice_metrics['equal_weight_objective']:.4f} |"
+        )
+    for layer, slice_metrics in metrics.get("by_step_layer", {}).items():
+        slice_rows.append(
+            f"| {layer} | {slice_metrics['case_count']} | "
+            f"{slice_metrics['i_binary']['precision']:.4f} | "
+            f"{slice_metrics['i_binary']['recall']:.4f} | "
+            f"{slice_metrics['i_binary']['f1']:.4f} | "
+            f"{slice_metrics['answer_gold']['token_f1_coverage']:.4f} | "
+            f"{slice_metrics['equal_weight_objective']:.4f} |"
+        )
+    if slice_rows:
+        lines.extend(
+            [
+                "## Operational Slices",
+                "",
+                "The actual `teacher_called` slice is the primary operational diagnostic; controls and step layers detect distribution shifts.",
+                "",
+                "| Slice | Cases | I precision | I recall | I F1 | Gold token-F1 coverage | Equal objective |",
+                "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+                *slice_rows,
+                "",
+            ]
+        )
     return "\n".join(lines)
 
 
@@ -298,8 +448,11 @@ def write_errors(path: Path, predictions: list[dict[str, Any]]) -> None:
         "error_kind",
         "question",
         "manual_reason",
+        "manual_answer",
+        "gold_answers",
         "model_reason",
         "model_answer",
+        "model_gold_token_f1",
         "endpoint",
     ]
     with path.open("w", encoding="utf-8", newline="") as handle:
@@ -325,8 +478,54 @@ def write_errors(path: Path, predictions: list[dict[str, Any]]) -> None:
                     "error_kind": kind,
                     "question": row["question"],
                     "manual_reason": row["manual_reason"],
+                    "manual_answer": row.get("manual_answer") or "",
+                    "gold_answers": json.dumps(row.get("gold_answers") or [], ensure_ascii=False),
                     "model_reason": row["reason"],
                     "model_answer": row["answer"],
+                    "model_gold_token_f1": answer_token_f1(
+                        row.get("answer"), row.get("gold_answers") or []
+                    ),
+                    "endpoint": row["endpoint"],
+                }
+            )
+
+
+def write_answer_audit(path: Path, predictions: list[dict[str, Any]]) -> None:
+    fields = [
+        "case_id",
+        "split",
+        "step_layer",
+        "teacher_called",
+        "predicted_label",
+        "question",
+        "gold_answers",
+        "manual_answer",
+        "model_answer",
+        "gold_exact_match",
+        "gold_token_f1",
+        "manual_answer_token_f1",
+        "endpoint",
+    ]
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields, delimiter="\t", lineterminator="\n")
+        writer.writeheader()
+        for row in predictions:
+            if row["manual_label"] != "S":
+                continue
+            writer.writerow(
+                {
+                    "case_id": row["case_id"],
+                    "split": row["split"],
+                    "step_layer": row.get("step_layer") or "",
+                    "teacher_called": str(bool(row.get("teacher_called"))).lower(),
+                    "predicted_label": row["predicted_label"],
+                    "question": row["question"],
+                    "gold_answers": json.dumps(row.get("gold_answers") or [], ensure_ascii=False),
+                    "manual_answer": row.get("manual_answer") or "",
+                    "model_answer": row.get("answer") or "",
+                    "gold_exact_match": row["teacher_gold_exact_match"],
+                    "gold_token_f1": row["teacher_gold_token_f1"],
+                    "manual_answer_token_f1": row["teacher_manual_answer_token_f1"],
                     "endpoint": row["endpoint"],
                 }
             )
@@ -336,6 +535,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--variant", required=True, choices=sorted(PROMPT_VARIANTS))
     parser.add_argument("--split", choices=("all", "dev", "holdout"), default="dev")
+    parser.add_argument("--benchmark", type=Path, default=BENCHMARK_PATH)
     parser.add_argument("--endpoints", nargs="+", default=DEFAULT_ENDPOINTS)
     parser.add_argument("--model", default="GLM-4.7-Flash")
     parser.add_argument("--max-workers", type=int, default=64)
@@ -376,7 +576,7 @@ def main() -> None:
         draft_sources.append({"path": str(draft_path), "rows": rows_by_case})
     if variant.family == "multi_draft_meta" and not draft_sources:
         parser.error("multi_draft_meta variants require --draft-predictions")
-    cases = load_cases(args.split)
+    cases = load_cases(args.split, args.benchmark)
     if args.limit > 0:
         cases = cases[: args.limit]
     timestamp = datetime.now().strftime("%y%m%d-%H%M%S")
@@ -504,16 +704,38 @@ def main() -> None:
                     endpoint_slots.put(endpoint)
 
         parsed = parse_teacher_response(str(response_record.get("content") or ""))
+        answer_is_supported = bool(
+            parsed.get("parsed") and parsed.get("predicted_label") == "S"
+        )
+        teacher_gold_token_f1 = (
+            answer_token_f1(parsed.get("answer"), case.get("gold_answers") or [])
+            if answer_is_supported
+            else 0.0
+        )
+        teacher_gold_exact_match = (
+            answer_exact_match(parsed.get("answer"), case.get("gold_answers") or [])
+            if answer_is_supported
+            else 0.0
+        )
+        teacher_manual_answer_token_f1 = (
+            answer_token_f1(parsed.get("answer"), [case.get("manual_answer")])
+            if answer_is_supported and case.get("manual_answer")
+            else 0.0
+        )
         result = {
             "index": index,
             "case_id": case["case_id"],
             "uid": case["uid"],
+            "step": case.get("step"),
+            "step_layer": case.get("step_layer") or "",
             "split": case["split"],
             "question": case["question"],
             "gold_answers": case["gold_answers"],
             "manual_label": case["manual_label"],
             "manual_status": case["manual_status"],
             "manual_reason": case["manual_reason"],
+            "manual_answer": case.get("manual_answer") or "",
+            "teacher_called": bool(case.get("teacher_called")),
             "historical_teacher_label": case["historical_teacher_label"],
             "variant": args.variant,
             "family": variant.family,
@@ -529,6 +751,9 @@ def main() -> None:
             "raw_content": str(response_record.get("content") or ""),
             "raw_reasoning_content": str(response_record.get("reasoning_content") or ""),
             "api_usage": response_record.get("api_usage") or {},
+            "teacher_gold_token_f1": teacher_gold_token_f1,
+            "teacher_gold_exact_match": teacher_gold_exact_match,
+            "teacher_manual_answer_token_f1": teacher_manual_answer_token_f1,
             **parsed,
         }
         with progress_lock:
@@ -565,6 +790,8 @@ def main() -> None:
         "include_gold": variant.include_gold,
         "layout": variant.layout,
         "split": args.split,
+        "benchmark": str(args.benchmark),
+        "selected_cases_sha256": sha256_json(cases),
         "case_count": len(cases),
         "model": args.model,
         "endpoints": args.endpoints,
@@ -588,6 +815,7 @@ def main() -> None:
     write_json_atomic(output_dir / "run.json", run_metadata)
     write_json_atomic(output_dir / "metrics.json", metrics)
     write_errors(output_dir / "errors.tsv", predictions)
+    write_answer_audit(output_dir / "answer_audit.tsv", predictions)
     (output_dir / "report.md").write_text(render_report(run_metadata, metrics), encoding="utf-8")
     print(json.dumps({"output_dir": str(output_dir), "metrics": metrics["selected"]}, ensure_ascii=False, indent=2))
 

@@ -1,0 +1,13 @@
+{
+  "name": "hard_gate_r5_literal_canonical_v2",
+  "family": "hard_gate_composite",
+  "description": "Binding production I gate followed by R5 only for Stage-A non-I cases; preserve the sole supported answer or prefer the higher-gold-F1 answer when both stages support one, then canonicalize only to reference literals present in Search evidence.",
+  "stage_a_variant": "baseline_current_v2",
+  "include_stage_a_draft": false,
+  "reuse_single_prompt_variant": "gold_support_evidence_only_v3",
+  "stage_b_scope": "stage_a_non_i",
+  "i_override_min_gold_f1": null,
+  "prefer_higher_gold_f1_between_supported_stages": true,
+  "canonicalize_evidence_literal_gold": true,
+  "prompt_sha256": "e20b489fade128fd28ce54bf341148561d8eb7e157febc064598bf73beace815"
+}

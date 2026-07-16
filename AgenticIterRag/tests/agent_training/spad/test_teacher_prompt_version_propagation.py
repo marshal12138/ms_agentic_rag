@@ -12,6 +12,9 @@ from agentic_iter_rag.agent_training.spad.refresh_rollout import (
     _teacher_label_result_from_raw,
 )
 from agentic_iter_rag.agent_training.spad.search_policy_rl import _build_verl_plan
+from agentic_iter_rag.agent_training.spad.teacher_strategies import (
+    HARD_GATE_R5_LITERAL_CANONICAL_V2,
+)
 
 
 class TeacherPromptVersionPropagationTest(unittest.TestCase):
@@ -21,6 +24,7 @@ class TeacherPromptVersionPropagationTest(unittest.TestCase):
         prompt_version: str,
         reward_type: str = "spad_em_teacher_backoff",
         trainer_overrides: dict | None = None,
+        teacher_overrides: dict | None = None,
     ) -> dict:
         config = {
             "data": {
@@ -37,6 +41,7 @@ class TeacherPromptVersionPropagationTest(unittest.TestCase):
             "teacher_answerer": {
                 "prompt_version": prompt_version,
                 "request": {"temperature": 0.0},
+                **dict(teacher_overrides or {}),
             },
             "reward": {"type": reward_type},
             "sub_stages": {
@@ -66,6 +71,48 @@ class TeacherPromptVersionPropagationTest(unittest.TestCase):
             + DEFAULT_TEACHER_STATUS_PROMPT_VERSION,
             plan["hydra_overrides"],
         )
+
+    def test_stage1_hydra_overrides_include_hard_gate_strategy_id(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            plan = self.build_plan(
+                Path(tmp),
+                DEFAULT_TEACHER_STATUS_PROMPT_VERSION,
+                reward_type=(
+                    "spad_em_teacher_backoff_gold_token_f1_bonus_v3_hard_gate_v2"
+                ),
+                trainer_overrides={"norm_adv_by_std_in_grpo": True},
+                teacher_overrides={"strategy_id": HARD_GATE_R5_LITERAL_CANONICAL_V2},
+            )
+
+        self.assertIn(
+            "+custom_reward_function.reward_kwargs.teacher_strategy_id="
+            + HARD_GATE_R5_LITERAL_CANONICAL_V2,
+            plan["hydra_overrides"],
+        )
+        self.assertIn(
+            "custom_reward_function.name="
+            "compute_spad_em_teacher_backoff_gold_token_f1_bonus_v3_hard_gate_v2_batch",
+            plan["hydra_overrides"],
+        )
+        self.assertTrue(
+            plan["reward_path"].endswith(
+                "search_policy_teacher_reward_gold_match_bonus_v3_hard_gate_v2.py"
+            )
+        )
+
+    def test_stage1_rejects_unknown_teacher_strategy_id(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, self.assertRaisesRegex(
+            ValueError, "Unknown SPAD teacher strategy_id"
+        ):
+            self.build_plan(
+                Path(tmp),
+                DEFAULT_TEACHER_STATUS_PROMPT_VERSION,
+                reward_type=(
+                    "spad_em_teacher_backoff_gold_token_f1_bonus_v3_hard_gate_v2"
+                ),
+                trainer_overrides={"norm_adv_by_std_in_grpo": True},
+                teacher_overrides={"strategy_id": "missing-strategy"},
+            )
 
     def test_stage1_disables_per_uid_advantage_std_normalization_by_default(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -183,6 +230,9 @@ class TeacherPromptVersionPropagationTest(unittest.TestCase):
             plan["reward_path"].endswith(
                 "search_policy_teacher_reward_gold_match_bonus_v3.py"
             )
+        )
+        self.assertFalse(
+            any("teacher_strategy_id" in item for item in plan["hydra_overrides"])
         )
 
     def test_gold_token_f1_v3_rejects_norm_false(self) -> None:

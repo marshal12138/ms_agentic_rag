@@ -1,0 +1,45 @@
+main_run:
+  project:
+    experiment_name: agentic_iter_rag_v1_spad_qwen3_1_7b_newdata_5100_gold_token_f1_v3_postnorm01_hardgatev2_stage1
+
+agent_training:
+  resume_from_sub_stage: search_policy_rl
+  stop_after_sub_stage: search_policy_rl
+  skip_sub_stages: []
+  force_rerun_sub_stages: [search_policy_rl]
+
+  teacher_answerer:
+    prompt_version: spad_teacher_evidence_status_answer_v2
+    strategy_id: spad_teacher_hard_gate_r5_literal_canonical_v2
+    strategy:
+      type: hard_gate
+      stage_a_prompt_version: spad_teacher_evidence_status_answer_v2
+      stage_b_prompt_version: gold_support_evidence_only_v3
+      stage_b_scope: stage_a_non_i
+      preserve_i_boundary: true
+      prefer_higher_gold_f1_between_supported: true
+      canonicalize_evidence_literal_gold: true
+      fallback_to_stage_a_on_stage_b_failure: true
+
+  reward:
+    type: spad_em_teacher_backoff_gold_token_f1_bonus_v3_hard_gate_v2
+    spad_em_teacher_backoff_gold_token_f1_bonus_v3_hard_gate_v2:
+      partial_reward: 0.1
+      gold_token_f1_bonus: 0.1
+      teacher_group_postnorm_scale: 0.1
+
+  sub_stages:
+    search_policy_rl:
+      enabled: true
+      backend: verl
+      trainer:
+        total_training_steps: 79
+        train_max_samples: 5100
+        save_freq: 79
+        data_seed: 42
+        norm_adv_by_std_in_grpo: true
+        stream_group_max_inflight: 2
+    answer_refresh_data:
+      enabled: false
+    answer_distillation:
+      enabled: false

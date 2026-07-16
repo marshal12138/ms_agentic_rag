@@ -1,0 +1,8 @@
+{
+  "name": "gold_support_question_tail_v3",
+  "family": "gold_aware_layout_ablation",
+  "description": "Gold-hypothesis verification on the successful no-subquery question-tail layout.",
+  "include_gold": true,
+  "layout": "gold_evidence_question_tail",
+  "prompt_sha256": "40b75b4c9ba375e32fa3acfaac1a9ff722062700f27d5aaa614f6e9373dd15d8"
+}

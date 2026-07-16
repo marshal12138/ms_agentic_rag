@@ -1,0 +1,27 @@
+{
+  "version": "newdata-model-eval-run-spec-v1",
+  "models": {
+    "spad_5100_gold_token_f1_v3_postnorm01": {
+      "role": "spad_em_teacher_backoff_gold_token_f1_bonus_v3",
+      "scale": 5100,
+      "stage": "stage1_step79_postnorm01",
+      "runs": [
+        "260715-newdata3500-spad-5100-gold-token-f1-v3-postnorm01-run1"
+      ]
+    },
+    "spad_5100_gold_token_f1_v3_postnorm01_hardgatev2": {
+      "role": "spad_em_teacher_backoff_gold_token_f1_bonus_v3_hard_gate_v2",
+      "scale": 5100,
+      "stage": "stage1_step79_postnorm01_hardgatev2",
+      "runs": [
+        "260716-newdata3500-spad-5100-gold-token-f1-v3-postnorm01-hardgatev2-run1"
+      ]
+    }
+  },
+  "comparisons": [
+    [
+      "spad_5100_gold_token_f1_v3_postnorm01",
+      "spad_5100_gold_token_f1_v3_postnorm01_hardgatev2"
+    ]
+  ]
+}

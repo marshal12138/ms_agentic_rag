@@ -60,6 +60,10 @@ from verl.utils.rollout_skip import RolloutSkip
 from verl.utils.seqlen_balancing import calculate_workload, get_seqlen_balanced_partitions, log_seqlen_unbalance
 from verl.utils.torch_functional import masked_mean
 from verl.utils.tracking import ValidationGenerationsLogger
+from agentic_iter_rag.agent_training.spad.manifest import (
+    SEMI_STRICT_INVALID_ROLLOUT_RATE,
+    is_invalid_rollout_record,
+)
 
 
 @dataclass
@@ -604,6 +608,7 @@ class RayPPOTrainer:
             "teacher_raw_content",
         ):
             field_nonempty_counts[key] = sum(bool(record.get(key)) for record in records)
+        invalid_trajectory_count = sum(is_invalid_rollout_record(record) for record in records)
         teacher_called_count = sum(bool(record.get("teacher_called")) for record in records)
         teacher_skipped_count = sum(
             not bool(record.get("teacher_called")) and bool(record.get("teacher_skip_reason"))
@@ -620,6 +625,8 @@ class RayPPOTrainer:
             "bytes": os.path.getsize(shard_path),
             "sha256": self._rollout_sha256(shard_path),
             "field_nonempty_counts": field_nonempty_counts,
+            "invalid_trajectory_count": invalid_trajectory_count,
+            "invalid_trajectory_rate": invalid_trajectory_count / len(records),
             "teacher_called_count": teacher_called_count,
             "teacher_skipped_count": teacher_skipped_count,
             "teacher_error_count": teacher_error_count,
@@ -651,6 +658,16 @@ class RayPPOTrainer:
         manifest["teacher_called_count"] = sum(item["teacher_called_count"] for item in manifest["shards"])
         manifest["teacher_skipped_count"] = sum(item["teacher_skipped_count"] for item in manifest["shards"])
         manifest["teacher_error_count"] = sum(item["teacher_error_count"] for item in manifest["shards"])
+        manifest["invalid_trajectory_count"] = sum(
+            int(item.get("invalid_trajectory_count", 0)) for item in manifest["shards"]
+        )
+        manifest["invalid_trajectory_rate"] = (
+            manifest["invalid_trajectory_count"] / manifest["actual_rollout_count"]
+            if manifest["actual_rollout_count"]
+            else 0.0
+        )
+        manifest["invalid_trajectory_rate_limit"] = SEMI_STRICT_INVALID_ROLLOUT_RATE
+        manifest["invalid_trajectory_policy"] = "semi_strict_allow_at_most_0.5_percent"
         manifest["completed"] = (
             manifest["actual_step_count"] == expected_steps
             and manifest["actual_rollout_count"] == expected_rollouts

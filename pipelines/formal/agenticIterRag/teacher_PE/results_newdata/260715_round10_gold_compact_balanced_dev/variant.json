@@ -1,0 +1,8 @@
+{
+  "name": "gold_compact_balanced_v3",
+  "family": "gold_aware_instruction_ablation",
+  "description": "Compact balanced gold verifier on the winning gold-aware layout.",
+  "include_gold": true,
+  "layout": "gold_evidence_only",
+  "prompt_sha256": "58e88907c8567ef1431ee9e2899b488f0600bce226fb9cc48cd4430c35703ace"
+}

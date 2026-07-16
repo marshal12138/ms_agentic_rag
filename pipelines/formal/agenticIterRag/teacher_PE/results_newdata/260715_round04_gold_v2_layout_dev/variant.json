@@ -1,0 +1,8 @@
+{
+  "name": "gold_support_check",
+  "family": "gold_aware",
+  "description": "Treat gold as a candidate whose evidence support must be verified.",
+  "include_gold": true,
+  "layout": "v2",
+  "prompt_sha256": "ed12218224699c1dffaf5bf5a4f93a40e03ac00c0489adb7000d5c636b983d0c"
+}

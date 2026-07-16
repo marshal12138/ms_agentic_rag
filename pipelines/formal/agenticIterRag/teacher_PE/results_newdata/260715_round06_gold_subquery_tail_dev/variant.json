@@ -1,0 +1,8 @@
+{
+  "name": "gold_support_subquery_question_tail_v3",
+  "family": "gold_aware_layout_ablation",
+  "description": "Gold-hypothesis verification retaining sub-query strings and adding a question tail.",
+  "include_gold": true,
+  "layout": "gold_v2_question_tail",
+  "prompt_sha256": "6c75e327383d92233933183151f7451fb91dc99101eb316f8d6590b91463f397"
+}

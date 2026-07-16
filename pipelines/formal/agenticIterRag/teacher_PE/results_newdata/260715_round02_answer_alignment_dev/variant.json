@@ -1,0 +1,8 @@
+{
+  "name": "question_tail_answer_alignment_v3",
+  "family": "answer_alignment_ablation",
+  "description": "Successful question-tail evidence-only layout with exact answer-type span extraction.",
+  "include_gold": false,
+  "layout": "evidence_question_tail",
+  "prompt_sha256": "a1bc6d41ac5d320cdc846c891e4686a5f5ccabfa393616365403c4a4e1b95d63"
+}

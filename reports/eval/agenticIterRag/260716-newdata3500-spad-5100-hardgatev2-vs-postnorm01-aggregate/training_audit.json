@@ -1,0 +1,290 @@
+{
+  "version": "hardgatev2-training-rollout-audit-v1",
+  "rollout_dir": "/data01/ms_wksp/agent_up_to_date/CoSearch_derevitives/log/agenticIterRag/260716-005244-008472-pipeline-agentic_iter_rag_v1_spad_qwen3_1_7b_newdata_5100_gold_token_f1_v3_postnorm01_hardgatev2_stage1/outputs/stages/train_agent/spad_rag/search_policy_rl/rollout_data",
+  "manifest_summary": {
+    "completed": true,
+    "expected_steps": 79,
+    "actual_step_count": 79,
+    "expected_rollout_count": 40448,
+    "actual_rollout_count": 40448,
+    "expected_group_count": 5056,
+    "actual_group_count": 5056,
+    "n_samples_per_prompt": 8,
+    "invalid_trajectory_count": 1,
+    "invalid_trajectory_rate": 0.000024723101265822784,
+    "invalid_trajectory_rate_limit": 0.005,
+    "invalid_trajectory_policy": "semi_strict_allow_at_most_0.5_percent"
+  },
+  "group_audit": {
+    "unique_group_count": 5056,
+    "group_size_counts": {
+      "8": 5056
+    },
+    "mixed_postnorm_scale_group_count": 0,
+    "postnorm_scales": [
+      0.1,
+      1.0
+    ]
+  },
+  "all_steps": {
+    "records": 40448,
+    "malformed_json_lines": 0,
+    "empty_output_count": 1,
+    "means": {
+      "final_reward": 0.3240299406722586,
+      "legacy_em": 0.2893097310126582,
+      "legacy_f1": 0.36054833629954347,
+      "teacher_gold_token_f1": 0.13527567254537423,
+      "advantage_postnorm_scale": 0.49374999999999847,
+      "search_count": 1.2958366297468353,
+      "duplicate_query_count": 0.13177412974683544,
+      "teacher_total_call_count": 0.7734127768987342,
+      "teacher_elapsed_s": 15.556910600008928,
+      "teacher_stage_a_elapsed_s": 12.76946522346564,
+      "teacher_stage_b_elapsed_s": 2.7874453765432894
+    },
+    "counts": {
+      "group_all_em_zero": 22752,
+      "stage_b_error": 0,
+      "teacher_called": 22711,
+      "teacher_canonical_gold_nonempty": 1272,
+      "teacher_error": 0,
+      "teacher_format_error": 14,
+      "teacher_gold_token_f1_bonus_applied": 5823,
+      "teacher_i_boundary_preserved": 40448,
+      "teacher_stage_a_format_error": 14,
+      "teacher_stage_b_called": 8572,
+      "teacher_stage_b_format_error": 2,
+      "teacher_stage_b_used": 5676
+    },
+    "rates": {
+      "group_all_em_zero": 0.5625,
+      "stage_b_error": 0.0,
+      "teacher_called": 0.5614863528481012,
+      "teacher_canonical_gold_nonempty": 0.03144778481012658,
+      "teacher_error": 0.0,
+      "teacher_format_error": 0.000346123417721519,
+      "teacher_gold_token_f1_bonus_applied": 0.14396261867088608,
+      "teacher_i_boundary_preserved": 1.0,
+      "teacher_stage_a_format_error": 0.000346123417721519,
+      "teacher_stage_b_called": 0.21192642405063292,
+      "teacher_stage_b_format_error": 0.00004944620253164557,
+      "teacher_stage_b_used": 0.14032832278481014
+    },
+    "selection_reasons": {
+      "stage_a_i_or_not_called_or_format": 31876,
+      "stage_b_non_i": 4973,
+      "stage_b_invalid_fallback": 2223,
+      "stage_b_non_i+evidence_literal_gold": 703,
+      "stage_b_invalid_fallback+evidence_literal_gold": 446,
+      "stage_a_only_supported+evidence_literal_gold": 104,
+      "stage_a_only_supported": 81,
+      "stage_a_supported_higher_gold_f1": 23,
+      "stage_a_supported_higher_gold_f1+evidence_literal_gold": 19
+    },
+    "teacher_statuses": {
+      "": 17751,
+      "insufficient_evidence": 14125,
+      "supported_answer": 8060,
+      "ambiguous_evidence": 512
+    },
+    "teacher_parse_statuses": {
+      "parsed": 22697,
+      "not_called": 17737,
+      "missing_reason_tag": 14
+    },
+    "teacher_stage_b_parse_statuses": {
+      "": 31876,
+      "parsed": 8570,
+      "missing_answer_tag": 2
+    },
+    "reward_types": {
+      "spad_em_teacher_backoff_gold_token_f1_bonus_v3_hard_gate_v2": 40448
+    },
+    "strategy_ids": {
+      "spad_teacher_hard_gate_r5_literal_canonical_v2": 40448
+    },
+    "prompt_versions": {
+      "spad_teacher_evidence_status_answer_v2": 40448
+    },
+    "derived": {
+      "teacher_stage_b_call_rate_over_teacher_called": 0.37743824578398133,
+      "teacher_stage_b_use_rate_over_stage_b_called": 0.6621558562762483,
+      "teacher_bonus_applied_rate_over_teacher_called": 0.25639557923473205,
+      "teacher_calls_per_teacher_fallback": 1.3774382457839813
+    }
+  },
+  "first_10_steps": {
+    "records": 5120,
+    "malformed_json_lines": 0,
+    "empty_output_count": 0,
+    "means": {
+      "final_reward": 0.2345543488629426,
+      "legacy_em": 0.1919921875,
+      "legacy_f1": 0.2738009882776328,
+      "teacher_gold_token_f1": 0.16644192612942615,
+      "advantage_postnorm_scale": 0.4206249999999976,
+      "search_count": 1.3603515625,
+      "duplicate_query_count": 0.208984375,
+      "teacher_total_call_count": 0.9,
+      "teacher_elapsed_s": 18.655467721783634,
+      "teacher_stage_a_elapsed_s": 15.14556883058549,
+      "teacher_stage_b_elapsed_s": 3.5098988911981452
+    },
+    "counts": {
+      "group_all_em_zero": 3296,
+      "stage_b_error": 0,
+      "teacher_called": 3281,
+      "teacher_canonical_gold_nonempty": 119,
+      "teacher_error": 0,
+      "teacher_format_error": 2,
+      "teacher_gold_token_f1_bonus_applied": 892,
+      "teacher_i_boundary_preserved": 5120,
+      "teacher_stage_a_format_error": 2,
+      "teacher_stage_b_called": 1327,
+      "teacher_stage_b_format_error": 1,
+      "teacher_stage_b_used": 958
+    },
+    "rates": {
+      "group_all_em_zero": 0.64375,
+      "stage_b_error": 0.0,
+      "teacher_called": 0.6408203125,
+      "teacher_canonical_gold_nonempty": 0.0232421875,
+      "teacher_error": 0.0,
+      "teacher_format_error": 0.000390625,
+      "teacher_gold_token_f1_bonus_applied": 0.17421875,
+      "teacher_i_boundary_preserved": 1.0,
+      "teacher_stage_a_format_error": 0.000390625,
+      "teacher_stage_b_called": 0.2591796875,
+      "teacher_stage_b_format_error": 0.0001953125,
+      "teacher_stage_b_used": 0.187109375
+    },
+    "selection_reasons": {
+      "stage_a_i_or_not_called_or_format": 3793,
+      "stage_b_non_i": 902,
+      "stage_b_invalid_fallback": 284,
+      "stage_b_non_i+evidence_literal_gold": 56,
+      "stage_b_invalid_fallback+evidence_literal_gold": 42,
+      "stage_a_only_supported": 20,
+      "stage_a_only_supported+evidence_literal_gold": 19,
+      "stage_a_supported_higher_gold_f1": 2,
+      "stage_a_supported_higher_gold_f1+evidence_literal_gold": 2
+    },
+    "teacher_statuses": {
+      "insufficient_evidence": 1952,
+      "": 1841,
+      "supported_answer": 1269,
+      "ambiguous_evidence": 58
+    },
+    "teacher_parse_statuses": {
+      "parsed": 3279,
+      "not_called": 1839,
+      "missing_reason_tag": 2
+    },
+    "teacher_stage_b_parse_statuses": {
+      "": 3793,
+      "parsed": 1326,
+      "missing_answer_tag": 1
+    },
+    "reward_types": {
+      "spad_em_teacher_backoff_gold_token_f1_bonus_v3_hard_gate_v2": 5120
+    },
+    "strategy_ids": {
+      "spad_teacher_hard_gate_r5_literal_canonical_v2": 5120
+    },
+    "prompt_versions": {
+      "spad_teacher_evidence_status_answer_v2": 5120
+    },
+    "derived": {
+      "teacher_stage_b_call_rate_over_teacher_called": 0.4044498628466931,
+      "teacher_stage_b_use_rate_over_stage_b_called": 0.7219291635267521,
+      "teacher_bonus_applied_rate_over_teacher_called": 0.2718683328253581,
+      "teacher_calls_per_teacher_fallback": 1.404449862846693
+    }
+  },
+  "last_10_steps": {
+    "records": 5120,
+    "malformed_json_lines": 0,
+    "empty_output_count": 0,
+    "means": {
+      "final_reward": 0.33042641158183894,
+      "legacy_em": 0.2951171875,
+      "legacy_f1": 0.3683052854244674,
+      "teacher_gold_token_f1": 0.14117817831839213,
+      "advantage_postnorm_scale": 0.5021874999999982,
+      "search_count": 1.4333984375,
+      "duplicate_query_count": 0.190234375,
+      "teacher_total_call_count": 0.7646484375,
+      "teacher_elapsed_s": 15.617086708962688,
+      "teacher_stage_a_elapsed_s": 12.772003983172908,
+      "teacher_stage_b_elapsed_s": 2.84508272578978
+    },
+    "counts": {
+      "group_all_em_zero": 2832,
+      "stage_b_error": 0,
+      "teacher_called": 2830,
+      "teacher_canonical_gold_nonempty": 213,
+      "teacher_error": 0,
+      "teacher_format_error": 0,
+      "teacher_gold_token_f1_bonus_applied": 772,
+      "teacher_i_boundary_preserved": 5120,
+      "teacher_stage_a_format_error": 0,
+      "teacher_stage_b_called": 1085,
+      "teacher_stage_b_format_error": 0,
+      "teacher_stage_b_used": 673
+    },
+    "rates": {
+      "group_all_em_zero": 0.553125,
+      "stage_b_error": 0.0,
+      "teacher_called": 0.552734375,
+      "teacher_canonical_gold_nonempty": 0.0416015625,
+      "teacher_error": 0.0,
+      "teacher_format_error": 0.0,
+      "teacher_gold_token_f1_bonus_applied": 0.15078125,
+      "teacher_i_boundary_preserved": 1.0,
+      "teacher_stage_a_format_error": 0.0,
+      "teacher_stage_b_called": 0.2119140625,
+      "teacher_stage_b_format_error": 0.0,
+      "teacher_stage_b_used": 0.1314453125
+    },
+    "selection_reasons": {
+      "stage_a_i_or_not_called_or_format": 4035,
+      "stage_b_non_i": 561,
+      "stage_b_invalid_fallback": 297,
+      "stage_b_non_i+evidence_literal_gold": 112,
+      "stage_b_invalid_fallback+evidence_literal_gold": 81,
+      "stage_a_only_supported+evidence_literal_gold": 20,
+      "stage_a_only_supported": 13,
+      "stage_a_supported_higher_gold_f1": 1
+    },
+    "teacher_statuses": {
+      "": 2290,
+      "insufficient_evidence": 1745,
+      "supported_answer": 1035,
+      "ambiguous_evidence": 50
+    },
+    "teacher_parse_statuses": {
+      "parsed": 2830,
+      "not_called": 2290
+    },
+    "teacher_stage_b_parse_statuses": {
+      "": 4035,
+      "parsed": 1085
+    },
+    "reward_types": {
+      "spad_em_teacher_backoff_gold_token_f1_bonus_v3_hard_gate_v2": 5120
+    },
+    "strategy_ids": {
+      "spad_teacher_hard_gate_r5_literal_canonical_v2": 5120
+    },
+    "prompt_versions": {
+      "spad_teacher_evidence_status_answer_v2": 5120
+    },
+    "derived": {
+      "teacher_stage_b_call_rate_over_teacher_called": 0.3833922261484099,
+      "teacher_stage_b_use_rate_over_stage_b_called": 0.6202764976958526,
+      "teacher_bonus_applied_rate_over_teacher_called": 0.272791519434629,
+      "teacher_calls_per_teacher_fallback": 1.38339222614841
+    }
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "name": "dual_all_r5_gold_f1_08_literal_canonical_v2",
+  "family": "hard_gate_composite",
+  "description": "Production no-gold gate plus R5 on every case; preserve the 0.8 gold-F1 I override, preserve the sole supported answer or prefer the higher-gold-F1 answer when both stages support one, and canonicalize to a reference answer only when its normalized literal occurs in Search evidence.",
+  "stage_a_variant": "baseline_current_v2",
+  "include_stage_a_draft": false,
+  "reuse_single_prompt_variant": "gold_support_evidence_only_v3",
+  "stage_b_scope": "all",
+  "i_override_min_gold_f1": 0.8,
+  "prefer_higher_gold_f1_between_supported_stages": true,
+  "canonicalize_evidence_literal_gold": true,
+  "prompt_sha256": "1ba800b5b2f207614f82891cf5d7e6fa30a111ea8a077882115431fd29af0731"
+}

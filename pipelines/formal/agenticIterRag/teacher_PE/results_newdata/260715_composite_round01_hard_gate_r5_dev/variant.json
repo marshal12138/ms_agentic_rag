@@ -1,0 +1,9 @@
+{
+  "name": "hard_gate_r5_v1",
+  "family": "hard_gate_composite",
+  "description": "Binding production I gate followed by the selected R5 verifier, with I fallback blocked.",
+  "stage_a_variant": "baseline_current_v2",
+  "include_stage_a_draft": false,
+  "reuse_single_prompt_variant": "gold_support_evidence_only_v3",
+  "prompt_sha256": "8f2ae04c6f3ba3003360f2b65a0f34401268b5cf210d4496e75f38f746ee9230"
+}

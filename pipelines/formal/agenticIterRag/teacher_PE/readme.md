@@ -1,5 +1,23 @@
 # SPAD Teacher Prompt Engineering
 
+## 2026-07-15 New-Data PE
+
+The current PE cycle uses 512 manually audited trajectories sampled from the new 5100-step training run. The frozen ablation benchmark is `benchmark_newdata_512_ablation.jsonl`: 384 dev cases are used for prompt selection and 128 cases were initially sealed for holdout. Each of the four 20-step strata contributes 96 dev and 32 holdout cases. The holdout was first unsealed for the frozen R5 single-prompt evaluation and was later consumed by combination-strategy diagnostics; it must not be represented as untouched for another selection cycle.
+
+The new equal-weight objective is `0.5 * I_F1 + 0.5 * gold_token_F1_coverage_on_manual_S`. A manual-S case predicted as non-S contributes zero answer coverage. The runner also reports gold EM, conditional answer quality, manual-answer agreement, the actual `teacher_called=true` operational slice, controls, and every step layer.
+
+The frozen single-prompt candidate is `gold_support_evidence_only_v3`: Original question plus reference gold plus full title/passage evidence, with sub-query strings hidden and no repeated question tail. On three cache-free dev runs its teacher-called equal objective is `0.7525 [0.7516, 0.7535]`; on three frozen holdout runs it is `0.8149 [0.7993, 0.8417]`.
+
+The current combination leader is `hard_gate_r5_literal_canonical_v2`. A production no-gold prompt makes a binding I decision; R5 is called only for Stage-A S/A, supported answers are selected across stages, and a reference answer is substituted only when its normalized literal occurs in Search evidence. Three dev runs give teacher-called I F1 `0.8924`, gold coverage `0.6825`, and equal objective `0.7874` at `1.3558x` mean elapsed. Its reused-holdout diagnostic is `0.8812/0.9000/0.8906` at `1.2307x`. Because the combination cycle already consumed that holdout, a new untouched rollout sample is required for an unbiased final estimate. Gold-aware and no-gold results remain separate production regimes.
+
+The source training run used `spad_teacher_evidence_status_answer_v2`, which is byte-equivalent to PE variant `baseline_current_v2`. Three fresh dev repeats of that production prompt give teacher-called I F1 `0.8924`, gold coverage `0.3180`, and equal objective `0.6052`. Hard-gate v2 therefore preserves the production I boundary exactly while improving the non-I answer path.
+
+New artifacts are documented chronologically in `NEW_DATA_PE_WORKLOG.md`. Sampling, annotation, and benchmark construction are implemented by `sample_newdata_rollouts_512.py`, `build_manual_judgments_newdata_512.py`, and `build_newdata_ablation_benchmark.py`.
+Completed new-data runs are indexed by `build_newdata_results_index.py` in `NEW_DATA_RESULTS_INDEX.md`.
+Candidate repeats are summarized by `build_newdata_stability_report.py` in `NEW_DATA_STABILITY.md`.
+Combination variants and execution are implemented by `composite_prompt_variants.py` and `run_composite_ablation.py`; deterministic policies derived from persisted independent stages use `derive_composite_policy.py` and are marked as derived in result metadata.
+Detailed production/R5/Hard-gate behavior, metrics, costs, and selection boundaries are documented in `NEW_DATA_STRATEGY_COMPARISON.md`.
+
 本目录用于对 GLM-4.7-Flash teacher 做可复现的 prompt/layout 消融。当前完成 50 个有效方案，并对
 Top 5 各做 3 次无缓存新推理；领先的
 单调用策略是 `question-tail evidence-only`：隐藏 sub_query、保留完整 title/passage，并在证据后重申
@@ -85,6 +103,13 @@ python run_ablation.py \
   --split all \
   --disable-cache \
   --output-dir results/<new-experiment-id>
+
+python run_ablation.py \
+  --benchmark benchmark_newdata_512_ablation.jsonl \
+  --variant baseline_question_tail_evidence_only_v2 \
+  --split dev \
+  --disable-cache \
+  --output-dir results_newdata/<new-experiment-id>
 
 python build_results_index.py
 python build_stability_report.py

@@ -261,6 +261,15 @@ QUESTION_TAIL_FOCUS_SYSTEM_PROMPT = (
     "of the judgment. Passage titles and round markers are evidence organization only. Do not answer a related "
     "retrieval intent. Keep reason to one short sentence and answer to the shortest supported span."
 )
+
+QUESTION_TAIL_ANSWER_ALIGNMENT_SYSTEM_PROMPT = (
+    BASELINE_SYSTEM_PROMPT
+    + " For supported_answer, infer the answer type requested by the final repeated Original question, then copy "
+    "the shortest passage span that exactly fills that type and predicate. Preserve the passage's canonical "
+    "spelling, full proper name, date, number, or title; do not return a description, possessive reformulation, "
+    "surrounding sentence, or a related entity. Do not remove words needed to distinguish the answer from another "
+    "entity. This answer-extraction rule must not change whether the evidence is sufficient or ambiguous."
+)
 GOLD_SUPPORT_CHECK_SYSTEM_PROMPT = (
     "You are an evidence-grounded judge for factoid QA. The user supplies an Original question, a Reference gold "
     "answer, and Search evidence. The gold is only a candidate to verify and is never evidence. Do not claim the gold "
@@ -272,6 +281,32 @@ GOLD_SUPPORT_CHECK_SYSTEM_PROMPT = (
     "one complete different answer, use supported_answer with that evidence answer. If it supports multiple complete "
     "different answers, use ambiguous_evidence. If neither the gold nor any other complete answer is supported, use "
     "insufficient_evidence. Different predicates and incomplete bridge chains are not candidates."
+)
+
+GOLD_DECOUPLED_STATUS_ANSWER_SYSTEM_PROMPT = (
+    "You are an evidence-grounded judge for factoid QA. The user supplies an Original question, a Reference gold "
+    "answer, and Search evidence. The gold is an answer-normalization hypothesis, never evidence. "
+    + OUTPUT_CONTRACT_STRICT
+    + " Separate status judgment from answer normalization. Stage 1: decide status as if the Reference gold were "
+    "hidden. Count complete candidates supported by the passages for the Original question's exact entity, "
+    "predicate, scope, and required bridges. Zero candidates means insufficient_evidence; one means "
+    "supported_answer; multiple equally matching incompatible candidates mean ambiguous_evidence. Do not use "
+    "insufficient_evidence merely because the supplied gold is unsupported when a different complete answer is "
+    "supported. Stage 2 runs only after supported_answer: if the evidence-supported candidate matches a Reference "
+    "gold answer or a clearly equivalent alias, return the shortest supported span in that gold-answer style. If "
+    "the evidence supports a different answer, return that evidence answer instead of copying the gold. Never let "
+    "the gold create a missing bridge, complete an unsupported relation, or change the Stage-1 status. In reason, "
+    "briefly state the complete-candidate count and whether the supported final answer matches the gold hypothesis."
+)
+
+GOLD_COMPACT_BALANCED_SYSTEM_PROMPT = (
+    "Judge the Original question only from Search evidence. The Reference gold answer is a hypothesis, not evidence. "
+    + OUTPUT_CONTRACT_BASE
+    + " Count complete evidence-supported answers for the exact requested relation: zero is insufficient_evidence, "
+    "one is supported_answer, and multiple incompatible matches are ambiguous_evidence. A gold mention without the "
+    "relation is incomplete. If one different answer is supported, return it as supported_answer rather than I. If "
+    "the supported answer matches the gold or an alias, return its shortest supported gold-style span. Never invent "
+    "a predicate, identity, scope, or bridge. Keep reason to one short sentence."
 )
 
 GOLD_I_GUARD_SYSTEM_PROMPT = (
@@ -372,6 +407,14 @@ PROMPT_VARIANTS: dict[str, PromptVariant] = {
         include_gold=False,
         family="layout_ablation",
         description="Evidence-only layout that repeats the Original question immediately before generation.",
+        layout="evidence_question_tail",
+    ),
+    "question_tail_answer_alignment_v3": PromptVariant(
+        name="question_tail_answer_alignment_v3",
+        system_prompt=QUESTION_TAIL_ANSWER_ALIGNMENT_SYSTEM_PROMPT,
+        include_gold=False,
+        family="answer_alignment_ablation",
+        description="Successful question-tail evidence-only layout with exact answer-type span extraction.",
         layout="evidence_question_tail",
     ),
     "baseline_question_tail_v2": PromptVariant(
@@ -545,6 +588,46 @@ PROMPT_VARIANTS: dict[str, PromptVariant] = {
         family="gold_aware",
         description="Treat gold as a candidate whose evidence support must be verified.",
     ),
+    "gold_support_question_tail_v3": PromptVariant(
+        name="gold_support_question_tail_v3",
+        system_prompt=GOLD_SUPPORT_CHECK_SYSTEM_PROMPT,
+        include_gold=True,
+        family="gold_aware_layout_ablation",
+        description="Gold-hypothesis verification on the successful no-subquery question-tail layout.",
+        layout="gold_evidence_question_tail",
+    ),
+    "gold_support_evidence_only_v3": PromptVariant(
+        name="gold_support_evidence_only_v3",
+        system_prompt=GOLD_SUPPORT_CHECK_SYSTEM_PROMPT,
+        include_gold=True,
+        family="gold_aware_layout_ablation",
+        description="Gold-hypothesis verification without sub-query strings or a question tail.",
+        layout="gold_evidence_only",
+    ),
+    "gold_decoupled_status_answer_v3": PromptVariant(
+        name="gold_decoupled_status_answer_v3",
+        system_prompt=GOLD_DECOUPLED_STATUS_ANSWER_SYSTEM_PROMPT,
+        include_gold=True,
+        family="gold_aware_instruction_ablation",
+        description="Judge status without gold, then use supported gold only to normalize an S answer.",
+        layout="gold_evidence_only",
+    ),
+    "gold_compact_balanced_v3": PromptVariant(
+        name="gold_compact_balanced_v3",
+        system_prompt=GOLD_COMPACT_BALANCED_SYSTEM_PROMPT,
+        include_gold=True,
+        family="gold_aware_instruction_ablation",
+        description="Compact balanced gold verifier on the winning gold-aware layout.",
+        layout="gold_evidence_only",
+    ),
+    "gold_support_subquery_question_tail_v3": PromptVariant(
+        name="gold_support_subquery_question_tail_v3",
+        system_prompt=GOLD_SUPPORT_CHECK_SYSTEM_PROMPT,
+        include_gold=True,
+        family="gold_aware_layout_ablation",
+        description="Gold-hypothesis verification retaining sub-query strings and adding a question tail.",
+        layout="gold_v2_question_tail",
+    ),
     "gold_i_guard": PromptVariant(
         name="gold_i_guard",
         system_prompt=GOLD_I_GUARD_SYSTEM_PROMPT,
@@ -552,12 +635,28 @@ PROMPT_VARIANTS: dict[str, PromptVariant] = {
         family="gold_aware",
         description="Gold support check with explicit complete-candidate and missing-bridge audit.",
     ),
+    "gold_i_guard_evidence_only_v3": PromptVariant(
+        name="gold_i_guard_evidence_only_v3",
+        system_prompt=GOLD_I_GUARD_SYSTEM_PROMPT,
+        include_gold=True,
+        family="gold_aware_instruction_ablation",
+        description="Historical strict gold I-guard on the new winning gold-aware layout.",
+        layout="gold_evidence_only",
+    ),
     "gold_binary_support": PromptVariant(
         name="gold_binary_support",
         system_prompt=GOLD_BINARY_SUPPORT_SYSTEM_PROMPT,
         include_gold=True,
         family="gold_aware",
         description="Use I exactly when the evidence does not support the reference gold relation.",
+    ),
+    "gold_binary_support_evidence_only_v3": PromptVariant(
+        name="gold_binary_support_evidence_only_v3",
+        system_prompt=GOLD_BINARY_SUPPORT_SYSTEM_PROMPT,
+        include_gold=True,
+        family="gold_aware_instruction_ablation",
+        description="Historical gold binary-support gate on the new winning gold-aware layout.",
+        layout="gold_evidence_only",
     ),
 }
 
@@ -638,6 +737,7 @@ def build_user_prompt_evidence_only(
     omit_initial_question: bool = False,
     tagged_question: bool = False,
     decision_reminder: bool = False,
+    include_gold: bool = False,
 ) -> str:
     """Render all retrieved passages while omitting potentially distracting sub-query strings."""
 
@@ -647,6 +747,14 @@ def build_user_prompt_evidence_only(
             lines.extend(["   <original_question>", _indent(case["question"], 6), "   </original_question>"])
         else:
             lines.extend(["   Original question:", _indent(case["question"], 6)])
+        if include_gold:
+            lines.extend(
+                [
+                    "",
+                    "   Reference gold answer:",
+                    _indent(json.dumps(case.get("gold_answers") or [], ensure_ascii=False), 6),
+                ]
+            )
         lines.append("")
     lines.append("   Search evidence:")
     evidence_steps = case.get("evidence_steps") or []
@@ -697,8 +805,10 @@ def build_user_prompt_evidence_only(
     return "\n".join(lines)
 
 
-def build_user_prompt_v2_question_tail(case: dict[str, Any]) -> str:
-    prompt = build_user_prompt(case, include_gold=False)
+def build_user_prompt_v2_question_tail(
+    case: dict[str, Any], *, include_gold: bool = False
+) -> str:
+    prompt = build_user_prompt(case, include_gold=include_gold)
     prompt = prompt.rsplit("\n   Now output the final result directly.", 1)[0]
     return (
         prompt
@@ -719,12 +829,21 @@ def build_messages(case: dict[str, Any], variant_name: str) -> list[dict[str, st
         "v1": lambda: build_user_prompt_v1(case),
         "v2": lambda: build_user_prompt(case, include_gold=variant.include_gold),
         "v2_question_tail": lambda: build_user_prompt_v2_question_tail(case),
+        "gold_v2_question_tail": lambda: build_user_prompt_v2_question_tail(
+            case, include_gold=True
+        ),
         "evidence_only": lambda: build_user_prompt_evidence_only(case),
         "text_only": lambda: build_user_prompt_evidence_only(case, include_titles=False),
         "evidence_top3": lambda: build_user_prompt_evidence_only(case, max_docs=3),
         "evidence_flat": lambda: build_user_prompt_evidence_only(case, include_rounds=False),
         "evidence_question_tail": lambda: build_user_prompt_evidence_only(
             case, repeat_question=True
+        ),
+        "gold_evidence_question_tail": lambda: build_user_prompt_evidence_only(
+            case, repeat_question=True, include_gold=True
+        ),
+        "gold_evidence_only": lambda: build_user_prompt_evidence_only(
+            case, include_gold=True
         ),
         "evidence_delimited": lambda: build_user_prompt_evidence_only(case, delimited=True),
         "evidence_top3_question_tail": lambda: build_user_prompt_evidence_only(

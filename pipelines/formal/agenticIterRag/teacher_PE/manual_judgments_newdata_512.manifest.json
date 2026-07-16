@@ -1,0 +1,41 @@
+{
+  "generated_at": "2026-07-15T17:48:40+08:00",
+  "benchmark_file": "benchmark_newdata_512.jsonl",
+  "benchmark_sha256": "398eeb25304a39b8cf99597aabeb7d377b91279c5006fc12549c79d89ac4830e",
+  "annotations_file": "manual_annotations_newdata_512.jsonl",
+  "annotations_sha256": "550ad12fd33a1d88ee99cfeda2e0c74df5b230f8eaa6a9a7da20cb0a448a35e6",
+  "expected_case_count": 512,
+  "annotated_case_count": 512,
+  "complete": true,
+  "label_counts": {
+    "I": 241,
+    "S": 241,
+    "A": 30
+  },
+  "step_layer_label_counts": {
+    "L1_steps_01_20": {
+      "I": 61,
+      "S": 63,
+      "A": 4
+    },
+    "L2_steps_21_40": {
+      "S": 57,
+      "I": 60,
+      "A": 11
+    },
+    "L3_steps_41_60": {
+      "S": 66,
+      "I": 54,
+      "A": 8
+    },
+    "L4_steps_61_79": {
+      "I": 66,
+      "S": 55,
+      "A": 7
+    }
+  },
+  "historical_teacher_comparable_count": 292,
+  "historical_teacher_agreement_count": 239,
+  "historical_teacher_agreement_rate": 0.8184931506849316,
+  "output_file": "manual_judgments_newdata_512.tsv"
+}

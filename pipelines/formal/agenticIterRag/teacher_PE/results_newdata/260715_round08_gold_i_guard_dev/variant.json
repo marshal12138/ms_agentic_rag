@@ -1,0 +1,8 @@
+{
+  "name": "gold_i_guard_evidence_only_v3",
+  "family": "gold_aware_instruction_ablation",
+  "description": "Historical strict gold I-guard on the new winning gold-aware layout.",
+  "include_gold": true,
+  "layout": "gold_evidence_only",
+  "prompt_sha256": "e517f22e20afeacb52bc7926d67b5edd9351d0172d946d8bf889687657361bda"
+}

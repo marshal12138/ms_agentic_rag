@@ -1,0 +1,9 @@
+{
+  "name": "dual_all_r5_gold_f1_08_override_v1",
+  "family": "hard_gate_composite",
+  "description": "Production no-gold gate plus R5 on every case; override Stage-A I only when R5 returns supported_answer with gold token-F1 at least 0.8.",
+  "stage_a_variant": "baseline_current_v2",
+  "include_stage_a_draft": false,
+  "reuse_single_prompt_variant": "gold_support_evidence_only_v3",
+  "prompt_sha256": "fa41902a1946a5508754d89f275486b1bf2310de29779a0a5380e4da94473a93"
+}

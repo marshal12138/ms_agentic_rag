@@ -8,6 +8,7 @@ MODEL_PATH=${MODEL_PATH:-/data01/ms_wksp/agent_up_to_date/models/llm/GLM-4.7-Fla
 MODEL_NAME=${MODEL_NAME:-GLM-4.7-Flash}
 IMAGE=${IMAGE:-m.daocloud.io/quay.io/ascend/vllm-ascend:v0.21.0rc1}
 WAIT_SECONDS=${WAIT_SECONDS:-900}
+POLL_SECONDS=${POLL_SECONDS:-120}
 
 mkdir -p "$LOG_DIR"
 rm -f "$RUNTIME_DIR/replicas.pending.tsv"
@@ -86,7 +87,7 @@ while (( SECONDS < deadline )); do
       exit 1
     fi
   done
-  sleep 15
+  sleep "$POLL_SECONDS"
 done
 
 for port in "${ports[@]}"; do

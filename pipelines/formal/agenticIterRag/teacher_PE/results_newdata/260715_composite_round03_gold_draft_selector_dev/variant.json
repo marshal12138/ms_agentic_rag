@@ -1,0 +1,9 @@
+{
+  "name": "hard_gate_gold_draft_selector_v1",
+  "family": "hard_gate_composite",
+  "description": "Binding production I gate followed by evidence selection among draft, gold, and other candidates.",
+  "stage_a_variant": "baseline_current_v2",
+  "include_stage_a_draft": true,
+  "reuse_single_prompt_variant": "",
+  "prompt_sha256": "fce47e990eb543582a06c5ddde02f1319dd3a17de4dfad01840cdae4b08a3ed0"
+}

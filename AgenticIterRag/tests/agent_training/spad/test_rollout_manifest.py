@@ -16,10 +16,29 @@ def sha256_file(path: Path) -> str:
 
 
 class RolloutManifestTest(unittest.TestCase):
-    def build_manifest(self, root: Path, *, teacher_message_count: int = 8) -> Path:
+    def build_manifest(
+        self,
+        root: Path,
+        *,
+        row_count: int = 8,
+        invalid_output_count: int = 0,
+        teacher_message_count: int | None = None,
+    ) -> Path:
         shard = root / "1.jsonl"
-        rows = [{"uid": "group", "index": index} for index in range(8)]
+        rows = [
+            {
+                "uid": "group",
+                "index": index,
+                "input": "question",
+                "output": "" if index < invalid_output_count else "answer",
+                "gts": {"target": ["answer"]},
+                "raw_prompt": "prompt",
+                "assistant_turn_records": [{"turn_index": 0}],
+            }
+            for index in range(row_count)
+        ]
         shard.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+        teacher_message_count = row_count if teacher_message_count is None else teacher_message_count
         manifest = {
             "completed": True,
             "expected_steps": 1,
@@ -28,22 +47,22 @@ class RolloutManifestTest(unittest.TestCase):
             "actual_prompt_count": 1,
             "expected_group_count": 1,
             "actual_group_count": 1,
-            "expected_rollout_count": 8,
-            "actual_rollout_count": 8,
+            "expected_rollout_count": row_count,
+            "actual_rollout_count": row_count,
             "teacher_called_count": 4,
             "shards": [
                 {
                     "path": str(shard),
-                    "record_count": 8,
+                    "record_count": row_count,
                     "sha256": sha256_file(shard),
                     "field_nonempty_counts": {
-                        "input": 8,
-                        "output": 8,
-                        "gts": 8,
-                        "raw_prompt": 8,
-                        "assistant_turn_records": 8,
-                        "search_count": 8,
-                        "tool_call_details": 8,
+                        "input": row_count,
+                        "output": row_count - invalid_output_count,
+                        "gts": row_count,
+                        "raw_prompt": row_count,
+                        "assistant_turn_records": row_count,
+                        "search_count": row_count,
+                        "tool_call_details": row_count,
                         "teacher_messages": teacher_message_count,
                     },
                 }
@@ -67,6 +86,21 @@ class RolloutManifestTest(unittest.TestCase):
             self.build_manifest(root, teacher_message_count=7)
             with self.assertRaisesRegex(ValueError, "teacher_messages"):
                 _validate_rollout_manifest(root, require_teacher_audit=True)
+
+    def test_invalid_trajectories_at_or_below_half_percent_pass(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.build_manifest(root, row_count=1000, invalid_output_count=5)
+            result = _validate_rollout_manifest(root, require_teacher_audit=False)
+            self.assertEqual(result["summary"]["invalid_trajectory_count"], 5)
+            self.assertEqual(result["summary"]["invalid_trajectory_rate_limit"], 0.005)
+
+    def test_invalid_trajectories_above_half_percent_fail(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.build_manifest(root, row_count=1000, invalid_output_count=6)
+            with self.assertRaisesRegex(ValueError, "semi-strict limit"):
+                _validate_rollout_manifest(root, require_teacher_audit=False)
 
 
 if __name__ == "__main__":

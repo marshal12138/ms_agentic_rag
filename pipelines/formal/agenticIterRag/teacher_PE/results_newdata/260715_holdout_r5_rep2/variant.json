@@ -1,0 +1,8 @@
+{
+  "name": "gold_support_evidence_only_v3",
+  "family": "gold_aware_layout_ablation",
+  "description": "Gold-hypothesis verification without sub-query strings or a question tail.",
+  "include_gold": true,
+  "layout": "gold_evidence_only",
+  "prompt_sha256": "64bc90b958296a033f5832ed922d1edce3e99775f6bb6578639c52415b5ae783"
+}

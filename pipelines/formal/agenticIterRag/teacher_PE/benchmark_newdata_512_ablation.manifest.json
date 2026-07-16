@@ -1,0 +1,47 @@
+{
+  "case_count": 512,
+  "question_group_count": 512,
+  "split_counts": {
+    "dev": 384,
+    "holdout": 128
+  },
+  "layer_split_counts": {
+    "L1_steps_01_20": {
+      "dev": 96,
+      "holdout": 32
+    },
+    "L2_steps_21_40": {
+      "dev": 96,
+      "holdout": 32
+    },
+    "L3_steps_41_60": {
+      "dev": 96,
+      "holdout": 32
+    },
+    "L4_steps_61_79": {
+      "holdout": 32,
+      "dev": 96
+    }
+  },
+  "split_label_counts": {
+    "dev": {
+      "I": 181,
+      "S": 181,
+      "A": 22
+    },
+    "holdout": {
+      "I": 60,
+      "S": 60,
+      "A": 8
+    }
+  },
+  "benchmark_sha256": "4e208eafb72795ab6445194daecce3f33e247cf0d105d6714592c91e3d06cd2a",
+  "generated_at": "2026-07-15T17:52:22+08:00",
+  "split_seed": 260715,
+  "split_policy": "32 holdout cases per step layer, label quotas by largest remainder",
+  "source_benchmark": "benchmark_newdata_512.jsonl",
+  "source_benchmark_sha256": "398eeb25304a39b8cf99597aabeb7d377b91279c5006fc12549c79d89ac4830e",
+  "annotations": "manual_annotations_newdata_512.jsonl",
+  "annotations_sha256": "550ad12fd33a1d88ee99cfeda2e0c74df5b230f8eaa6a9a7da20cb0a448a35e6",
+  "output": "benchmark_newdata_512_ablation.jsonl"
+}

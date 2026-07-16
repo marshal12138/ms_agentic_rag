@@ -1,0 +1,9 @@
+{
+  "name": "hard_gate_gold_extractor_v1",
+  "family": "hard_gate_composite",
+  "description": "Binding production I gate followed by a dedicated non-I gold-aware answer extractor.",
+  "stage_a_variant": "baseline_current_v2",
+  "include_stage_a_draft": true,
+  "reuse_single_prompt_variant": "",
+  "prompt_sha256": "71ac001078dbc78dfe0970c2d964e0c0308b148722a091c21b725d94953cd8aa"
+}

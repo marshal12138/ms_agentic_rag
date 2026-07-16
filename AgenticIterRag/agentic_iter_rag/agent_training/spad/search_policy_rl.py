@@ -16,12 +16,20 @@ from typing import Any
 from agentic_iter_rag.agent_training.spad.config import init_actor_model, input_train_files
 from agentic_iter_rag.agent_training.spad.checkpoint_finalizer import finalize_actor_checkpoint
 from agentic_iter_rag.agent_training.spad.data import load_rl_rows, row_gold_answers, row_question
-from agentic_iter_rag.agent_training.spad.manifest import write_records, write_sub_stage_manifest
+from agentic_iter_rag.agent_training.spad.manifest import (
+    SEMI_STRICT_INVALID_ROLLOUT_RATE,
+    is_invalid_rollout_record,
+    write_records,
+    write_sub_stage_manifest,
+)
 from agentic_iter_rag.agent_training.spad.prompts import (
     DEFAULT_TEACHER_STATUS_PROMPT_VERSION,
     resolve_teacher_prompt,
 )
 from agentic_iter_rag.agent_training.spad.reward import compute_search_policy_reward
+from agentic_iter_rag.agent_training.spad.teacher_strategies import (
+    validate_teacher_strategy_config,
+)
 from agentic_iter_rag.agent_training.spad.service_manager import SpadServiceManager, as_int_list, csv_ids, project_root, repo_root, tail_text
 from agentic_iter_rag.utils.io import write_json, write_yaml
 
@@ -102,6 +110,7 @@ def _validate_rollout_manifest(
                 f"!= {expected_key}={manifest.get(expected_key)}"
             )
     field_counts: dict[str, int] = defaultdict(int)
+    invalid_trajectory_count = 0
     for shard in manifest.get("shards") or []:
         shard_path = Path(str(shard["path"]))
         if not shard_path.is_file():
@@ -109,18 +118,36 @@ def _validate_rollout_manifest(
         if _sha256_file(shard_path) != str(shard["sha256"]):
             raise ValueError(f"rollout shard hash mismatch: {shard_path}")
         with shard_path.open(encoding="utf-8") as handle:
-            line_count = sum(1 for line in handle if line.strip())
+            line_count = 0
+            shard_invalid_count = 0
+            for line_number, line in enumerate(handle, start=1):
+                if not line.strip():
+                    continue
+                line_count += 1
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError as exc:
+                    raise ValueError(
+                        f"rollout shard contains invalid JSON: {shard_path}:{line_number}"
+                    ) from exc
+                if not isinstance(record, dict):
+                    raise ValueError(
+                        f"rollout shard record is not an object: {shard_path}:{line_number}"
+                    )
+                shard_invalid_count += int(is_invalid_rollout_record(record))
         if line_count != int(shard["record_count"]):
             raise ValueError(f"rollout shard line count mismatch: {shard_path}")
+        invalid_trajectory_count += shard_invalid_count
         for key, value in (shard.get("field_nonempty_counts") or {}).items():
             field_counts[str(key)] += int(value)
     expected_rollouts = int(manifest["expected_rollout_count"])
-    for key in ("input", "output", "gts", "raw_prompt", "assistant_turn_records"):
-        if field_counts.get(key, 0) != expected_rollouts:
-            raise ValueError(
-                f"rollout audit field {key!r} is non-empty for {field_counts.get(key, 0)} "
-                f"of {expected_rollouts} records"
-            )
+    invalid_rate = invalid_trajectory_count / expected_rollouts if expected_rollouts else 0.0
+    if invalid_rate > SEMI_STRICT_INVALID_ROLLOUT_RATE:
+        raise ValueError(
+            "rollout audit invalid trajectory rate exceeds semi-strict limit: "
+            f"invalid={invalid_trajectory_count}/{expected_rollouts} "
+            f"({invalid_rate:.6%}) > {SEMI_STRICT_INVALID_ROLLOUT_RATE:.6%}"
+        )
     if require_teacher_audit:
         evidence_records = field_counts.get("search_count", 0)
         if field_counts.get("tool_call_details", 0) != evidence_records:
@@ -132,7 +159,13 @@ def _validate_rollout_manifest(
     return {
         "path": str(manifest_path),
         "sha256": _sha256_file(manifest_path),
-        "summary": manifest,
+        "summary": {
+            **manifest,
+            "invalid_trajectory_count": invalid_trajectory_count,
+            "invalid_trajectory_rate": invalid_rate,
+            "invalid_trajectory_rate_limit": SEMI_STRICT_INVALID_ROLLOUT_RATE,
+            "invalid_trajectory_policy": "semi_strict_allow_at_most_0.5_percent",
+        },
     }
 
 
@@ -332,6 +365,20 @@ def _build_verl_plan(
     teacher_request = dict(teacher_cfg.get("request") or {})
     teacher_request["endpoint"] = teacher_output["endpoint"]
     teacher_request["model"] = teacher_output["model"]
+    reward_type = str(spad_cfg.get("reward", {}).get("type") or "")
+    hard_gate_v3_reward = (
+        reward_type
+        == "spad_em_teacher_backoff_gold_token_f1_bonus_v3_hard_gate_v2"
+    )
+    configured_strategy_id = str(teacher_cfg.get("strategy_id") or "")
+    if configured_strategy_id and not hard_gate_v3_reward:
+        raise ValueError(
+            "teacher_answerer.strategy_id is only supported by the independent "
+            "Hard-Gate v2 reward"
+        )
+    teacher_strategy = (
+        validate_teacher_strategy_config(teacher_cfg) if hard_gate_v3_reward else None
+    )
     reward_kwargs = {
         "reward_cfg": spad_cfg.get("reward", {}),
         "teacher_request": teacher_request,
@@ -340,7 +387,8 @@ def _build_verl_plan(
         "batch_workers": int(trainer_cfg.get("teacher_batch_workers", 16)),
         "n_samples_per_prompt": rollout_n,
     }
-    reward_type = str(spad_cfg.get("reward", {}).get("type") or "")
+    if teacher_strategy is not None:
+        reward_kwargs["teacher_strategy_id"] = teacher_strategy.strategy_id
     legacy_0710_reward = reward_type == "spad_teacher_f1_0710"
     current_group_reward = reward_type == "spad_em_teacher_backoff"
     gold_token_f1_bonus_reward = reward_type == "spad_em_teacher_backoff_gold_token_f1_bonus"
@@ -349,19 +397,23 @@ def _build_verl_plan(
     )
     dev_group_reward = reward_type == "spad_em_teacher_backoff_dev"
     reward_module_name = (
-        "search_policy_teacher_reward_0710.py"
-        if legacy_0710_reward
+        "search_policy_teacher_reward_gold_match_bonus_v3_hard_gate_v2.py"
+        if hard_gate_v3_reward
         else (
-            (
-                "search_policy_teacher_reward_gold_match_bonus_v3.py"
-                if gold_token_f1_bonus_v3_reward
-                else "search_policy_teacher_reward_gold_match_bonus.py"
-            )
-            if gold_token_f1_bonus_reward or gold_token_f1_bonus_v3_reward
+            "search_policy_teacher_reward_0710.py"
+            if legacy_0710_reward
             else (
-                "search_policy_teacher_reward_dev.py"
-                if dev_group_reward
-                else "search_policy_teacher_reward.py"
+                (
+                    "search_policy_teacher_reward_gold_match_bonus_v3.py"
+                    if gold_token_f1_bonus_v3_reward
+                    else "search_policy_teacher_reward_gold_match_bonus.py"
+                )
+                if gold_token_f1_bonus_reward or gold_token_f1_bonus_v3_reward
+                else (
+                    "search_policy_teacher_reward_dev.py"
+                    if dev_group_reward
+                    else "search_policy_teacher_reward.py"
+                )
             )
         )
     )
@@ -389,6 +441,7 @@ def _build_verl_plan(
         current_group_reward
         or gold_token_f1_bonus_reward
         or gold_token_f1_bonus_v3_reward
+        or hard_gate_v3_reward
         or dev_group_reward
     ):
         reward_manager = "batch"
@@ -399,7 +452,16 @@ def _build_verl_plan(
         if legacy_0710_reward
         else bool(trainer_cfg.get("stream_group_reward", reward_manager == "batch"))
     )
-    if legacy_0710_reward:
+    if hard_gate_v3_reward:
+        reward_function_name = (
+            "compute_spad_em_teacher_backoff_gold_token_f1_bonus_v3_"
+            "hard_gate_v2_batch"
+        )
+        stop_sequences = [
+            str(item)
+            for item in rollout_cfg.get("stop_sequences", ["</tool_call>", "</answer>"])
+        ]
+    elif legacy_0710_reward:
         reward_function_name = "compute_spad_teacher_f1_0710_details"
         stop_sequences = ["</tool_call>", "<answer>"]
     elif current_group_reward:
@@ -562,7 +624,14 @@ def _build_verl_plan(
         _scalar_override("+ray_kwargs.ray_init.include_dashboard", False),
         _scalar_override("+ray_kwargs.ray_init.ignore_reinit_error", True),
     ]
-    if gold_token_f1_bonus_v3_reward:
+    if hard_gate_v3_reward:
+        hydra_overrides.append(
+            _scalar_override(
+                "+custom_reward_function.reward_kwargs.teacher_strategy_id",
+                reward_kwargs["teacher_strategy_id"],
+            )
+        )
+    if gold_token_f1_bonus_v3_reward or hard_gate_v3_reward:
         if not bool(trainer_cfg.get("norm_adv_by_std_in_grpo", False)):
             raise ValueError(
                 "Gold Token-F1 V3 requires norm_adv_by_std_in_grpo=true"
@@ -710,6 +779,7 @@ def _run_verl_backend(
                     "spad_em_teacher_backoff",
                     "spad_em_teacher_backoff_gold_token_f1_bonus",
                     "spad_em_teacher_backoff_gold_token_f1_bonus_v3",
+                    "spad_em_teacher_backoff_gold_token_f1_bonus_v3_hard_gate_v2",
                 },
             )
             checkpoint = str(_find_latest_checkpoint(Path(plan["output_dir"])))

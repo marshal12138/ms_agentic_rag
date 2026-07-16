@@ -1,0 +1,8 @@
+{
+  "name": "gold_binary_support_evidence_only_v3",
+  "family": "gold_aware_instruction_ablation",
+  "description": "Historical gold binary-support gate on the new winning gold-aware layout.",
+  "include_gold": true,
+  "layout": "gold_evidence_only",
+  "prompt_sha256": "9297986cdb9cfb3b558b934c2023d702fc831efbd16144ee6061010933dc97f6"
+}

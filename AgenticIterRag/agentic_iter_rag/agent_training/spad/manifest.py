@@ -9,6 +9,20 @@ from typing import Any
 from agentic_iter_rag.utils.io import write_json, write_jsonl
 
 
+CORE_ROLLOUT_AUDIT_FIELDS = (
+    "input",
+    "output",
+    "gts",
+    "raw_prompt",
+    "assistant_turn_records",
+)
+SEMI_STRICT_INVALID_ROLLOUT_RATE = 0.005
+
+
+def is_invalid_rollout_record(record: dict[str, Any]) -> bool:
+    return any(not bool(record.get(field)) for field in CORE_ROLLOUT_AUDIT_FIELDS)
+
+
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 

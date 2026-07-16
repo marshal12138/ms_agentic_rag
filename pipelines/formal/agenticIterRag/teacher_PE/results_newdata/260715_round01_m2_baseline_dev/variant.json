@@ -1,0 +1,8 @@
+{
+  "name": "baseline_question_tail_evidence_only_v2",
+  "family": "layout_ablation",
+  "description": "Evidence-only layout that repeats the Original question immediately before generation.",
+  "include_gold": false,
+  "layout": "evidence_question_tail",
+  "prompt_sha256": "d27ed640aa7b94e8931763fa5a39053846922973f8c09a9436ea976e8573d311"
+}
